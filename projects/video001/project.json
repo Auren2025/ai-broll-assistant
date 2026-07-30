@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "video001",
+  "name": "AI-Broll-Assistant Demo",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "id": "scene-001",
+      "file": "scenes/scene-001.json"
+    }
+  ]
+}

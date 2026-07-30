@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-ssr
 .vite/
 coverage/
 
@@ -9,4 +10,13 @@ coverage/
 *.log
 npm-debug.log*
 
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

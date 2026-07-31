@@ -1,27 +1,28 @@
 import type { CSSProperties } from "react";
-import { AbsoluteFill } from "remotion";
+import { AbsoluteFill, useCurrentFrame } from "remotion";
 import type { Layer, Scene } from "../domain/sceneSchema";
+import { getLayerEnterAnimationStyle } from "./layerAnimationStyle";
 
 export interface SceneCompositionProps {
   scene: Scene;
 }
 
-function getLayerStyle(layer: Layer): CSSProperties {
+function getLayerBaseStyle(layer: Layer): CSSProperties {
   return {
     position: "absolute",
     left: layer.x,
     top: layer.y,
     width: layer.width,
     height: layer.height,
-    opacity: layer.opacity,
     zIndex: layer.zIndex,
-    transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
     transformOrigin: "center center",
     pointerEvents: "none",
   };
 }
 
 export function SceneComposition({ scene }: SceneCompositionProps) {
+  const frame = useCurrentFrame();
+
   const sortedLayers = [...scene.layers].sort(
     (first, second) => first.zIndex - second.zIndex,
   );
@@ -38,6 +39,13 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           return null;
         }
 
+        const animationStyle = getLayerEnterAnimationStyle(
+          layer.animations,
+          frame,
+        );
+
+        const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY}) scale(${animationStyle.scale})`;
+
         if (layer.type === "rectangle") {
           const cornerRadius = Math.min(
             layer.cornerRadius,
@@ -45,7 +53,14 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           );
 
           return (
-            <div key={layer.id} style={getLayerStyle(layer)}>
+            <div
+              key={layer.id}
+              style={{
+                ...getLayerBaseStyle(layer),
+                opacity: layer.opacity * animationStyle.opacityMultiplier,
+                transform,
+              }}
+            >
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -72,7 +87,9 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           <div
             key={layer.id}
             style={{
-              ...getLayerStyle(layer),
+              ...getLayerBaseStyle(layer),
+              opacity: layer.opacity * animationStyle.opacityMultiplier,
+              transform,
               color: layer.fill,
               fontFamily: layer.fontFamily,
               fontSize: layer.fontSize,

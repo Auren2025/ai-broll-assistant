@@ -17,7 +17,7 @@ function roundNumber(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-interface SyncPosition {
+function readPositionFromObject(obj: FabricObject): {
   x: number;
   y: number;
   width: number;
@@ -25,9 +25,7 @@ interface SyncPosition {
   scaleX: number;
   scaleY: number;
   rotation: number;
-}
-
-function readPositionFromObject(obj: FabricObject): SyncPosition {
+} {
   const width = obj.width ?? 0;
   const height = obj.height ?? 0;
   const x = roundNumber((obj.left ?? 0) - width / 2);
@@ -43,6 +41,56 @@ function readPositionFromObject(obj: FabricObject): SyncPosition {
   };
 }
 
+function applyLayerToFabricObject(
+  object: FabricObject,
+  layer: Layer,
+): void {
+  object.set({
+    left: layer.x + layer.width / 2,
+    top: layer.y + layer.height / 2,
+    width: layer.width,
+    height: layer.height,
+    scaleX: layer.scaleX,
+    scaleY: layer.scaleY,
+    angle: layer.rotation,
+    opacity: layer.opacity,
+    visible: layer.visible,
+    selectable: !layer.locked,
+    evented: !layer.locked,
+  });
+
+  if (layer.type === "rectangle" && object instanceof Rect) {
+    const cornerRadius = Math.min(
+      layer.cornerRadius,
+      Math.min(layer.width, layer.height) / 2,
+    );
+    object.set({
+      fill: layer.fill,
+      stroke: layer.stroke ?? undefined,
+      strokeWidth: layer.strokeWidth,
+      rx: cornerRadius,
+      ry: cornerRadius,
+    });
+    return;
+  }
+
+  if (layer.type === "text" && object instanceof Textbox) {
+    const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
+    object.set({
+      text: layer.text,
+      fontFamily: layer.fontFamily,
+      fontSize: layer.fontSize,
+      fontWeight: layer.fontWeight,
+      fontStyle: layer.fontStyle,
+      lineHeight: layer.lineHeight,
+      charSpacing: characterSpacing,
+      textAlign: layer.textAlign,
+      fill: layer.fill,
+      editable: !layer.locked,
+    });
+  }
+}
+
 export function FabricSceneCanvas({
   scene,
   projectWidth,
@@ -55,6 +103,11 @@ export function FabricSceneCanvas({
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
+  const sceneRef = useRef<Scene>(scene);
+
+  useEffect(() => {
+    sceneRef.current = scene;
+  }, [scene]);
 
   useEffect(() => {
     const canvasElement = canvasElementRef.current;
@@ -82,9 +135,10 @@ export function FabricSceneCanvas({
       layerId: string,
       object: FabricObject,
     ): void => {
+      const currentScene = sceneRef.current;
       const position = readPositionFromObject(object);
 
-      const updatedLayers: Layer[] = scene.layers.map((layer) => {
+      const updatedLayers: Layer[] = currentScene.layers.map((layer) => {
         if (layer.id !== layerId) {
           return layer;
         }
@@ -105,10 +159,13 @@ export function FabricSceneCanvas({
         };
       });
 
-      onSceneChange({
-        ...scene,
+      const updatedScene: Scene = {
+        ...currentScene,
         layers: updatedLayers,
-      });
+      };
+
+      sceneRef.current = updatedScene;
+      onSceneChange(updatedScene);
     };
 
     const syncSelectedLayer = (): void => {
@@ -129,12 +186,16 @@ export function FabricSceneCanvas({
       onSelectedLayerChange(null);
     };
 
-    const sortedLayers = [...scene.layers].sort(
+    const sortedLayers = [...sceneRef.current.layers].sort(
       (first, second) => first.zIndex - second.zIndex,
     );
 
     for (const layer of sortedLayers) {
       if (layer.type === "rectangle") {
+        const cornerRadius = Math.min(
+          layer.cornerRadius,
+          Math.min(layer.width, layer.height) / 2,
+        );
         const rectangle = new Rect({
           left: layer.x + layer.width / 2,
           top: layer.y + layer.height / 2,
@@ -148,14 +209,8 @@ export function FabricSceneCanvas({
           fill: layer.fill,
           stroke: layer.stroke ?? undefined,
           strokeWidth: layer.strokeWidth,
-          rx: Math.min(
-            layer.cornerRadius,
-            Math.min(layer.width, layer.height) / 2,
-          ),
-          ry: Math.min(
-            layer.cornerRadius,
-            Math.min(layer.width, layer.height) / 2,
-          ),
+          rx: cornerRadius,
+          ry: cornerRadius,
           originX: "center",
           originY: "center",
           selectable: !layer.locked,
@@ -233,7 +288,36 @@ export function FabricSceneCanvas({
       fabricCanvasRef.current = null;
       layerIdToObject.clear();
     };
-  }, [displayScale, onSceneChange, onSelectedLayerChange, projectHeight, projectWidth, scene]);
+  }, [
+    displayScale,
+    onSceneChange,
+    onSelectedLayerChange,
+    projectHeight,
+    projectWidth,
+    scene.id,
+  ]);
+
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const layerIdToObject = layerIdToObjectRef.current;
+
+    for (const layer of scene.layers) {
+      const object = layerIdToObject.get(layer.id);
+
+      if (!object) {
+        continue;
+      }
+
+      applyLayerToFabricObject(object, layer);
+    }
+
+    canvas.requestRenderAll();
+  }, [scene]);
 
   useEffect(() => {
     const canvas = fabricCanvasRef.current;

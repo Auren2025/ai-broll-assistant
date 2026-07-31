@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "dev:server": "tsx watch server/index.ts",
     "validate:project": "tsx scripts/validateProject.ts projects/video001"
   },
   "dependencies": {

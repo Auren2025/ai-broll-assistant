@@ -12,6 +12,7 @@
     "validate:project": "tsx scripts/validateProject.ts projects/video001"
   },
   "dependencies": {
+    "fabric": "^7.4.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3"

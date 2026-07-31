@@ -4,6 +4,10 @@ import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
+import {
+  LayerPropertiesPanel,
+  type EditableLayerPatch,
+} from "./editor/LayerPropertiesPanel";
 import { RemotionScenePlayer } from "./remotion/RemotionScenePlayer";
 
 const PROJECT_ID = "video001";
@@ -11,20 +15,6 @@ const PROJECT_ID = "video001";
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
-
-type EditableLayerPatch = Partial<
-  Pick<
-    Layer,
-    | "x"
-    | "y"
-    | "width"
-    | "height"
-    | "scaleX"
-    | "scaleY"
-    | "rotation"
-    | "opacity"
-  >
->;
 
 function App() {
   const [project, setProject] = useState<Project | null>(null);
@@ -128,32 +118,6 @@ function App() {
       setSaveError(null);
     },
     [scene, selectedLayerId],
-  );
-
-  const handleOpacityChange = useCallback(
-    (opacity: number) => {
-      if (!Number.isFinite(opacity)) {
-        return;
-      }
-
-      handleSelectedLayerPatch({
-        opacity: Math.min(1, Math.max(0, opacity)),
-      });
-    },
-    [handleSelectedLayerPatch],
-  );
-
-  const handlePositionChange = useCallback(
-    (property: "x" | "y", value: number) => {
-      if (!Number.isFinite(value)) {
-        return;
-      }
-
-      handleSelectedLayerPatch({
-        [property]: value,
-      });
-    },
-    [handleSelectedLayerPatch],
   );
 
   async function handleSceneSelect(sceneId: string): Promise<void> {
@@ -308,104 +272,10 @@ function App() {
           })}
         </div>
 
-        {selectedLayer ? (
-          <section aria-label="Layer properties">
-            <h3>Layer properties</h3>
-
-            <dl>
-              <dt>ID</dt>
-              <dd>{selectedLayer.id}</dd>
-
-              <dt>Type</dt>
-              <dd>{selectedLayer.type}</dd>
-
-              <dt>X</dt>
-              <dd>
-                <input
-                  type="number"
-                  step={1}
-                  value={selectedLayer.x}
-                  aria-label="Layer X position"
-                  onChange={(event) => {
-                    handlePositionChange(
-                      "x",
-                      event.currentTarget.valueAsNumber,
-                    );
-                  }}
-                />
-              </dd>
-
-              <dt>Y</dt>
-              <dd>
-                <input
-                  type="number"
-                  step={1}
-                  value={selectedLayer.y}
-                  aria-label="Layer Y position"
-                  onChange={(event) => {
-                    handlePositionChange(
-                      "y",
-                      event.currentTarget.valueAsNumber,
-                    );
-                  }}
-                />
-              </dd>
-
-              <dt>Width</dt>
-              <dd>{selectedLayer.width}</dd>
-
-              <dt>Height</dt>
-              <dd>{selectedLayer.height}</dd>
-
-              <dt>Scale X</dt>
-              <dd>{selectedLayer.scaleX}</dd>
-
-              <dt>Scale Y</dt>
-              <dd>{selectedLayer.scaleY}</dd>
-
-              <dt>Rotation</dt>
-              <dd>{selectedLayer.rotation}</dd>
-
-              <dt>Opacity</dt>
-              <dd>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={selectedLayer.opacity}
-                  aria-label="Layer opacity slider"
-                  onChange={(event) => {
-                    handleOpacityChange(event.currentTarget.valueAsNumber);
-                  }}
-                />
-
-                <input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={selectedLayer.opacity}
-                  aria-label="Layer opacity value"
-                  onChange={(event) => {
-                    handleOpacityChange(event.currentTarget.valueAsNumber);
-                  }}
-                />
-              </dd>
-
-              <dt>Z-index</dt>
-              <dd>{selectedLayer.zIndex}</dd>
-
-              <dt>Visible</dt>
-              <dd>{selectedLayer.visible ? "Yes" : "No"}</dd>
-
-              <dt>Locked</dt>
-              <dd>{selectedLayer.locked ? "Yes" : "No"}</dd>
-            </dl>
-          </section>
-        ) : (
-          <p className="app-stage">Select a layer to view its properties.</p>
-        )}
+        <LayerPropertiesPanel
+          layer={selectedLayer}
+          onPatch={handleSelectedLayerPatch}
+        />
 
         <FabricSceneCanvas
           scene={scene}

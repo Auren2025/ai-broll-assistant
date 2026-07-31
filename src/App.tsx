@@ -66,8 +66,40 @@ function App() {
     setSaveError(null);
   }, []);
 
+  const handleOpacityChange = useCallback(
+    (opacity: number) => {
+      if (!scene || !selectedLayerId || !Number.isFinite(opacity)) {
+        return;
+      }
+
+      const normalizedOpacity = Math.min(1, Math.max(0, opacity));
+
+      setScene({
+        ...scene,
+        layers: scene.layers.map((layer) =>
+          layer.id === selectedLayerId
+            ? {
+                ...layer,
+                opacity: normalizedOpacity,
+              }
+            : layer,
+        ),
+      });
+
+      setIsDirty(true);
+      setSaveError(null);
+    },
+    [scene, selectedLayerId],
+  );
+
   async function handleSceneSelect(sceneId: string): Promise<void> {
-    if (!project || sceneId === scene?.id || isDirty || isSceneLoading) {
+    if (
+      !project ||
+      sceneId === scene?.id ||
+      isDirty ||
+      isSceneLoading ||
+      isSaving
+    ) {
       return;
     }
 
@@ -109,13 +141,11 @@ function App() {
   }
 
   const selectedLayer: Layer | null = scene
-    ? scene.layers.find((layer) => layer.id === selectedLayerId) ?? null
+    ? (scene.layers.find((layer) => layer.id === selectedLayerId) ?? null)
     : null;
 
   const sortedLayers: Layer[] = scene
-    ? [...scene.layers].sort(
-        (first, second) => second.zIndex - first.zIndex,
-      )
+    ? [...scene.layers].sort((first, second) => second.zIndex - first.zIndex)
     : [];
 
   if (loadError) {
@@ -205,9 +235,7 @@ function App() {
                 key={layer.id}
                 type="button"
                 aria-pressed={isSelected}
-                onClick={() =>
-                  setSelectedLayerId(isSelected ? null : layer.id)
-                }
+                onClick={() => setSelectedLayerId(isSelected ? null : layer.id)}
               >
                 {layer.name} · {layer.type}
                 {isSelected ? " · Selected" : ""}
@@ -215,6 +243,79 @@ function App() {
             );
           })}
         </div>
+
+        {selectedLayer ? (
+          <section aria-label="Layer properties">
+            <h3>Layer properties</h3>
+
+            <dl>
+              <dt>ID</dt>
+              <dd>{selectedLayer.id}</dd>
+
+              <dt>Type</dt>
+              <dd>{selectedLayer.type}</dd>
+
+              <dt>X</dt>
+              <dd>{selectedLayer.x}</dd>
+
+              <dt>Y</dt>
+              <dd>{selectedLayer.y}</dd>
+
+              <dt>Width</dt>
+              <dd>{selectedLayer.width}</dd>
+
+              <dt>Height</dt>
+              <dd>{selectedLayer.height}</dd>
+
+              <dt>Scale X</dt>
+              <dd>{selectedLayer.scaleX}</dd>
+
+              <dt>Scale Y</dt>
+              <dd>{selectedLayer.scaleY}</dd>
+
+              <dt>Rotation</dt>
+              <dd>{selectedLayer.rotation}</dd>
+
+              <dt>Opacity</dt>
+              <dd>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={selectedLayer.opacity}
+                  aria-label="Layer opacity slider"
+                  onChange={(event) => {
+                    handleOpacityChange(event.currentTarget.valueAsNumber);
+                  }}
+                />
+
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={selectedLayer.opacity}
+                  aria-label="Layer opacity value"
+                  onChange={(event) => {
+                    handleOpacityChange(event.currentTarget.valueAsNumber);
+                  }}
+                />
+              </dd>
+
+              <dt>Z-index</dt>
+              <dd>{selectedLayer.zIndex}</dd>
+
+              <dt>Visible</dt>
+              <dd>{selectedLayer.visible ? "Yes" : "No"}</dd>
+
+              <dt>Locked</dt>
+              <dd>{selectedLayer.locked ? "Yes" : "No"}</dd>
+            </dl>
+          </section>
+        ) : (
+          <p className="app-stage">Select a layer to view its properties.</p>
+        )}
 
         <FabricSceneCanvas
           scene={scene}

@@ -16,9 +16,11 @@ function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sceneError, setSceneError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSceneLoading, setIsSceneLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,6 +63,27 @@ function App() {
     setIsDirty(true);
     setSaveError(null);
   }, []);
+
+  async function handleSceneSelect(sceneId: string): Promise<void> {
+    if (!project || sceneId === scene?.id || isDirty || isSceneLoading) {
+      return;
+    }
+
+    setIsSceneLoading(true);
+    setSceneError(null);
+
+    try {
+      const loadedScene = await fetchScene(project.id, sceneId);
+
+      setScene(loadedScene);
+      setIsDirty(false);
+      setSaveError(null);
+    } catch (error: unknown) {
+      setSceneError(getErrorMessage(error));
+    } finally {
+      setIsSceneLoading(false);
+    }
+  }
 
   async function handleSave(): Promise<void> {
     if (!project || !scene || isSaving) {
@@ -107,6 +130,34 @@ function App() {
       <p className="app-subtitle">
         {project.width} × {project.height} · {project.fps} fps
       </p>
+
+      <nav aria-label="Scenes">
+        {project.scenes.map((sceneReference, index) => {
+          const isCurrent = sceneReference.id === scene.id;
+
+          return (
+            <button
+              key={sceneReference.id}
+              type="button"
+              disabled={isCurrent || isDirty || isSceneLoading || isSaving}
+              onClick={() => void handleSceneSelect(sceneReference.id)}
+            >
+              Scene {index + 1}
+              {isCurrent ? " · Current" : ""}
+            </button>
+          );
+        })}
+      </nav>
+
+      {isDirty ? (
+        <p className="app-stage">
+          Save the current scene before switching scenes.
+        </p>
+      ) : null}
+
+      {sceneError ? (
+        <p className="app-stage">Failed to load scene: {sceneError}</p>
+      ) : null}
 
       <p className="app-stage">
         Scene: {scene.topic} · {scene.layers.length} layers

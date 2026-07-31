@@ -9,6 +9,10 @@
     {
       "id": "scene-001",
       "file": "scenes/scene-001.json"
+    },
+    {
+      "id": "scene-002",
+      "file": "scenes/scene-002.json"
     }
   ]
 }

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
+import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
+import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
 import {
   LayerPropertiesPanel,
   type EditableLayerPatch,
@@ -115,6 +117,62 @@ function App() {
         return {
           ...layer,
           ...patch,
+        };
+      });
+
+      if (!changed) {
+        return;
+      }
+
+      setScene({
+        ...scene,
+        layers: updatedLayers,
+      });
+
+      setIsDirty(true);
+      setSaveError(null);
+    },
+    [scene, selectedLayerId],
+  );
+
+  const handleSelectedLayerAnimationsChange = useCallback(
+    (animations: LayerAnimation[]) => {
+      if (!scene || !selectedLayerId) {
+        return;
+      }
+
+      let changed = false;
+
+      const updatedLayers = scene.layers.map((layer) => {
+        if (layer.id !== selectedLayerId) {
+          return layer;
+        }
+
+        const isSame =
+          layer.animations.length === animations.length &&
+          layer.animations.every((animation, index) => {
+            const candidate = animations[index];
+
+            return (
+              candidate !== undefined &&
+              animation.id === candidate.id &&
+              animation.phase === candidate.phase &&
+              animation.preset === candidate.preset &&
+              animation.startFrame === candidate.startFrame &&
+              animation.durationInFrames === candidate.durationInFrames &&
+              animation.easing === candidate.easing
+            );
+          });
+
+        if (isSame) {
+          return layer;
+        }
+
+        changed = true;
+
+        return {
+          ...layer,
+          animations,
         };
       });
 
@@ -288,6 +346,12 @@ function App() {
         <LayerPropertiesPanel
           layer={selectedLayer}
           onPatch={handleSelectedLayerPatch}
+        />
+
+        <LayerAnimationPanel
+          layer={selectedLayer}
+          sceneDurationInFrames={scene.durationInFrames}
+          onAnimationsChange={handleSelectedLayerAnimationsChange}
         />
 
         <FabricSceneCanvas

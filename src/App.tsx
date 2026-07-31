@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
 import type { Project } from "./domain/projectSchema";
-import type { Scene } from "./domain/sceneSchema";
+import type { Layer, Scene } from "./domain/sceneSchema";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
 import { RemotionScenePlayer } from "./remotion/RemotionScenePlayer";
 
@@ -21,6 +21,7 @@ function App() {
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +43,7 @@ function App() {
         if (!cancelled) {
           setProject(loadedProject);
           setScene(loadedScene);
+          setSelectedLayerId(null);
           setIsDirty(false);
         }
       } catch (error: unknown) {
@@ -76,6 +78,7 @@ function App() {
       const loadedScene = await fetchScene(project.id, sceneId);
 
       setScene(loadedScene);
+      setSelectedLayerId(null);
       setIsDirty(false);
       setSaveError(null);
     } catch (error: unknown) {
@@ -104,6 +107,16 @@ function App() {
       setIsSaving(false);
     }
   }
+
+  const selectedLayer: Layer | null = scene
+    ? scene.layers.find((layer) => layer.id === selectedLayerId) ?? null
+    : null;
+
+  const sortedLayers: Layer[] = scene
+    ? [...scene.layers].sort(
+        (first, second) => second.zIndex - first.zIndex,
+      )
+    : [];
 
   if (loadError) {
     return (
@@ -176,12 +189,41 @@ function App() {
       <section>
         <h2>Fabric editor</h2>
 
+        <p className="app-stage">
+          Selected layer:{" "}
+          {selectedLayer
+            ? `${selectedLayer.name} (${selectedLayer.type})`
+            : "None"}
+        </p>
+
+        <div aria-label="Layers">
+          {sortedLayers.map((layer) => {
+            const isSelected = layer.id === selectedLayerId;
+
+            return (
+              <button
+                key={layer.id}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() =>
+                  setSelectedLayerId(isSelected ? null : layer.id)
+                }
+              >
+                {layer.name} · {layer.type}
+                {isSelected ? " · Selected" : ""}
+              </button>
+            );
+          })}
+        </div>
+
         <FabricSceneCanvas
           scene={scene}
           projectWidth={project.width}
           projectHeight={project.height}
           displayScale={0.5}
           onSceneChange={handleSceneChange}
+          onSelectedLayerChange={setSelectedLayerId}
+          selectedLayerId={selectedLayerId}
         />
       </section>
 

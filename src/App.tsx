@@ -89,6 +89,19 @@ function App() {
           return layer;
         }
 
+        if ("text" in patch) {
+          if (layer.type !== "text" || layer.text === patch.text) {
+            return layer;
+          }
+
+          changed = true;
+
+          return {
+            ...layer,
+            text: patch.text,
+          };
+        }
+
         const hasChanged = patchKeys.some(
           (key) => layer[key] !== patch[key],
         );

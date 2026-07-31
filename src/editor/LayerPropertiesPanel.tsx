@@ -1,6 +1,6 @@
 import type { Layer } from "../domain/sceneSchema";
 
-export type EditableLayerPatch = Partial<
+type CommonEditableLayerPatch = Partial<
   Pick<
     Layer,
     | "x"
@@ -13,6 +13,14 @@ export type EditableLayerPatch = Partial<
     | "opacity"
   >
 >;
+
+type TextEditableLayerPatch = {
+  text: string;
+};
+
+export type EditableLayerPatch =
+  | CommonEditableLayerPatch
+  | TextEditableLayerPatch;
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
@@ -77,6 +85,24 @@ export function LayerPropertiesPanel({
 
         <dt>Type</dt>
         <dd>{layer.type}</dd>
+
+        {layer.type === "text" ? (
+          <>
+            <dt>Text</dt>
+            <dd>
+              <textarea
+                value={layer.text}
+                aria-label="Layer text content"
+                rows={4}
+                onChange={(event) => {
+                  onPatch({
+                    text: event.currentTarget.value,
+                  });
+                }}
+              />
+            </dd>
+          </>
+        ) : null}
 
         <dt>X</dt>
         <dd>

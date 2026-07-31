@@ -12,6 +12,20 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+type EditableLayerPatch = Partial<
+  Pick<
+    Layer,
+    | "x"
+    | "y"
+    | "width"
+    | "height"
+    | "scaleX"
+    | "scaleY"
+    | "rotation"
+    | "opacity"
+  >
+>;
+
 function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -66,30 +80,80 @@ function App() {
     setSaveError(null);
   }, []);
 
-  const handleOpacityChange = useCallback(
-    (opacity: number) => {
-      if (!scene || !selectedLayerId || !Number.isFinite(opacity)) {
+  const handleSelectedLayerPatch = useCallback(
+    (patch: EditableLayerPatch) => {
+      if (!scene || !selectedLayerId) {
         return;
       }
 
-      const normalizedOpacity = Math.min(1, Math.max(0, opacity));
+      const patchKeys = Object.keys(patch) as (keyof EditableLayerPatch)[];
+
+      if (patchKeys.length === 0) {
+        return;
+      }
+
+      let changed = false;
+
+      const updatedLayers = scene.layers.map((layer) => {
+        if (layer.id !== selectedLayerId) {
+          return layer;
+        }
+
+        const hasChanged = patchKeys.some(
+          (key) => layer[key] !== patch[key],
+        );
+
+        if (!hasChanged) {
+          return layer;
+        }
+
+        changed = true;
+
+        return {
+          ...layer,
+          ...patch,
+        };
+      });
+
+      if (!changed) {
+        return;
+      }
 
       setScene({
         ...scene,
-        layers: scene.layers.map((layer) =>
-          layer.id === selectedLayerId
-            ? {
-                ...layer,
-                opacity: normalizedOpacity,
-              }
-            : layer,
-        ),
+        layers: updatedLayers,
       });
 
       setIsDirty(true);
       setSaveError(null);
     },
     [scene, selectedLayerId],
+  );
+
+  const handleOpacityChange = useCallback(
+    (opacity: number) => {
+      if (!Number.isFinite(opacity)) {
+        return;
+      }
+
+      handleSelectedLayerPatch({
+        opacity: Math.min(1, Math.max(0, opacity)),
+      });
+    },
+    [handleSelectedLayerPatch],
+  );
+
+  const handlePositionChange = useCallback(
+    (property: "x" | "y", value: number) => {
+      if (!Number.isFinite(value)) {
+        return;
+      }
+
+      handleSelectedLayerPatch({
+        [property]: value,
+      });
+    },
+    [handleSelectedLayerPatch],
   );
 
   async function handleSceneSelect(sceneId: string): Promise<void> {
@@ -256,10 +320,36 @@ function App() {
               <dd>{selectedLayer.type}</dd>
 
               <dt>X</dt>
-              <dd>{selectedLayer.x}</dd>
+              <dd>
+                <input
+                  type="number"
+                  step={1}
+                  value={selectedLayer.x}
+                  aria-label="Layer X position"
+                  onChange={(event) => {
+                    handlePositionChange(
+                      "x",
+                      event.currentTarget.valueAsNumber,
+                    );
+                  }}
+                />
+              </dd>
 
               <dt>Y</dt>
-              <dd>{selectedLayer.y}</dd>
+              <dd>
+                <input
+                  type="number"
+                  step={1}
+                  value={selectedLayer.y}
+                  aria-label="Layer Y position"
+                  onChange={(event) => {
+                    handlePositionChange(
+                      "y",
+                      event.currentTarget.valueAsNumber,
+                    );
+                  }}
+                />
+              </dd>
 
               <dt>Width</dt>
               <dd>{selectedLayer.width}</dd>

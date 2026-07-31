@@ -23,7 +23,17 @@
       "fill": "#1f2937",
       "stroke": "#4b5563",
       "strokeWidth": 4,
-      "cornerRadius": 40
+      "cornerRadius": 40,
+      "animations": [
+        {
+          "id": "scene-002-background-enter",
+          "phase": "enter",
+          "preset": "fade",
+          "startFrame": 0,
+          "durationInFrames": 18,
+          "easing": "ease-out"
+        }
+      ]
     },
     {
       "id": "scene-002-title",
@@ -48,7 +58,17 @@
       "lineHeight": 1.2,
       "letterSpacing": 0,
       "textAlign": "center",
-      "fill": "#ffffff"
+      "fill": "#ffffff",
+      "animations": [
+        {
+          "id": "scene-002-title-enter",
+          "phase": "enter",
+          "preset": "slide-left",
+          "startFrame": 8,
+          "durationInFrames": 22,
+          "easing": "ease-out"
+        }
+      ]
     }
   ]
 }

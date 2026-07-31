@@ -8,6 +8,12 @@ import { TextLayerSchema } from "./textLayerSchema";
 // - endFrame is derived from startFrame + durationInFrames and is not persisted.
 // - Higher zIndex values render in front of lower values.
 // - Layer ids and zIndex values must be unique within a scene.
+//
+// Animation time-window rule:
+// - Every animation attached to any layer of this scene must satisfy
+//   animation.startFrame + animation.durationInFrames <= scene.durationInFrames.
+//   Animation frames are local to this scene (animation.startFrame 0 means
+//   "at this scene's startFrame", not "at project frame 0").
 
 export const LayerSchema = z.discriminatedUnion("type", [
   TextLayerSchema,
@@ -50,6 +56,27 @@ export const SceneSchema = z
       } else {
         zIndexes.add(layer.zIndex);
       }
+
+      layer.animations.forEach((animation, animationIndex) => {
+        const endFrame = animation.startFrame + animation.durationInFrames;
+
+        if (endFrame > scene.durationInFrames) {
+          context.addIssue({
+            code: "custom",
+            message:
+              `Layer "${layer.id}" animation "${animation.id}" ends at ` +
+              `frame ${endFrame}, which is past the scene duration of ` +
+              `${scene.durationInFrames}.`,
+            path: [
+              "layers",
+              index,
+              "animations",
+              animationIndex,
+              "durationInFrames",
+            ],
+          });
+        }
+      });
     });
   });
 

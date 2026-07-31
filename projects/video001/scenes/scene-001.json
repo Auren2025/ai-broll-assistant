@@ -23,7 +23,17 @@
       "fill": "#111827",
       "stroke": null,
       "strokeWidth": 0,
-      "cornerRadius": 32
+      "cornerRadius": 32,
+      "animations": [
+        {
+          "id": "background-enter",
+          "phase": "enter",
+          "preset": "scale",
+          "startFrame": 0,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ]
     },
     {
       "id": "title-text",
@@ -48,7 +58,17 @@
       "lineHeight": 1.2,
       "letterSpacing": 0,
       "textAlign": "center",
-      "fill": "#ffffff"
+      "fill": "#ffffff",
+      "animations": [
+        {
+          "id": "title-enter",
+          "phase": "enter",
+          "preset": "slide-up",
+          "startFrame": 10,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ]
     }
   ]
 }

@@ -12,9 +12,11 @@
     "validate:project": "tsx scripts/validateProject.ts projects/video001"
   },
   "dependencies": {
+    "@remotion/player": "^4.0.502",
     "fabric": "^7.4.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "remotion": "^4.0.502",
     "zod": "^4.4.3"
   },
   "devDependencies": {

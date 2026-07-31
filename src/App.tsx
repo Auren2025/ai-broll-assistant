@@ -4,6 +4,7 @@ import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
 import type { Project } from "./domain/projectSchema";
 import type { Scene } from "./domain/sceneSchema";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
+import { RemotionScenePlayer } from "./remotion/RemotionScenePlayer";
 
 const PROJECT_ID = "video001";
 
@@ -121,13 +122,29 @@ function App() {
 
       {saveError ? <p className="app-stage">Save failed: {saveError}</p> : null}
 
-      <FabricSceneCanvas
-        scene={scene}
-        projectWidth={project.width}
-        projectHeight={project.height}
-        displayScale={0.5}
-        onSceneChange={handleSceneChange}
-      />
+      <section>
+        <h2>Fabric editor</h2>
+
+        <FabricSceneCanvas
+          scene={scene}
+          projectWidth={project.width}
+          projectHeight={project.height}
+          displayScale={0.5}
+          onSceneChange={handleSceneChange}
+        />
+      </section>
+
+      <section>
+        <h2>Remotion preview</h2>
+
+        <RemotionScenePlayer
+          scene={scene}
+          projectWidth={project.width}
+          projectHeight={project.height}
+          fps={project.fps}
+          displayScale={0.5}
+        />
+      </section>
     </main>
   );
 }

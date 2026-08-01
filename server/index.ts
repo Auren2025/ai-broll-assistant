@@ -82,6 +82,42 @@ async function handleGetProject(
   }
 }
 
+async function handlePutProject(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  projectId: string,
+): Promise<void> {
+  const body = await readRequestBody(req, res)
+  if (body === null) return
+
+  let project: Project
+  try {
+    project = parseProject(JSON.parse(body.toString('utf-8')))
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Invalid project data' })
+    return
+  }
+
+  if (project.id !== projectId) {
+    sendJson(res, 400, { error: 'Project id does not match route' })
+    return
+  }
+
+  const projectPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
+  const tempPath = buildSceneTempPath(projectPath)
+
+  try {
+    await fs.writeFile(tempPath, JSON.stringify(project, null, 2) + '\n', 'utf-8')
+    await fs.rename(tempPath, projectPath)
+    sendJson(res, 200, project)
+  } catch (err) {
+    console.error(err)
+    await fs.unlink(tempPath).catch(() => {})
+    sendJson(res, 500, { error: 'Failed to save project' })
+  }
+}
+
 async function handleGetScene(
   res: http.ServerResponse,
   projectId: string,
@@ -464,11 +500,15 @@ const server = http.createServer((req, res) => {
     }
 
     if (restAfterProject === '') {
-      if (method !== 'GET') {
-        sendJson(res, 405, { error: 'Method not allowed' })
+      if (method === 'GET') {
+        handleGetProject(res, projectIdPart)
         return
       }
-      handleGetProject(res, projectIdPart)
+      if (method === 'PUT') {
+        void handlePutProject(req, res, projectIdPart)
+        return
+      }
+      sendJson(res, 405, { error: 'Method not allowed' })
       return
     }
 

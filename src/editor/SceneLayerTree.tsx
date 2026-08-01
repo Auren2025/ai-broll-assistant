@@ -2,14 +2,39 @@ import { useEffect, useState, type MouseEvent } from "react";
 import type { SceneReference } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
 
+type InspectorScope = "scene" | "layer";
+
+function getLayerIcon(type: Scene["layers"][number]["type"]): string {
+  switch (type) {
+    case "text":
+      return "T";
+    case "circle":
+      return "○";
+    case "triangle":
+      return "△";
+    case "line":
+      return "―";
+    case "arrow":
+      return "→";
+    default:
+      return "□";
+  }
+}
+
 interface SceneLayerTreeProps {
   sceneReferences: readonly SceneReference[];
   scenesById: Readonly<Record<string, Scene>>;
   currentSceneId: string;
   selectedLayerIds: readonly string[];
+  inspectorScope: InspectorScope;
   isSceneSwitchDisabled: boolean;
   onSceneSelect: (sceneId: string) => void;
   onLayerSelect: (sceneId: string, layerId: string, additive: boolean) => void;
+  onLayerStateChange: (
+    sceneId: string,
+    layerId: string,
+    patch: { locked?: boolean; visible?: boolean },
+  ) => void;
 }
 
 export function SceneLayerTree({
@@ -17,9 +42,11 @@ export function SceneLayerTree({
   scenesById,
   currentSceneId,
   selectedLayerIds,
+  inspectorScope,
   isSceneSwitchDisabled,
   onSceneSelect,
   onLayerSelect,
+  onLayerStateChange,
 }: SceneLayerTreeProps) {
   const [expandedSceneIds, setExpandedSceneIds] = useState<string[]>([
     currentSceneId,
@@ -64,6 +91,7 @@ export function SceneLayerTree({
           const scene = scenesById[sceneReference.id];
           const isCurrent = sceneReference.id === currentSceneId;
           const isExpanded = expandedSceneIds.includes(sceneReference.id);
+          const isSceneSelected = isCurrent && inspectorScope === "scene";
           const sortedLayers = scene
             ? [...scene.layers].sort(
                 (first, second) => second.zIndex - first.zIndex,
@@ -72,7 +100,11 @@ export function SceneLayerTree({
 
           return (
             <div className="scene-tree-node" key={sceneReference.id}>
-              <div className={`scene-tree-row${isCurrent ? " is-current" : ""}`}>
+              <div
+                className={`scene-tree-row${isCurrent ? " is-current" : ""}${
+                  isSceneSelected ? " is-scene-selected" : ""
+                }`}
+              >
                 <button
                   className="tree-toggle"
                   type="button"
@@ -86,13 +118,12 @@ export function SceneLayerTree({
                   className="scene-tree-main"
                   type="button"
                   aria-current={isCurrent ? "page" : undefined}
-                  disabled={isCurrent || isSceneSwitchDisabled}
+                  disabled={isSceneSwitchDisabled}
                   onClick={() => onSceneSelect(sceneReference.id)}
                 >
                   <span className="scene-number">{index + 1}</span>
                   <span className="scene-copy">
-                    <strong>{sceneReference.id}</strong>
-                    <small>{scene?.topic ?? "Loading scene…"}</small>
+                    <strong>Scene {index + 1}</strong>
                   </span>
                   {isCurrent ? <span className="current-marker" /> : null}
                 </button>
@@ -105,29 +136,63 @@ export function SceneLayerTree({
                       isCurrent && selectedLayerIds.includes(layer.id);
 
                     return (
-                      <button
+                      <div
                         className={`layer-item${isSelected ? " is-selected" : ""}`}
                         key={layer.id}
-                        type="button"
-                        aria-pressed={isSelected}
-                        disabled={!isCurrent && isSceneSwitchDisabled}
-                        onClick={(event) =>
-                          handleLayerClick(
-                            event,
-                            sceneReference.id,
-                            layer.id,
-                          )
-                        }
                       >
-                        <span className={`layer-icon layer-icon-${layer.type}`}>
-                          {layer.type === "text" ? "T" : "□"}
-                        </span>
-                        <span className="layer-copy">
-                          <strong>{layer.name}</strong>
-                          <small>{layer.type}</small>
-                        </span>
-                        <span className="layer-index">{layer.zIndex}</span>
-                      </button>
+                        <button
+                          className="layer-item-main"
+                          type="button"
+                          aria-pressed={isSelected}
+                          disabled={!isCurrent && isSceneSwitchDisabled}
+                          onClick={(event) =>
+                            handleLayerClick(
+                              event,
+                              sceneReference.id,
+                              layer.id,
+                            )
+                          }
+                        >
+                          <span className={`layer-icon layer-icon-${layer.type}`}>
+                            {getLayerIcon(layer.type)}
+                          </span>
+                          <strong className="layer-type-name">
+                            {layer.type.charAt(0).toUpperCase() + layer.type.slice(1)}
+                          </strong>
+                        </button>
+                        <button
+                          className={`layer-state-button layer-lock-button${
+                            layer.locked ? " is-active" : ""
+                          }`}
+                          type="button"
+                          aria-label={`${layer.locked ? "Unlock" : "Lock"} ${layer.name}`}
+                          aria-pressed={layer.locked}
+                          disabled={!isCurrent}
+                          onClick={() =>
+                            onLayerStateChange(sceneReference.id, layer.id, {
+                              locked: !layer.locked,
+                            })
+                          }
+                        >
+                          <span aria-hidden="true" />
+                        </button>
+                        <button
+                          className={`layer-state-button layer-visibility-button${
+                            layer.visible ? " is-active" : ""
+                          }`}
+                          type="button"
+                          aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`}
+                          aria-pressed={layer.visible}
+                          disabled={!isCurrent}
+                          onClick={() =>
+                            onLayerStateChange(sceneReference.id, layer.id, {
+                              visible: !layer.visible,
+                            })
+                          }
+                        >
+                          <span aria-hidden="true" />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>

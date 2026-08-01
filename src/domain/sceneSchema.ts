@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { ArrowLayerSchema } from "./arrowLayerSchema";
 import { CircleLayerSchema } from "./circleLayerSchema";
+import { LineLayerSchema } from "./lineLayerSchema";
 import { RectangleLayerSchema } from "./rectangleLayerSchema";
 import { TextLayerSchema } from "./textLayerSchema";
 import { TriangleLayerSchema } from "./triangleLayerSchema";
@@ -22,6 +24,8 @@ export const LayerSchema = z.discriminatedUnion("type", [
   RectangleLayerSchema,
   CircleLayerSchema,
   TriangleLayerSchema,
+  LineLayerSchema,
+  ArrowLayerSchema,
 ]);
 
 export type Layer = z.infer<typeof LayerSchema>;
@@ -33,6 +37,7 @@ export const SceneSchema = z
     topic: z.string().min(1),
     startFrame: z.number().int().nonnegative(),
     durationInFrames: z.number().int().positive(),
+    backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
     layers: z.array(LayerSchema),
   })
   .strict()

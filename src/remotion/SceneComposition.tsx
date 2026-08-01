@@ -29,7 +29,7 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: "transparent",
+        backgroundColor: scene.backgroundColor ?? "transparent",
         overflow: "hidden",
       }}
     >
@@ -116,6 +116,68 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
                   stroke={layer.stroke ?? "none"}
                   strokeWidth={layer.strokeWidth}
                 />
+              </svg>
+            </div>
+          );
+        }
+
+        if (layer.type === "line") {
+          return (
+            <div key={layer.id} style={style}>
+              <svg
+                width={layer.width}
+                height={layer.height}
+                viewBox={`0 0 ${layer.width} ${layer.height}`}
+                overflow="visible"
+              >
+                <g transform={`translate(${layer.width / 2} ${layer.height / 2})`}>
+                  <line
+                    x1={-layer.width / 2}
+                    y1={0}
+                    x2={layer.width / 2}
+                    y2={0}
+                    stroke={layer.stroke}
+                    strokeWidth={layer.strokeWidth}
+                    strokeLinecap="butt"
+                  />
+                </g>
+              </svg>
+            </div>
+          );
+        }
+
+        if (layer.type === "arrow") {
+          const arrowHeadSize = Math.max(
+            0,
+            Math.min(layer.arrowHeadSize, layer.width, layer.height),
+          );
+          const shaftWidth = Math.max(0, layer.width - arrowHeadSize);
+
+          return (
+            <div key={layer.id} style={style}>
+              <svg
+                width={layer.width}
+                height={layer.height}
+                viewBox={`0 0 ${layer.width} ${layer.height}`}
+                overflow="visible"
+              >
+                <g transform={`translate(${layer.width / 2} ${layer.height / 2})`}>
+                  {shaftWidth > 0 ? (
+                    <rect
+                      x={-layer.width / 2}
+                      y={-layer.strokeWidth / 2}
+                      width={shaftWidth}
+                      height={layer.strokeWidth}
+                      fill={layer.stroke}
+                    />
+                  ) : null}
+                  {arrowHeadSize > 0 ? (
+                    <polygon
+                      points={`${layer.width / 2 - arrowHeadSize},${-layer.height / 2} ${layer.width / 2},0 ${layer.width / 2 - arrowHeadSize},${layer.height / 2}`}
+                      fill={layer.stroke}
+                    />
+                  ) : null}
+                </g>
               </svg>
             </div>
           );

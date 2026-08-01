@@ -8,7 +8,6 @@
     {
       "id": "background-card",
       "name": "Background Card",
-      "type": "rectangle",
       "x": 160,
       "y": 280,
       "width": 1600,
@@ -20,10 +19,6 @@
       "zIndex": 0,
       "visible": true,
       "locked": false,
-      "fill": "#111827",
-      "stroke": null,
-      "strokeWidth": 0,
-      "cornerRadius": 32,
       "animations": [
         {
           "id": "background-enter",
@@ -33,12 +28,16 @@
           "durationInFrames": 20,
           "easing": "ease-out"
         }
-      ]
+      ],
+      "type": "rectangle",
+      "fill": "#111827",
+      "stroke": null,
+      "strokeWidth": 0,
+      "cornerRadius": 32
     },
     {
       "id": "title-text",
       "name": "Title",
-      "type": "text",
       "x": 240,
       "y": 420,
       "width": 1440,
@@ -50,15 +49,6 @@
       "zIndex": 1,
       "visible": true,
       "locked": false,
-      "text": "AI-Broll-Assistant",
-      "fontFamily": "Arial",
-      "fontSize": 96,
-      "fontWeight": 700,
-      "fontStyle": "normal",
-      "lineHeight": 1.2,
-      "letterSpacing": 0,
-      "textAlign": "center",
-      "fill": "#ffffff",
       "animations": [
         {
           "id": "title-enter",
@@ -84,7 +74,17 @@
           "durationInFrames": 20,
           "easing": "ease-in"
         }
-      ]
+      ],
+      "type": "text",
+      "text": "AI-Broll-Assistant",
+      "fontFamily": "Arial",
+      "fontSize": 96,
+      "fontWeight": 700,
+      "fontStyle": "normal",
+      "lineHeight": 1.2,
+      "letterSpacing": 0,
+      "textAlign": "center",
+      "fill": "#ffffff"
     }
   ]
 }

@@ -7,6 +7,8 @@ interface EditorToolbarProps {
   onAddRectangle: () => void;
   onAddCircle: () => void;
   onAddTriangle: () => void;
+  onAddLine: () => void;
+  onAddArrow: () => void;
   onAddScene: () => void;
   onOpenPreview: () => void;
   onSave: () => void;
@@ -21,6 +23,8 @@ export function EditorToolbar({
   onAddRectangle,
   onAddCircle,
   onAddTriangle,
+  onAddLine,
+  onAddArrow,
   onAddScene,
   onOpenPreview,
   onSave,
@@ -72,6 +76,24 @@ export function EditorToolbar({
         >
           <span className="tool-symbol">△</span>
           Triangle
+        </button>
+        <button
+          className="editor-tool"
+          type="button"
+          title="Add line"
+          onClick={onAddLine}
+        >
+          <span className="tool-symbol">―</span>
+          Line
+        </button>
+        <button
+          className="editor-tool"
+          type="button"
+          title="Add arrow"
+          onClick={onAddArrow}
+        >
+          <span className="tool-symbol">⇨</span>
+          Arrow
         </button>
       </div>
       <div className="editor-toolbar-actions">

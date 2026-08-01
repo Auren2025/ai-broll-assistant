@@ -24,10 +24,23 @@ type ShapeEditableLayerPatch = {
   strokeWidth?: number;
 };
 
+type LineEditableLayerPatch = {
+  stroke?: string;
+  strokeWidth?: number;
+};
+
+type ArrowEditableLayerPatch = {
+  stroke?: string;
+  strokeWidth?: number;
+  arrowHeadSize?: number;
+};
+
 export type EditableLayerPatch =
   | CommonEditableLayerPatch
   | TextEditableLayerPatch
-  | ShapeEditableLayerPatch;
+  | ShapeEditableLayerPatch
+  | LineEditableLayerPatch
+  | ArrowEditableLayerPatch;
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
@@ -51,6 +64,8 @@ export function LayerPropertiesPanel({
   if (!layer) {
     return <p className="app-stage">Select a layer to view its properties.</p>;
   }
+
+  const currentLayer = layer;
 
   function patchPosition(property: "x" | "y", value: number): void {
     if (!Number.isFinite(value)) {
@@ -97,10 +112,39 @@ export function LayerPropertiesPanel({
       return;
     }
 
+    if (
+      currentLayer.type === "line" ||
+      currentLayer.type === "arrow"
+    ) {
+      onPatch({
+        strokeWidth: Math.max(1, value),
+      });
+      return;
+    }
+
     onPatch({
       strokeWidth: Math.max(0, value),
     });
   }
+
+  function patchArrowHeadSize(value: number): void {
+    if (!Number.isFinite(value) || currentLayer.type !== "arrow") {
+      return;
+    }
+
+    onPatch({
+      arrowHeadSize: Math.max(4, value),
+    });
+  }
+
+  const isFilledShape =
+    layer.type === "rectangle" ||
+    layer.type === "circle" ||
+    layer.type === "triangle";
+  const isStrokedShape =
+    isFilledShape || layer.type === "line" || layer.type === "arrow";
+  const isArrow = layer.type === "arrow";
+  const filledShapeStrokePlaceholder = isFilledShape ? "None" : undefined;
 
   return (
     <section className="inspector-panel" aria-label="Layer properties">
@@ -131,9 +175,7 @@ export function LayerPropertiesPanel({
           </>
         ) : null}
 
-        {layer.type === "rectangle" ||
-        layer.type === "circle" ||
-        layer.type === "triangle" ? (
+        {isFilledShape ? (
           <>
             <dt>Fill</dt>
             <dd>
@@ -146,17 +188,25 @@ export function LayerPropertiesPanel({
                 }}
               />
             </dd>
+          </>
+        ) : null}
 
+        {isStrokedShape ? (
+          <>
             <dt>Stroke</dt>
             <dd>
               <input
                 type="text"
-                value={layer.stroke ?? ""}
-                placeholder="None"
+                value={isFilledShape ? (layer.stroke ?? "") : layer.stroke}
+                placeholder={filledShapeStrokePlaceholder}
                 aria-label="Layer stroke color"
                 onChange={(event) => {
                   const value = event.currentTarget.value.trim();
-                  onPatch({ stroke: value === "" ? null : value });
+                  if (isFilledShape) {
+                    onPatch({ stroke: value === "" ? null : value });
+                  } else {
+                    onPatch({ stroke: value === "" ? "#000000" : value });
+                  }
                 }}
               />
             </dd>
@@ -165,12 +215,30 @@ export function LayerPropertiesPanel({
             <dd>
               <input
                 type="number"
-                min={0}
+                min={isFilledShape ? 0 : 1}
                 step={1}
                 value={layer.strokeWidth}
                 aria-label="Layer stroke width"
                 onChange={(event) => {
                   patchStrokeWidth(event.currentTarget.valueAsNumber);
+                }}
+              />
+            </dd>
+          </>
+        ) : null}
+
+        {isArrow ? (
+          <>
+            <dt>Arrow head size</dt>
+            <dd>
+              <input
+                type="number"
+                min={4}
+                step={1}
+                value={layer.arrowHeadSize}
+                aria-label="Arrow head size"
+                onChange={(event) => {
+                  patchArrowHeadSize(event.currentTarget.valueAsNumber);
                 }}
               />
             </dd>

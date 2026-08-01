@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { createScene, fetchProject, fetchScene, saveScene } from "./api/projectApi";
+import {
+  createScene,
+  fetchProject,
+  fetchScene,
+  saveProject,
+  saveScene,
+} from "./api/projectApi";
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
@@ -13,6 +19,7 @@ import {
   type EditableLayerPatch,
 } from "./editor/LayerPropertiesPanel";
 import { SceneLayerTree } from "./editor/SceneLayerTree";
+import { ScenePropertiesPanel } from "./editor/ScenePropertiesPanel";
 import {
   PREVIEW_CHANNEL_NAME,
   type PreviewStateMessage,
@@ -22,7 +29,8 @@ import {
 const PROJECT_ID = "video001";
 
 type InspectorTab = "design" | "animate";
-type AddableLayerType = "text" | "rectangle" | "circle" | "triangle";
+type InspectorScope = "scene" | "layer";
+type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "line" | "arrow";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -275,6 +283,7 @@ function App() {
   const [isSceneLoading, setIsSceneLoading] = useState(false);
   const [isCreatingScene, setIsCreatingScene] = useState(false);
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
+  const [inspectorScope, setInspectorScope] = useState<InspectorScope>("scene");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
@@ -369,11 +378,40 @@ function App() {
     setSaveError(null);
   }, []);
 
+  const handleProjectChange = useCallback((updatedProject: Project) => {
+    setProject(updatedProject);
+    setIsDirty(true);
+    setSaveError(null);
+  }, []);
+
   const handleSelectedLayerIdsChange = useCallback((layerIds: string[]) => {
     setSelectedLayerIds((currentLayerIds) =>
       hasSameLayerIds(currentLayerIds, layerIds) ? currentLayerIds : layerIds,
     );
+    setInspectorScope(layerIds.length > 0 ? "layer" : "scene");
   }, []);
+
+  const handleLayerStateChange = useCallback(
+    (
+      sceneId: string,
+      layerId: string,
+      patch: { locked?: boolean; visible?: boolean },
+    ) => {
+      if (!scene || scene.id !== sceneId) {
+        return;
+      }
+
+      const updatedScene = {
+        ...scene,
+        layers: scene.layers.map((layer) =>
+          layer.id === layerId ? { ...layer, ...patch } : layer,
+        ),
+      } as Scene;
+
+      handleSceneChange(updatedScene);
+    },
+    [handleSceneChange, scene],
+  );
 
   const handleAlign = useCallback(
     (action: AlignmentAction) => {
@@ -496,10 +534,52 @@ function App() {
             stroke: null,
             strokeWidth: 0,
           };
+        case "line":
+          return {
+            id,
+            name: "Line",
+            type: "line",
+            x: (project.width - 360) / 2,
+            y: (project.height - 6) / 2,
+            width: 360,
+            height: 6,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            opacity: 1,
+            zIndex,
+            visible: true,
+            locked: false,
+            animations: [],
+            stroke: "#1f2937",
+            strokeWidth: 6,
+          };
+        case "arrow":
+          return {
+            id,
+            name: "Arrow",
+            type: "arrow",
+            x: (project.width - 360) / 2,
+            y: (project.height - 24) / 2,
+            width: 360,
+            height: 24,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            opacity: 1,
+            zIndex,
+            visible: true,
+            locked: false,
+            animations: [],
+            stroke: "#1f2937",
+            strokeWidth: 6,
+            arrowHeadSize: 24,
+          };
       }
     })();
 
     setSelectedLayerIds([layer.id]);
+    setInspectorScope("layer");
     handleSceneChange({
       ...scene,
       layers: [...scene.layers, layer],
@@ -551,7 +631,7 @@ function App() {
         return {
           ...layer,
           ...patch,
-        };
+        } as Layer;
       });
 
       if (!changed) {
@@ -628,14 +708,19 @@ function App() {
   async function handleSceneSelect(
     sceneId: string,
     nextSelectedLayerIds: string[] = [],
+    nextScope: InspectorScope = "scene",
   ): Promise<void> {
-    if (
-      !project ||
-      sceneId === scene?.id ||
-      isDirty ||
-      isSceneLoading ||
-      isSaving
-    ) {
+    if (!project) {
+      return;
+    }
+
+    if (sceneId === scene?.id) {
+      setSelectedLayerIds(nextSelectedLayerIds);
+      setInspectorScope(nextScope);
+      return;
+    }
+
+    if (isDirty || isSceneLoading || isSaving) {
       return;
     }
 
@@ -651,6 +736,7 @@ function App() {
         [loadedScene.id]: loadedScene,
       }));
       setSelectedLayerIds(nextSelectedLayerIds);
+      setInspectorScope(nextScope);
       setIsDirty(false);
       setSaveError(null);
     } catch (error: unknown) {
@@ -666,7 +752,7 @@ function App() {
     additive: boolean,
   ): void {
     if (sceneId !== scene?.id) {
-      void handleSceneSelect(sceneId, [layerId]);
+      void handleSceneSelect(sceneId, [layerId], "layer");
       return;
     }
 
@@ -681,6 +767,7 @@ function App() {
         ? currentLayerIds.filter((candidate) => candidate !== layerId)
         : [...currentLayerIds, layerId];
     });
+    setInspectorScope("layer");
   }
 
   async function handleSave(): Promise<void> {
@@ -692,8 +779,12 @@ function App() {
     setSaveError(null);
 
     try {
-      const savedScene = await saveScene(project.id, scene);
+      const [savedProject, savedScene] = await Promise.all([
+        saveProject(project),
+        saveScene(project.id, scene),
+      ]);
 
+      setProject(savedProject);
       setScene(savedScene);
       setScenesById((current) => ({
         ...current,
@@ -733,6 +824,7 @@ function App() {
         [newScene.id]: newScene,
       }));
       setSelectedLayerIds([]);
+      setInspectorScope("scene");
       setIsDirty(false);
       setSaveError(null);
     } catch (error: unknown) {
@@ -791,6 +883,8 @@ function App() {
     ...scenesById,
     [scene.id]: scene,
   };
+  const sceneNumber =
+    project.scenes.findIndex((reference) => reference.id === scene.id) + 1;
   const saveStatus = isSaving
     ? "Saving changes…"
     : isDirty
@@ -834,6 +928,8 @@ function App() {
             onAddRectangle={() => handleAddLayer("rectangle")}
             onAddCircle={() => handleAddLayer("circle")}
             onAddTriangle={() => handleAddLayer("triangle")}
+            onAddLine={() => handleAddLayer("line")}
+            onAddArrow={() => handleAddLayer("arrow")}
             onAddScene={() => void handleAddScene()}
             onOpenPreview={handleOpenPreview}
             onSave={() => void handleSave()}
@@ -848,9 +944,11 @@ function App() {
             scenesById={scenesForTree}
             currentSceneId={scene.id}
             selectedLayerIds={selectedLayerIds}
+            inspectorScope={inspectorScope}
             isSceneSwitchDisabled={isDirty || isSceneLoading || isSaving}
             onSceneSelect={(sceneId) => void handleSceneSelect(sceneId)}
             onLayerSelect={handleTreeLayerSelect}
+            onLayerStateChange={handleLayerStateChange}
           />
         </aside>
 
@@ -897,26 +995,47 @@ function App() {
           </div>
 
           <div className="inspector-scroll">
-            <div className="selection-summary">
-              <span>
-                {selectedLayerIds.length > 1
-                  ? "Selected layers"
-                  : "Selected layer"}
-              </span>
-              <strong>
-                {selectedLayerIds.length > 1
-                  ? `${selectedLayerIds.length} layers`
-                  : (selectedLayer?.name ?? "None")}
-              </strong>
-              {selectedLayer ? <small>{selectedLayer.type}</small> : null}
-            </div>
+            {inspectorScope === "scene" ? null : (
+              <div className="selection-summary">
+                <span>
+                  {selectedLayerIds.length > 1
+                    ? "Selected layers"
+                    : "Selected layer"}
+                </span>
+                <strong>
+                  {selectedLayerIds.length > 1
+                    ? `${selectedLayerIds.length} layers`
+                    : (selectedLayer?.name ?? "None")}
+                </strong>
+                {selectedLayer ? <small>{selectedLayer.type}</small> : null}
+              </div>
+            )}
 
             {inspectorTab === "design" ? (
-              <LayerPropertiesPanel
-                layer={selectedLayer}
-                selectionCount={selectedLayerIds.length}
-                onPatch={handleSelectedLayerPatch}
-              />
+              inspectorScope === "scene" ? (
+                <ScenePropertiesPanel
+                  key={scene.id}
+                  scene={scene}
+                  project={project}
+                  sceneNumber={sceneNumber}
+                  onProjectChange={handleProjectChange}
+                  onSceneChange={handleSceneChange}
+                />
+              ) : selectedLayerIds.length > 1 ? (
+                <p className="app-stage multiple-selection-message">
+                  Multiple layers selected: {selectedLayerIds.length}
+                </p>
+              ) : (
+                <LayerPropertiesPanel
+                  layer={selectedLayer}
+                  selectionCount={selectedLayerIds.length}
+                  onPatch={handleSelectedLayerPatch}
+                />
+              )
+            ) : inspectorScope === "scene" ? (
+              <p className="app-stage scene-animations-message">
+                Scene animations are not supported yet.
+              </p>
             ) : selectedLayerIds.length > 1 ? (
               <p className="app-stage multiple-selection-message">
                 Select one layer to edit animations.

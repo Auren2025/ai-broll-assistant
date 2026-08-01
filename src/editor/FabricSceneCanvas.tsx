@@ -1,7 +1,92 @@
 import { useCallback, useEffect, useRef } from "react";
-import { ActiveSelection, Canvas, Circle, Rect, Textbox, Triangle } from "fabric";
-import type { FabricObject } from "fabric";
+import {
+  ActiveSelection,
+  Canvas,
+  Circle,
+  FabricObject,
+  Rect,
+  Textbox,
+  Triangle,
+  classRegistry,
+} from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
+
+class FabricLineObject extends FabricObject {
+  static type = "FabricLine";
+
+  declare stroke: string;
+  declare strokeWidth: number;
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    this.stroke = (options.stroke as string | undefined) ?? "#1f2937";
+    this.strokeWidth = (options.strokeWidth as number | undefined) ?? 6;
+  }
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    const w = this.width;
+    const sw = this.strokeWidth;
+
+    if (w <= 0 || sw <= 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = this.stroke;
+    ctx.fillRect(-w / 2, -sw / 2, w, sw);
+    ctx.restore();
+  }
+}
+
+class FabricArrowObject extends FabricObject {
+  static type = "FabricArrow";
+
+  declare stroke: string;
+  declare strokeWidth: number;
+  declare arrowHeadSize: number;
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    this.stroke = (options.stroke as string | undefined) ?? "#1f2937";
+    this.strokeWidth = (options.strokeWidth as number | undefined) ?? 6;
+    this.arrowHeadSize = (options.arrowHeadSize as number | undefined) ?? 24;
+  }
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    const w = this.width;
+    const h = this.height;
+    const sw = this.strokeWidth;
+    const ah = Math.max(0, Math.min(this.arrowHeadSize, w, h));
+
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = this.stroke;
+
+    const shaftWidth = w - ah;
+
+    if (sw > 0 && shaftWidth > 0) {
+      ctx.fillRect(-w / 2, -sw / 2, shaftWidth, sw);
+    }
+
+    if (ah > 0) {
+      const baseX = w / 2 - ah;
+      ctx.beginPath();
+      ctx.moveTo(baseX, -h / 2);
+      ctx.lineTo(w / 2, 0);
+      ctx.lineTo(baseX, h / 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+classRegistry.setClass(FabricLineObject);
+classRegistry.setClass(FabricArrowObject);
 
 interface FabricSceneCanvasProps {
   scene: Scene;
@@ -117,6 +202,25 @@ function applyLayerToFabricObject(
     return;
   }
 
+  if (layer.type === "line" && object instanceof FabricLineObject) {
+    object.set({
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+    });
+    object.setCoords();
+    return;
+  }
+
+  if (layer.type === "arrow" && object instanceof FabricArrowObject) {
+    object.set({
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+      arrowHeadSize: layer.arrowHeadSize,
+    });
+    object.setCoords();
+    return;
+  }
+
   if (layer.type === "text" && object instanceof Textbox) {
     const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
 
@@ -154,6 +258,15 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
         originY: "center",
       });
       break;
+    case "line":
+      object = new FabricLineObject({ originX: "center", originY: "center" });
+      break;
+    case "arrow":
+      object = new FabricArrowObject({
+        originX: "center",
+        originY: "center",
+      });
+      break;
   }
 
   applyLayerToFabricObject(object, layer);
@@ -173,6 +286,10 @@ function isFabricObjectForLayer(
       return object instanceof Triangle;
     case "text":
       return object instanceof Textbox;
+    case "line":
+      return object instanceof FabricLineObject;
+    case "arrow":
+      return object instanceof FabricArrowObject;
   }
 }
 
@@ -286,6 +403,7 @@ export function FabricSceneCanvas({
     const canvas = new Canvas(canvasElement, {
       width: projectWidth * displayScale,
       height: projectHeight * displayScale,
+      backgroundColor: sceneRef.current.backgroundColor ?? "transparent",
       selection: true,
       selectionKey: "shiftKey",
       preserveObjectStacking: true,
@@ -395,6 +513,7 @@ export function FabricSceneCanvas({
 
     try {
       canvas.discardActiveObject();
+      canvas.backgroundColor = scene.backgroundColor ?? "transparent";
 
       for (const [layerId, object] of layerIdToObject) {
         if (!desiredLayerIds.has(layerId)) {
@@ -440,7 +559,7 @@ export function FabricSceneCanvas({
         width: projectWidth * displayScale,
         height: projectHeight * displayScale,
         overflow: "hidden",
-        background: "transparent",
+        background: scene.backgroundColor ?? "transparent",
       }}
     >
       <canvas ref={canvasElementRef} />

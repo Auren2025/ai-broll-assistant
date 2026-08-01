@@ -43,6 +43,22 @@ export async function fetchProject(projectId: string): Promise<Project> {
   return parseProject(input);
 }
 
+export async function saveProject(project: Project): Promise<Project> {
+  const validatedProject = parseProject(project);
+  const input = await fetchJson(
+    `/api/projects/${encodeURIComponent(validatedProject.id)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(validatedProject),
+    },
+  );
+
+  return parseProject(input);
+}
+
 export async function fetchScene(
   projectId: string,
   sceneId: string,

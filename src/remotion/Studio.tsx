@@ -72,6 +72,10 @@ const studioCalculateMetadata: CalculateMetadataFunction<StudioProps> =
       height: project.height,
       fps: project.fps,
       durationInFrames: getProjectDurationInFrames(scenes),
+      defaultCodec: "prores",
+      defaultVideoImageFormat: "png",
+      defaultPixelFormat: "yuva444p10le",
+      defaultProResProfile: "4444",
     };
   };
 

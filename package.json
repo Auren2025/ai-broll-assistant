@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "dev:server": "tsx watch server/index.ts",
     "studio": "remotion studio src/remotion/Studio.tsx",
+    "render:project": "remotion render src/remotion/Studio.tsx Video001 projects/video001/renders/video001.mov --image-format=png --pixel-format=yuva444p10le --codec=prores --prores-profile=4444",
     "validate:project": "tsx scripts/validateProject.ts projects/video001"
   },
   "dependencies": {

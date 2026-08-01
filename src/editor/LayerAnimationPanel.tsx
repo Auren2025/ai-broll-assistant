@@ -72,17 +72,38 @@ function defaultPhaseAnimation(
     };
   }
 
+  if (phase === "exit") {
+    return {
+      phase: "exit",
+      preset: "fade",
+      startFrame: Math.max(0, sceneDurationInFrames - 20),
+      durationInFrames: Math.min(20, sceneDurationInFrames),
+      easing: "ease-in",
+    };
+  }
+
+  const emphasisDuration = Math.min(24, sceneDurationInFrames);
+
   return {
-    phase: "exit",
-    preset: "fade",
-    startFrame: Math.max(0, sceneDurationInFrames - 20),
-    durationInFrames: Math.min(20, sceneDurationInFrames),
-    easing: "ease-in",
+    phase: "emphasis",
+    preset: "scale",
+    startFrame: Math.floor(
+      (sceneDurationInFrames - emphasisDuration) / 2,
+    ),
+    durationInFrames: emphasisDuration,
+    easing: "ease-in-out",
   };
 }
 
 function phaseLabel(phase: AnimationPhase): string {
-  return phase === "enter" ? "Enter" : "Exit";
+  switch (phase) {
+    case "enter":
+      return "Enter";
+    case "exit":
+      return "Exit";
+    case "emphasis":
+      return "Emphasis";
+  }
 }
 
 interface PhaseEditorProps {
@@ -305,6 +326,11 @@ export function LayerAnimationPanel({
       (animation) => animation.phase === "enter",
     ) ?? null;
 
+  const emphasisAnimation =
+    layer.animations.find(
+      (animation) => animation.phase === "emphasis",
+    ) ?? null;
+
   const exitAnimation =
     layer.animations.find(
       (animation) => animation.phase === "exit",
@@ -317,6 +343,14 @@ export function LayerAnimationPanel({
       <PhaseEditor
         phase="enter"
         animation={enterAnimation}
+        layer={layer}
+        sceneDurationInFrames={sceneDurationInFrames}
+        onAnimationsChange={onAnimationsChange}
+      />
+
+      <PhaseEditor
+        phase="emphasis"
+        animation={emphasisAnimation}
         layer={layer}
         sceneDurationInFrames={sceneDurationInFrames}
         onAnimationsChange={onAnimationsChange}

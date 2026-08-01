@@ -73,3 +73,34 @@ export async function saveScene(
 
   return parseScene(input);
 }
+
+export interface CreateSceneResult {
+  project: Project;
+  scene: Scene;
+}
+
+export async function createScene(
+  projectId: string,
+): Promise<CreateSceneResult> {
+  const input = await fetchJson(
+    `/api/projects/${encodeURIComponent(projectId)}/scenes`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("project" in input) ||
+    !("scene" in input)
+  ) {
+    throw new Error("Server returned an unexpected payload for create scene");
+  }
+
+  const payload = input as { project: unknown; scene: unknown };
+  const project = parseProject(payload.project);
+  const scene = parseScene(payload.scene);
+
+  return { project, scene };
+}

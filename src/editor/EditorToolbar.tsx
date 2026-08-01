@@ -1,10 +1,13 @@
 interface EditorToolbarProps {
   isSaving: boolean;
   isSaveDisabled: boolean;
+  isAddSceneDisabled: boolean;
+  isCreatingScene: boolean;
   onAddText: () => void;
   onAddRectangle: () => void;
   onAddCircle: () => void;
   onAddTriangle: () => void;
+  onAddScene: () => void;
   onOpenPreview: () => void;
   onSave: () => void;
 }
@@ -12,10 +15,13 @@ interface EditorToolbarProps {
 export function EditorToolbar({
   isSaving,
   isSaveDisabled,
+  isAddSceneDisabled,
+  isCreatingScene,
   onAddText,
   onAddRectangle,
   onAddCircle,
   onAddTriangle,
+  onAddScene,
   onOpenPreview,
   onSave,
 }: EditorToolbarProps) {
@@ -69,6 +75,20 @@ export function EditorToolbar({
         </button>
       </div>
       <div className="editor-toolbar-actions">
+        <button
+          className="button-secondary"
+          type="button"
+          disabled={isAddSceneDisabled}
+          title={
+            isAddSceneDisabled
+              ? "Save current scene first before adding a new scene"
+              : "Add a new scene"
+          }
+          aria-label="Add scene"
+          onClick={onAddScene}
+        >
+          {isCreatingScene ? "Adding…" : "Add Scene"}
+        </button>
         <button
           className="button-secondary"
           type="button"

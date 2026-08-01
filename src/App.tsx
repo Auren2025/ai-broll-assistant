@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
+import { createScene, fetchProject, fetchScene, saveScene } from "./api/projectApi";
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
@@ -269,9 +269,11 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sceneError, setSceneError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [createSceneError, setCreateSceneError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
+  const [isCreatingScene, setIsCreatingScene] = useState(false);
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
@@ -705,6 +707,41 @@ function App() {
     }
   }
 
+  async function handleAddScene(): Promise<void> {
+    if (!project || isCreatingScene) {
+      return;
+    }
+
+    if (isDirty) {
+      setCreateSceneError("Save the current scene before adding a new scene");
+      return;
+    }
+
+    setIsCreatingScene(true);
+    setCreateSceneError(null);
+    setSceneError(null);
+
+    try {
+      const { project: nextProject, scene: newScene } = await createScene(
+        project.id,
+      );
+
+      setProject(nextProject);
+      setScene(newScene);
+      setScenesById((current) => ({
+        ...current,
+        [newScene.id]: newScene,
+      }));
+      setSelectedLayerIds([]);
+      setIsDirty(false);
+      setSaveError(null);
+    } catch (error: unknown) {
+      setCreateSceneError(getErrorMessage(error));
+    } finally {
+      setIsCreatingScene(false);
+    }
+  }
+
   const handleOpenPreview = useCallback(() => {
     const existingPreview = previewWindowRef.current;
 
@@ -781,6 +818,9 @@ function App() {
           {saveError ? (
             <span className="toolbar-error">Save failed: {saveError}</span>
           ) : null}
+          {createSceneError ? (
+            <span className="toolbar-error">{createSceneError}</span>
+          ) : null}
           <span className={`save-status${isDirty ? " is-dirty" : ""}`}>
             <span className="status-dot" />
             {saveStatus}
@@ -788,10 +828,13 @@ function App() {
           <EditorToolbar
             isSaving={isSaving}
             isSaveDisabled={!isDirty || isSaving}
+            isAddSceneDisabled={!project || isDirty || isSaving || isCreatingScene}
+            isCreatingScene={isCreatingScene}
             onAddText={() => handleAddLayer("text")}
             onAddRectangle={() => handleAddLayer("rectangle")}
             onAddCircle={() => handleAddLayer("circle")}
             onAddTriangle={() => handleAddLayer("triangle")}
+            onAddScene={() => void handleAddScene()}
             onOpenPreview={handleOpenPreview}
             onSave={() => void handleSave()}
           />

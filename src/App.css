@@ -150,6 +150,17 @@ button {
   background: #f8f8fa;
 }
 
+.button-secondary:disabled {
+  color: #a9abb2;
+  background: #f3f3f5;
+  cursor: default;
+}
+
+.button-secondary:hover:disabled {
+  border-color: #d8d9df !important;
+  background: #f3f3f5;
+}
+
 .button-primary {
   min-width: 66px;
   color: #fff;

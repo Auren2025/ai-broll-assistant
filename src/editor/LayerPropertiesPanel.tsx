@@ -76,10 +76,10 @@ export function LayerPropertiesPanel({
   }
 
   return (
-    <section aria-label="Layer properties">
-      <h3>Layer properties</h3>
+    <section className="inspector-panel" aria-label="Layer properties">
+      <h3>Transform & appearance</h3>
 
-      <dl>
+      <dl className="property-grid">
         <dt>ID</dt>
         <dd>{layer.id}</dd>
 

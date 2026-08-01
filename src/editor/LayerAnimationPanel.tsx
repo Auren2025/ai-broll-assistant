@@ -208,7 +208,7 @@ function PhaseEditor({
 
   if (!animation) {
     return (
-      <div>
+      <div className="animation-card">
         <p className="app-stage">No {phase} animation.</p>
 
         <button type="button" onClick={handleAddPhaseAnimation}>
@@ -226,7 +226,7 @@ function PhaseEditor({
   const presetAria = `${phase} animation preset`;
 
   return (
-    <div>
+    <div className="animation-card">
       <label>
         {phaseLabel(phase)} preset
         <select
@@ -337,32 +337,34 @@ export function LayerAnimationPanel({
     ) ?? null;
 
   return (
-    <section aria-label="Layer animations">
-      <h3>Animations</h3>
+    <section className="inspector-panel" aria-label="Layer animations">
+      <h3>Animation phases</h3>
 
-      <PhaseEditor
-        phase="enter"
-        animation={enterAnimation}
-        layer={layer}
-        sceneDurationInFrames={sceneDurationInFrames}
-        onAnimationsChange={onAnimationsChange}
-      />
+      <div className="animation-stack">
+        <PhaseEditor
+          phase="enter"
+          animation={enterAnimation}
+          layer={layer}
+          sceneDurationInFrames={sceneDurationInFrames}
+          onAnimationsChange={onAnimationsChange}
+        />
 
-      <PhaseEditor
-        phase="emphasis"
-        animation={emphasisAnimation}
-        layer={layer}
-        sceneDurationInFrames={sceneDurationInFrames}
-        onAnimationsChange={onAnimationsChange}
-      />
+        <PhaseEditor
+          phase="emphasis"
+          animation={emphasisAnimation}
+          layer={layer}
+          sceneDurationInFrames={sceneDurationInFrames}
+          onAnimationsChange={onAnimationsChange}
+        />
 
-      <PhaseEditor
-        phase="exit"
-        animation={exitAnimation}
-        layer={layer}
-        sceneDurationInFrames={sceneDurationInFrames}
-        onAnimationsChange={onAnimationsChange}
-      />
+        <PhaseEditor
+          phase="exit"
+          animation={exitAnimation}
+          layer={layer}
+          sceneDurationInFrames={sceneDurationInFrames}
+          onAnimationsChange={onAnimationsChange}
+        />
+      </div>
     </section>
   );
 }

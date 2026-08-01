@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
@@ -10,9 +10,15 @@ import {
   LayerPropertiesPanel,
   type EditableLayerPatch,
 } from "./editor/LayerPropertiesPanel";
-import { RemotionScenePlayer } from "./remotion/RemotionScenePlayer";
+import {
+  PREVIEW_CHANNEL_NAME,
+  type PreviewStateMessage,
+  type PreviewSyncMessage,
+} from "./preview/previewChannel";
 
 const PROJECT_ID = "video001";
+
+type InspectorTab = "design" | "animate";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -28,6 +34,20 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
+  const previewChannelRef = useRef<BroadcastChannel | null>(null);
+  const previewWindowRef = useRef<Window | null>(null);
+  const previewStateRef = useRef<PreviewStateMessage | null>(null);
+
+  previewStateRef.current =
+    project && scene
+      ? {
+          type: "state",
+          project,
+          scene,
+          isDirty,
+        }
+      : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +85,35 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const channel = new BroadcastChannel(PREVIEW_CHANNEL_NAME);
+    previewChannelRef.current = channel;
+
+    channel.onmessage = (event: MessageEvent<PreviewSyncMessage>) => {
+      if (event.data.type === "ready" && previewStateRef.current) {
+        channel.postMessage(previewStateRef.current);
+      }
+    };
+
+    return () => {
+      channel.close();
+      previewChannelRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!project || !scene) {
+      return;
+    }
+
+    previewChannelRef.current?.postMessage({
+      type: "state",
+      project,
+      scene,
+      isDirty,
+    } satisfies PreviewStateMessage);
+  }, [isDirty, project, scene]);
 
   const handleSceneChange = useCallback((updatedScene: Scene) => {
     setScene(updatedScene);
@@ -239,6 +288,29 @@ function App() {
     }
   }
 
+  const handleOpenPreview = useCallback(() => {
+    const existingPreview = previewWindowRef.current;
+
+    if (existingPreview && !existingPreview.closed) {
+      existingPreview.focus();
+
+      if (previewStateRef.current) {
+        previewChannelRef.current?.postMessage(previewStateRef.current);
+      }
+
+      return;
+    }
+
+    const previewWindow = window.open(
+      "/preview",
+      "ai-broll-preview",
+      "popup=yes,width=960,height=600,resizable=yes",
+    );
+
+    previewWindowRef.current = previewWindow;
+    previewWindow?.focus();
+  }, []);
+
   const selectedLayer: Layer | null = scene
     ? (scene.layers.find((layer) => layer.id === selectedLayerId) ?? null)
     : null;
@@ -249,133 +321,202 @@ function App() {
 
   if (loadError) {
     return (
-      <main className="app">
-        <h1 className="app-title">AI-Broll-Assistant</h1>
-        <p className="app-stage">Failed to load project: {loadError}</p>
+      <main className="status-page">
+        <h1>AI-Broll-Assistant</h1>
+        <p>Failed to load project: {loadError}</p>
       </main>
     );
   }
 
   if (!project || !scene) {
     return (
-      <main className="app">
-        <h1 className="app-title">AI-Broll-Assistant</h1>
-        <p className="app-stage">Loading project...</p>
+      <main className="status-page">
+        <div className="loading-mark" />
+        <p>Loading project...</p>
       </main>
     );
   }
 
+  const saveStatus = isSaving
+    ? "Saving changes…"
+    : isDirty
+      ? "Unsaved changes"
+      : "All changes saved";
+
   return (
-    <main className="app">
-      <h1 className="app-title">{project.name}</h1>
-
-      <p className="app-subtitle">
-        {project.width} × {project.height} · {project.fps} fps
-      </p>
-
-      <nav aria-label="Scenes">
-        {project.scenes.map((sceneReference, index) => {
-          const isCurrent = sceneReference.id === scene.id;
-
-          return (
-            <button
-              key={sceneReference.id}
-              type="button"
-              disabled={isCurrent || isDirty || isSceneLoading || isSaving}
-              onClick={() => void handleSceneSelect(sceneReference.id)}
-            >
-              Scene {index + 1}
-              {isCurrent ? " · Current" : ""}
-            </button>
-          );
-        })}
-      </nav>
-
-      {isDirty ? (
-        <p className="app-stage">
-          Save the current scene before switching scenes.
-        </p>
-      ) : null}
-
-      {sceneError ? (
-        <p className="app-stage">Failed to load scene: {sceneError}</p>
-      ) : null}
-
-      <p className="app-stage">
-        Scene: {scene.topic} · {scene.layers.length} layers
-      </p>
-
-      <button
-        type="button"
-        disabled={!isDirty || isSaving}
-        onClick={() => void handleSave()}
-      >
-        {isSaving ? "Saving..." : isDirty ? "Save scene" : "Saved"}
-      </button>
-
-      {saveError ? <p className="app-stage">Save failed: {saveError}</p> : null}
-
-      <section>
-        <h2>Fabric editor</h2>
-
-        <p className="app-stage">
-          Selected layer:{" "}
-          {selectedLayer
-            ? `${selectedLayer.name} (${selectedLayer.type})`
-            : "None"}
-        </p>
-
-        <div aria-label="Layers">
-          {sortedLayers.map((layer) => {
-            const isSelected = layer.id === selectedLayerId;
-
-            return (
-              <button
-                key={layer.id}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => setSelectedLayerId(isSelected ? null : layer.id)}
-              >
-                {layer.name} · {layer.type}
-                {isSelected ? " · Selected" : ""}
-              </button>
-            );
-          })}
+    <main className="editor-app">
+      <header className="topbar">
+        <div className="project-context">
+          <div className="app-logo">B</div>
+          <div>
+            <h1>{project.name}</h1>
+            <p>
+              {scene.topic} · {project.width} × {project.height} · {project.fps}{" "}
+              fps
+            </p>
+          </div>
         </div>
 
-        <LayerPropertiesPanel
-          layer={selectedLayer}
-          onPatch={handleSelectedLayerPatch}
-        />
+        <div className="topbar-actions">
+          {sceneError ? (
+            <span className="toolbar-error">Scene error: {sceneError}</span>
+          ) : null}
+          {saveError ? (
+            <span className="toolbar-error">Save failed: {saveError}</span>
+          ) : null}
+          <span className={`save-status${isDirty ? " is-dirty" : ""}`}>
+            <span className="status-dot" />
+            {saveStatus}
+          </span>
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={handleOpenPreview}
+          >
+            Open Preview
+          </button>
+          <button
+            className="button-primary"
+            type="button"
+            disabled={!isDirty || isSaving}
+            onClick={() => void handleSave()}
+          >
+            {isSaving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </header>
 
-        <LayerAnimationPanel
-          layer={selectedLayer}
-          sceneDurationInFrames={scene.durationInFrames}
-          onAnimationsChange={handleSelectedLayerAnimationsChange}
-        />
+      <div className="editor-workspace">
+        <aside className="sidebar sidebar-left">
+          <section className="sidebar-section">
+            <div className="section-heading">
+              <h2>Scenes</h2>
+              <span>{project.scenes.length}</span>
+            </div>
+            <nav className="scene-list" aria-label="Scenes">
+              {project.scenes.map((sceneReference, index) => {
+                const isCurrent = sceneReference.id === scene.id;
 
-        <FabricSceneCanvas
-          scene={scene}
-          projectWidth={project.width}
-          projectHeight={project.height}
-          displayScale={0.5}
-          onSceneChange={handleSceneChange}
-          onSelectedLayerChange={setSelectedLayerId}
-          selectedLayerId={selectedLayerId}
-        />
-      </section>
+                return (
+                  <button
+                    className={`scene-item${isCurrent ? " is-current" : ""}`}
+                    key={sceneReference.id}
+                    type="button"
+                    aria-current={isCurrent ? "page" : undefined}
+                    disabled={
+                      isCurrent || isDirty || isSceneLoading || isSaving
+                    }
+                    onClick={() => void handleSceneSelect(sceneReference.id)}
+                  >
+                    <span className="scene-number">{index + 1}</span>
+                    <span className="scene-copy">
+                      <strong>{sceneReference.id}</strong>
+                      <small>{isCurrent ? scene.topic : "Scene"}</small>
+                    </span>
+                    {isCurrent ? <span className="current-marker" /> : null}
+                  </button>
+                );
+              })}
+            </nav>
+            {isDirty ? (
+              <p className="sidebar-hint">Save before switching scenes.</p>
+            ) : null}
+          </section>
 
-      <section>
-        <h2>Remotion preview</h2>
+          <section className="sidebar-section layer-section">
+            <div className="section-heading">
+              <h2>Layers</h2>
+              <span>{scene.layers.length}</span>
+            </div>
+            <div className="layer-list" aria-label="Layers">
+              {sortedLayers.map((layer) => {
+                const isSelected = layer.id === selectedLayerId;
 
-        <RemotionScenePlayer
-          scene={scene}
-          projectWidth={project.width}
-          projectHeight={project.height}
-          fps={project.fps}
-          displayScale={0.5}
-        />
-      </section>
+                return (
+                  <button
+                    className={`layer-item${isSelected ? " is-selected" : ""}`}
+                    key={layer.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() =>
+                      setSelectedLayerId(isSelected ? null : layer.id)
+                    }
+                  >
+                    <span className={`layer-icon layer-icon-${layer.type}`}>
+                      {layer.type === "text" ? "T" : "□"}
+                    </span>
+                    <span className="layer-copy">
+                      <strong>{layer.name}</strong>
+                      <small>{layer.type}</small>
+                    </span>
+                    <span className="layer-index">{layer.zIndex}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </aside>
+
+        <section className="canvas-workspace" aria-label="Fabric editor">
+          <div className="canvas-stage">
+            <div className="canvas-frame">
+              <FabricSceneCanvas
+                scene={scene}
+                projectWidth={project.width}
+                projectHeight={project.height}
+                displayScale={0.5}
+                onSceneChange={handleSceneChange}
+                onSelectedLayerChange={setSelectedLayerId}
+                selectedLayerId={selectedLayerId}
+              />
+            </div>
+          </div>
+        </section>
+
+        <aside className="sidebar sidebar-right">
+          <div className="inspector-tabs" role="tablist" aria-label="Inspector">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inspectorTab === "design"}
+              className={inspectorTab === "design" ? "is-active" : ""}
+              onClick={() => setInspectorTab("design")}
+            >
+              Design
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={inspectorTab === "animate"}
+              className={inspectorTab === "animate" ? "is-active" : ""}
+              onClick={() => setInspectorTab("animate")}
+            >
+              Animate
+            </button>
+          </div>
+
+          <div className="inspector-scroll">
+            <div className="selection-summary">
+              <span>Selected layer</span>
+              <strong>{selectedLayer?.name ?? "None"}</strong>
+              {selectedLayer ? <small>{selectedLayer.type}</small> : null}
+            </div>
+
+            {inspectorTab === "design" ? (
+              <LayerPropertiesPanel
+                layer={selectedLayer}
+                onPatch={handleSelectedLayerPatch}
+              />
+            ) : (
+              <LayerAnimationPanel
+                layer={selectedLayer}
+                sceneDurationInFrames={scene.durationInFrames}
+                onAnimationsChange={handleSelectedLayerAnimationsChange}
+              />
+            )}
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

@@ -374,6 +374,37 @@ button {
   text-align: left;
 }
 
+.layer-group-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #77717e;
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 18px;
+  font-size: 10px;
+  justify-content: center;
+  padding: 0;
+}
+
+.group-children .layer-item {
+  padding-left: 22px;
+}
+
+.layer-item.is-group-child::before {
+  background: #d8d3dd;
+  content: "";
+  height: 100%;
+  left: 12px;
+  position: absolute;
+  top: 0;
+  width: 1px;
+}
+
+.layer-item.is-group-child {
+  position: relative;
+}
+
 .scene-item {
   grid-template-columns: 28px minmax(0, 1fr) 8px;
   gap: 9px;
@@ -461,6 +492,10 @@ button {
   gap: 0;
   min-height: 42px;
   padding: 3px 5px;
+}
+
+.layer-item.is-group {
+  grid-template-columns: 18px minmax(0, 1fr) 24px 24px;
 }
 
 .layer-item-main {
@@ -1360,6 +1395,68 @@ button {
   border-radius: 7px;
   background: #f4f3ff;
   color: #6556c8;
+}
+
+.selection-group-button {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  width: 100%;
+}
+
+.selection-group-button span {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.layer-context-menu {
+  background: #211f24;
+  border: 1px solid #3d3942;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  min-width: 190px;
+  padding: 5px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.layer-context-menu button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: #f5f2f7;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  justify-content: space-between;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.layer-context-menu button:hover {
+  background: #7542e8;
+}
+
+.layer-context-menu button:disabled {
+  background: transparent;
+  color: #77717e;
+  cursor: default;
+}
+
+.layer-context-menu kbd {
+  color: #aaa4b0;
+  font: inherit;
+  font-size: 11px;
+}
+
+.layer-group-hint {
+  color: #8d8793;
+  font-size: 11px;
+  line-height: 1.4;
+  margin: 8px 0 0;
 }
 
 .app-stage {

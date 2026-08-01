@@ -117,6 +117,15 @@ OpenCode / Pi → 领域模型 JSON
 
 Fabric 私有结构、Remotion 内部结构都只是视图层瞬时态，持久化只能是领域模型 JSON。
 
+### 5.4 图层分组
+
+- Scene 顶层允许普通图层与 Group 图层
+- Group 的子图层使用相对于 Group 的局部坐标
+- Group 自身可移动、旋转、等比缩放、控制透明度、可见性、锁定并配置动画
+- Group 子图层保留各自样式与动画，Remotion 按“Group 动画 → 子图层动画”的层级组合
+- 第一版不支持嵌套 Group、非等比缩放、裁剪、Fill、Stroke 与圆角；需要视觉容器时应另行讨论 Frame 概念
+- Group 必须保存在领域模型 JSON 中，禁止以 Fabric.js 的 Group 私有数据作为持久化格式
+
 ---
 
 ## 6. 项目目录约定

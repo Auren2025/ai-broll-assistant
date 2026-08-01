@@ -1,9 +1,6 @@
 import { z } from "zod";
-import { ArrowLayerSchema } from "./arrowLayerSchema";
-import { CircleLayerSchema } from "./circleLayerSchema";
-import { RectangleLayerSchema } from "./rectangleLayerSchema";
-import { TextLayerSchema } from "./textLayerSchema";
-import { TriangleLayerSchema } from "./triangleLayerSchema";
+import { AtomicLayerSchema } from "./atomicLayerSchema";
+import { GroupLayerSchema } from "./groupLayerSchema";
 
 // Scene timeline rules:
 // - startFrame is the scene's starting frame on the full project timeline.
@@ -18,13 +15,7 @@ import { TriangleLayerSchema } from "./triangleLayerSchema";
 //   Animation frames are local to this scene (animation.startFrame 0 means
 //   "at this scene's startFrame", not "at project frame 0").
 
-export const LayerSchema = z.discriminatedUnion("type", [
-  TextLayerSchema,
-  RectangleLayerSchema,
-  CircleLayerSchema,
-  TriangleLayerSchema,
-  ArrowLayerSchema,
-]);
+export const LayerSchema = z.union([AtomicLayerSchema, GroupLayerSchema]);
 
 export type Layer = z.infer<typeof LayerSchema>;
 
@@ -43,12 +34,16 @@ export const SceneSchema = z
     const layerIds = new Set<string>();
     const zIndexes = new Set<number>();
 
-    scene.layers.forEach((layer, index) => {
+    const validateLayer = (
+      layer: Layer,
+      path: (string | number)[],
+      zIndexes: Set<number>,
+    ): void => {
       if (layerIds.has(layer.id)) {
         context.addIssue({
           code: "custom",
           message: `Duplicate layer id: ${layer.id}`,
-          path: ["layers", index, "id"],
+          path: [...path, "id"],
         });
       } else {
         layerIds.add(layer.id);
@@ -58,7 +53,7 @@ export const SceneSchema = z
         context.addIssue({
           code: "custom",
           message: `Duplicate layer zIndex: ${layer.zIndex}`,
-          path: ["layers", index, "zIndex"],
+          path: [...path, "zIndex"],
         });
       } else {
         zIndexes.add(layer.zIndex);
@@ -74,16 +69,21 @@ export const SceneSchema = z
               `Layer "${layer.id}" animation "${animation.id}" ends at ` +
               `frame ${endFrame}, which is past the scene duration of ` +
               `${scene.durationInFrames}.`,
-            path: [
-              "layers",
-              index,
-              "animations",
-              animationIndex,
-              "durationInFrames",
-            ],
+            path: [...path, "animations", animationIndex, "durationInFrames"],
           });
         }
       });
+
+      if (layer.type === "group") {
+        const childZIndexes = new Set<number>();
+        layer.children.forEach((child, childIndex) => {
+          validateLayer(child, [...path, "children", childIndex], childZIndexes);
+        });
+      }
+    };
+
+    scene.layers.forEach((layer, index) => {
+      validateLayer(layer, ["layers", index], zIndexes);
     });
   });
 

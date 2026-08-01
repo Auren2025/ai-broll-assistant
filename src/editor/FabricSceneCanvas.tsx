@@ -3,6 +3,9 @@ import {
   ActiveSelection,
   Canvas,
   FabricObject,
+  Group as FabricGroup,
+  FixedLayout,
+  LayoutManager,
   Textbox,
   classRegistry,
 } from "fabric";
@@ -320,6 +323,7 @@ interface FabricSceneCanvasProps {
   displayScale?: number;
   onSceneChange: (scene: Scene) => void;
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
+  onContextMenuRequest: (x: number, y: number) => void;
   selectedLayerIds: readonly string[];
 }
 
@@ -364,6 +368,26 @@ function updateLayerFromFabricObject(
   layer: Layer,
   object: FabricObject,
 ): Layer {
+  if (layer.type === "group" && object instanceof FabricGroup) {
+    const objectScaleX = Math.abs(object.scaleX ?? 1);
+    const objectScaleY = Math.abs(object.scaleY ?? 1);
+    const scale =
+      Math.abs(objectScaleX - layer.scaleX) >=
+      Math.abs(objectScaleY - layer.scaleY)
+        ? objectScaleX
+        : objectScaleY;
+    object.set({ scaleX: scale, scaleY: scale });
+    object.setCoords();
+    return {
+      ...layer,
+      x: roundNumber((object.left ?? 0) - layer.width / 2),
+      y: roundNumber((object.top ?? 0) - layer.height / 2),
+      scaleX: roundNumber(scale),
+      scaleY: roundNumber(scale),
+      rotation: roundNumber(object.angle ?? 0),
+    };
+  }
+
   const position = readPositionFromObject(object);
 
   if (layer.type === "text" && object instanceof Textbox) {
@@ -386,6 +410,26 @@ function applyLayerToFabricObject(
   object: FabricObject,
   layer: Layer,
 ): void {
+  if (layer.type === "group" && object instanceof FabricGroup) {
+    object.set({
+      left: layer.x + layer.width / 2,
+      top: layer.y + layer.height / 2,
+      scaleX: layer.scaleX,
+      scaleY: layer.scaleY,
+      angle: layer.rotation,
+      opacity: layer.opacityEnabled ? layer.opacity : 1,
+      visible: layer.visible,
+      selectable: !layer.locked,
+      evented: !layer.locked,
+      subTargetCheck: true,
+      interactive: false,
+    });
+    object.setControlsVisibility({ ml: false, mr: false, mt: false, mb: false });
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
   object.set({
     left: layer.x + layer.width / 2,
     top: layer.y + layer.height / 2,
@@ -533,6 +577,20 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
         objectCaching: false,
       });
       break;
+    case "group": {
+      const children = [...layer.children]
+        .sort((first, second) => first.zIndex - second.zIndex)
+        .map((child) => createFabricObjectForLayer(child));
+      object = new FabricGroup(children, {
+        originX: "center",
+        originY: "center",
+        width: layer.width,
+        height: layer.height,
+        layoutManager: new LayoutManager(new FixedLayout()),
+        objectCaching: false,
+      });
+      break;
+    }
   }
 
   applyLayerToFabricObject(object, layer);
@@ -554,6 +612,8 @@ function isFabricObjectForLayer(
       return object instanceof Textbox;
     case "arrow":
       return object instanceof FabricArrowObject;
+    case "group":
+      return object instanceof FabricGroup;
   }
 }
 
@@ -562,18 +622,14 @@ function applySelectionToCanvas(
   selectedLayerIds: readonly string[],
   layerIdToObject: ReadonlyMap<string, FabricObject>,
 ): void {
-  const selectedLayerIdSet = new Set(selectedLayerIds);
-  const selectedObjects = canvas
-    .getObjects()
-    .filter((object) => {
-      for (const layerId of selectedLayerIdSet) {
-        if (layerIdToObject.get(layerId) === object) {
-          return true;
-        }
-      }
-
-      return false;
-    });
+  const selectedObjects = [
+    ...new Set(
+      selectedLayerIds.flatMap((layerId) => {
+        const directObject = layerIdToObject.get(layerId);
+        return directObject ? [directObject] : [];
+      }),
+    ),
+  ];
 
   if (selectedObjects.length === 0) {
     canvas.discardActiveObject();
@@ -595,6 +651,7 @@ export function FabricSceneCanvas({
   displayScale = 0.5,
   onSceneChange,
   onSelectedLayerIdsChange,
+  onContextMenuRequest,
   selectedLayerIds,
 }: FabricSceneCanvasProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
@@ -602,11 +659,16 @@ export function FabricSceneCanvas({
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   const sceneRef = useRef<Scene>(scene);
+  const contextMenuRequestRef = useRef(onContextMenuRequest);
   const isApplyingSelectionRef = useRef(false);
 
   useEffect(() => {
     sceneRef.current = scene;
   }, [scene]);
+
+  useEffect(() => {
+    contextMenuRequestRef.current = onContextMenuRequest;
+  }, [onContextMenuRequest]);
 
   const syncObjectsToScene = useCallback(
     (objects: readonly FabricObject[]): void => {
@@ -644,6 +706,15 @@ export function FabricSceneCanvas({
       const object = createFabricObjectForLayer(layer);
       layerIdToObjectRef.current.set(layer.id, object);
       objectToLayerIdRef.current.set(object, layer.id);
+      if (layer.type === "group" && object instanceof FabricGroup) {
+        const children = [...layer.children].sort(
+          (first, second) => first.zIndex - second.zIndex,
+        );
+        object.getObjects().forEach((childObject, index) => {
+          const child = children[index];
+          if (child) objectToLayerIdRef.current.set(childObject, child.id);
+        });
+      }
       canvas.add(object);
 
       if (object instanceof Textbox) {
@@ -668,8 +739,10 @@ export function FabricSceneCanvas({
       width: projectWidth * displayScale,
       height: projectHeight * displayScale,
       backgroundColor: sceneRef.current.backgroundColor ?? "transparent",
+      fireRightClick: true,
       selection: true,
       selectionKey: "shiftKey",
+      stopContextMenu: true,
       preserveObjectStacking: true,
     });
 
@@ -687,6 +760,12 @@ export function FabricSceneCanvas({
     for (const layer of sortedLayers) {
       addFabricObject(canvas, layer);
     }
+
+    const handleContextMenu = (event: MouseEvent): void => {
+      event.preventDefault();
+      contextMenuRequestRef.current(event.clientX, event.clientY);
+    };
+    canvas.upperCanvasEl.addEventListener("contextmenu", handleContextMenu, true);
 
     const syncSelectedLayers = (): void => {
       if (isApplyingSelectionRef.current) {
@@ -739,7 +818,29 @@ export function FabricSceneCanvas({
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
+    canvas.on("mouse:dblclick", (event) => {
+      const childObject = event.subTargets?.[0];
+      if (!childObject) return;
+      const childId = objectToLayerIdRef.current.get(childObject);
+      const child = childId
+        ? sceneRef.current.layers
+            .flatMap((layer) =>
+              layer.type === "group" ? layer.children : [],
+            )
+            .find((candidate) => candidate.id === childId)
+        : undefined;
+      if (child && !child.locked) onSelectedLayerIdsChange([child.id]);
+    });
     canvas.on("mouse:down", (event) => {
+      const pointerEvent = event.e as MouseEvent;
+      if (pointerEvent.button === 2) {
+        pointerEvent.preventDefault();
+        contextMenuRequestRef.current(
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+        );
+        return;
+      }
       if (!event.target) {
         onSelectedLayerIdsChange([]);
       }
@@ -748,6 +849,7 @@ export function FabricSceneCanvas({
     canvas.requestRenderAll();
 
     return () => {
+      canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
       void canvas.dispose();
       fabricCanvasRef.current = null;
       objectToLayerId.clear();
@@ -773,6 +875,12 @@ export function FabricSceneCanvas({
     const layerIdToObject = layerIdToObjectRef.current;
     const objectToLayerId = objectToLayerIdRef.current;
     const desiredLayerIds = new Set(scene.layers.map((layer) => layer.id));
+    const forgetObject = (object: FabricObject): void => {
+      objectToLayerId.delete(object);
+      if (object instanceof FabricGroup) {
+        object.getObjects().forEach((child) => objectToLayerId.delete(child));
+      }
+    };
     isApplyingSelectionRef.current = true;
 
     try {
@@ -783,7 +891,7 @@ export function FabricSceneCanvas({
         if (!desiredLayerIds.has(layerId)) {
           canvas.remove(object);
           layerIdToObject.delete(layerId);
-          objectToLayerId.delete(object);
+          forgetObject(object);
         }
       }
 
@@ -794,10 +902,17 @@ export function FabricSceneCanvas({
       sortedLayers.forEach((layer, index) => {
         let object = layerIdToObject.get(layer.id);
 
+        if (object && layer.type === "group") {
+          canvas.remove(object);
+          layerIdToObject.delete(layer.id);
+          forgetObject(object);
+          object = undefined;
+        }
+
         if (object && !isFabricObjectForLayer(object, layer)) {
           canvas.remove(object);
           layerIdToObject.delete(layer.id);
-          objectToLayerId.delete(object);
+          forgetObject(object);
           object = undefined;
         }
 

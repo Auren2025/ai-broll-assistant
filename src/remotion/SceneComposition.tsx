@@ -181,40 +181,31 @@ function ArrowHead({
   return <polygon points={points} fill={color} />;
 }
 
-export function SceneComposition({ scene }: SceneCompositionProps) {
-  const frame = useCurrentFrame();
-  const sortedLayers = [...scene.layers].sort(
-    (first, second) => first.zIndex - second.zIndex,
-  );
+function LayerView({ layer, frame }: { layer: Layer; frame: number }) {
+  if (!layer.visible) return null;
 
-  return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: scene.backgroundColor ?? "transparent",
-        overflow: "hidden",
-        isolation: "isolate",
-      }}
-    >
-      {sortedLayers.map((layer) => {
-        if (!layer.visible) {
-          return null;
-        }
+  const animationStyle = getLayerAnimationStyle(layer.animations, frame);
+  const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY}) scale(${animationStyle.scale})`;
+  const style: CSSProperties = {
+    ...getLayerBaseStyle(layer),
+    opacity:
+      (layer.opacityEnabled ? layer.opacity : 1) *
+      animationStyle.opacityMultiplier,
+    mixBlendMode: layer.blendMode,
+    transform,
+  };
 
-        const animationStyle = getLayerAnimationStyle(
-          layer.animations,
-          frame,
-        );
-        const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY}) scale(${animationStyle.scale})`;
-        const style: CSSProperties = {
-          ...getLayerBaseStyle(layer),
-          opacity:
-            (layer.opacityEnabled ? layer.opacity : 1) *
-            animationStyle.opacityMultiplier,
-          mixBlendMode: layer.blendMode,
-          transform,
-        };
+  if (layer.type === "group") {
+    return (
+      <div style={{ ...style, isolation: "isolate", overflow: "visible" }}>
+        {[...layer.children]
+          .sort((first, second) => first.zIndex - second.zIndex)
+          .map((child) => <LayerView key={child.id} layer={child} frame={frame} />)}
+      </div>
+    );
+  }
 
-        if (layer.type === "rectangle") {
+  if (layer.type === "rectangle") {
           const cornerRadii = layer.cornerEnabled
             ? (layer.cornerRadii ?? {
                 topLeft: layer.cornerRadius,
@@ -225,8 +216,8 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
             : { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 };
           const strokeInset = layer.strokeWidth / 2;
 
-          return (
-            <div key={layer.id} style={style}>
+    return (
+            <div style={style}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -250,13 +241,13 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
                 />
               </svg>
             </div>
-          );
-        }
+    );
+  }
 
-        if (layer.type === "circle") {
+  if (layer.type === "circle") {
           const strokeOffset = -layer.strokeWidth / 2;
-          return (
-            <div key={layer.id} style={style}>
+    return (
+            <div style={style}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -289,18 +280,18 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
                 />
               </svg>
             </div>
-          );
-        }
+    );
+  }
 
-        if (layer.type === "triangle") {
+  if (layer.type === "triangle") {
           const trianglePath = roundedTrianglePath(
             layer.width,
             layer.height,
             layer.cornerEnabled ? layer.cornerRadius : 0,
           );
           const clipId = `triangle-clip-${layer.id}`;
-          return (
-            <div key={layer.id} style={style}>
+    return (
+            <div style={style}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -325,10 +316,10 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
                 />
               </svg>
             </div>
-          );
-        }
+    );
+  }
 
-        if (layer.type === "arrow") {
+  if (layer.type === "arrow") {
           const arrowHeadSize = Math.max(
             0,
             Math.min(layer.arrowHeadSize, layer.width / 2),
@@ -341,8 +332,8 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
             layer.width - startInset - endInset,
           );
 
-          return (
-            <div key={layer.id} style={style}>
+    return (
+            <div style={style}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -368,19 +359,18 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
                 </g>
               </svg>
             </div>
-          );
-        }
+    );
+  }
 
-        const displayText =
+  const displayText =
           layer.textCase === "uppercase"
             ? layer.text.toUpperCase()
             : layer.textCase === "lowercase"
               ? layer.text.toLowerCase()
               : layer.text;
 
-        return (
+  return (
           <div
-            key={layer.id}
             style={{
               ...style,
               display: "flex",
@@ -412,8 +402,26 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           >
             {displayText}
           </div>
-        );
-      })}
+  );
+}
+
+export function SceneComposition({ scene }: SceneCompositionProps) {
+  const frame = useCurrentFrame();
+  const sortedLayers = [...scene.layers].sort(
+    (first, second) => first.zIndex - second.zIndex,
+  );
+
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: scene.backgroundColor ?? "transparent",
+        overflow: "hidden",
+        isolation: "isolate",
+      }}
+    >
+      {sortedLayers.map((layer) => (
+        <LayerView key={layer.id} layer={layer} frame={frame} />
+      ))}
     </AbsoluteFill>
   );
 }

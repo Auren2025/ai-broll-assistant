@@ -144,18 +144,19 @@ export function LayerPropertiesPanel({
   const isRectangle = layer.type === "rectangle";
   const isCircle = layer.type === "circle";
   const isTriangle = layer.type === "triangle";
+  const isGroup = layer.type === "group";
   const hasFill = isText || isRectangle || isCircle || layer.type === "triangle";
-  const hasStroke = hasFill || layer.type === "arrow";
-  const stroke = hasStroke ? layer.stroke : null;
-  const strokeWidth = hasStroke ? layer.strokeWidth : 0;
-  const fill = hasFill ? layer.fill : "#000000";
-  const fillEnabled = hasFill ? layer.fillEnabled : false;
+  const hasStroke = !isGroup;
+  const stroke = isGroup ? null : layer.stroke;
+  const strokeWidth = isGroup ? 0 : layer.strokeWidth;
+  const fill = isGroup || layer.type === "arrow" ? "#000000" : layer.fill;
+  const fillEnabled = isGroup || layer.type === "arrow" ? false : layer.fillEnabled;
 
   return (
     <section className="layer-design-panel" aria-label="Layer properties">
       <header className="layer-design-header">
         <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
-          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : "□"}
+          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "group" ? "◇" : "□"}
         </span>
         <h3>{layer.type.charAt(0).toUpperCase() + layer.type.slice(1)}</h3>
       </header>
@@ -186,8 +187,8 @@ export function LayerPropertiesPanel({
         <div className="layer-design-row">
           <span>Size</span>
           <div className="layer-double-input">
-            <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={layer.width} onValueChange={(value) => onPatch({ width: Math.max(1, value) })} />
-            <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={layer.height} onValueChange={(value) => onPatch({ height: Math.max(1, value) })} />
+            <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={isGroup ? Math.round(layer.width * layer.scaleX) : layer.width} onValueChange={(value) => onPatch({ width: Math.max(1, value) })} />
+            <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={isGroup ? Math.round(layer.height * layer.scaleY) : layer.height} onValueChange={(value) => onPatch({ height: Math.max(1, value) })} />
           </div>
         </div>
         <div className="layer-design-row">
@@ -198,6 +199,14 @@ export function LayerPropertiesPanel({
           </div>
         </div>
       </section>
+
+      {isGroup ? (
+        <section className="layer-design-section">
+          <h4>Group</h4>
+          <div className="layer-design-row"><span>Layers</span><strong>{layer.children.length}</strong></div>
+          <p className="layer-group-hint">Group resizing keeps its aspect ratio.</p>
+        </section>
+      ) : null}
 
       {isCircle ? (
         <section className="layer-design-section">

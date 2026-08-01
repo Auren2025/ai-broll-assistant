@@ -11,6 +11,17 @@ import {
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
+import {
+  canFlattenGroup,
+  deleteLayers,
+  findLayerById,
+  getAllLayers,
+  getCombinedBounds,
+  getLayerBounds,
+  makeGroup,
+  ungroupLayer,
+  updateLayerById,
+} from "./domain/groupOperations";
 import { AlignmentToolbar, type AlignmentAction } from "./editor/AlignmentToolbar";
 import { EditorToolbar } from "./editor/EditorToolbar";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
@@ -46,64 +57,8 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-interface LayerBounds {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-  width: number;
-  height: number;
-  centerX: number;
-  centerY: number;
-}
-
 function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
-}
-
-function getLayerBounds(layer: Layer): LayerBounds {
-  const radians = (layer.rotation * Math.PI) / 180;
-  const scaledWidth = layer.width * layer.scaleX;
-  const scaledHeight = layer.height * layer.scaleY;
-  const width =
-    Math.abs(scaledWidth * Math.cos(radians)) +
-    Math.abs(scaledHeight * Math.sin(radians));
-  const height =
-    Math.abs(scaledWidth * Math.sin(radians)) +
-    Math.abs(scaledHeight * Math.cos(radians));
-  const centerX = layer.x + layer.width / 2;
-  const centerY = layer.y + layer.height / 2;
-  const left = centerX - width / 2;
-  const top = centerY - height / 2;
-
-  return {
-    left,
-    top,
-    right: left + width,
-    bottom: top + height,
-    width,
-    height,
-    centerX,
-    centerY,
-  };
-}
-
-function getCombinedBounds(bounds: readonly LayerBounds[]): LayerBounds {
-  const left = Math.min(...bounds.map((candidate) => candidate.left));
-  const top = Math.min(...bounds.map((candidate) => candidate.top));
-  const right = Math.max(...bounds.map((candidate) => candidate.right));
-  const bottom = Math.max(...bounds.map((candidate) => candidate.bottom));
-
-  return {
-    left,
-    top,
-    right,
-    bottom,
-    width: right - left,
-    height: bottom - top,
-    centerX: (left + right) / 2,
-    centerY: (top + bottom) / 2,
-  };
 }
 
 function alignSceneLayers(
@@ -260,13 +215,22 @@ function hasSameLayerIds(
   );
 }
 
+function findParentGroup(layers: readonly Layer[], layerId: string) {
+  return layers.find(
+    (layer) =>
+      layer.type === "group" &&
+      layer.children.some((child) => child.id === layerId),
+  );
+}
+
 function getNextLayerId(
   layers: readonly Layer[],
-  type: AddableLayerType,
+  type: AddableLayerType | "group",
 ): string {
   const pattern = new RegExp(`^${type}-(\\d+)$`);
-  const usedIds = new Set(layers.map((layer) => layer.id));
-  let nextSequence = layers.reduce((highest, layer) => {
+  const allLayers = getAllLayers(layers);
+  const usedIds = new Set(allLayers.map((layer) => layer.id));
+  let nextSequence = allLayers.reduce((highest, layer) => {
     const match = pattern.exec(layer.id);
     return match ? Math.max(highest, Number(match[1])) : highest;
   }, 0) + 1;
@@ -295,6 +259,7 @@ function App() {
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [inspectorScope, setInspectorScope] = useState<InspectorScope>("scene");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const previewStateRef = useRef<PreviewStateMessage | null>(null);
@@ -446,9 +411,10 @@ function App() {
 
       const updatedScene = {
         ...scene,
-        layers: scene.layers.map((layer) =>
-          layer.id === layerId ? { ...layer, ...patch } : layer,
-        ),
+        layers: updateLayerById(scene.layers, layerId, (layer) => ({
+          ...layer,
+          ...patch,
+        } as Layer)),
       } as Scene;
 
       handleSceneChange(updatedScene);
@@ -545,11 +511,20 @@ function App() {
         return;
       }
 
-      const selectedIdSet = new Set(selectedLayerIds);
-      handleSceneChange({
-        ...scene,
-        layers: scene.layers.filter((layer) => !selectedIdSet.has(layer.id)),
-      });
+      const selectedIds = new Set(selectedLayerIds);
+      const wouldFlattenProtectedGroup = scene.layers.some(
+        (layer) =>
+          layer.type === "group" &&
+          layer.children.filter((child) => !selectedIds.has(child.id)).length === 1 &&
+          !canFlattenGroup(layer),
+      );
+      if (wouldFlattenProtectedGroup) {
+        setSceneError(
+          "Remove the group animation or opacity before deleting this child",
+        );
+        return;
+      }
+      handleSceneChange(deleteLayers(scene, selectedLayerIds));
       setSelectedLayerIds([]);
       setInspectorScope("scene");
       return;
@@ -609,6 +584,44 @@ function App() {
     selectedLayerIds,
   ]);
 
+  const handleGroupSelection = useCallback(() => {
+    if (!scene) return;
+    const groupId = getNextLayerId(scene.layers, "group");
+    const groupNumber = Number(groupId.split("-").at(-1)) || 1;
+    const updatedScene = makeGroup(
+      scene,
+      selectedLayerIds,
+      groupId,
+      `Group ${groupNumber}`,
+    );
+    if (!updatedScene) return;
+    handleSceneChange(updatedScene);
+    setSelectedLayerIds([groupId]);
+    setInspectorScope("layer");
+    setContextMenu(null);
+  }, [handleSceneChange, scene, selectedLayerIds]);
+
+  const handleUngroupSelection = useCallback(() => {
+    if (!scene || selectedLayerIds.length !== 1) return;
+    const groupId = selectedLayerIds[0];
+    if (!groupId) return;
+    const group = findLayerById(scene.layers, groupId);
+    if (!group || group.type !== "group") return;
+    if (!canFlattenGroup(group)) {
+      setSceneError(
+        "Remove the group animation or opacity before ungrouping",
+      );
+      setContextMenu(null);
+      return;
+    }
+    const updatedScene = ungroupLayer(scene, groupId);
+    if (!updatedScene) return;
+    handleSceneChange(updatedScene);
+    setSelectedLayerIds(group.children.map((child) => child.id));
+    setInspectorScope("layer");
+    setContextMenu(null);
+  }, [handleSceneChange, scene, selectedLayerIds]);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target;
@@ -634,6 +647,13 @@ function App() {
         return;
       }
 
+      if (modifier && key === "g") {
+        event.preventDefault();
+        if (event.shiftKey) handleUngroupSelection();
+        else handleGroupSelection();
+        return;
+      }
+
       if (event.key !== "Delete" && event.key !== "Backspace") return;
 
       event.preventDefault();
@@ -642,7 +662,13 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleDeleteSelection, handleRedo, handleUndo]);
+  }, [
+    handleDeleteSelection,
+    handleGroupSelection,
+    handleRedo,
+    handleUndo,
+    handleUngroupSelection,
+  ]);
 
   const handleAlign = useCallback(
     (action: AlignmentAction) => {
@@ -835,6 +861,9 @@ function App() {
       if (!scene || !selectedLayerId) {
         return;
       }
+      const selected = findLayerById(scene.layers, selectedLayerId);
+      const parentGroup = findParentGroup(scene.layers, selectedLayerId);
+      if (!selected || selected.locked || parentGroup?.locked) return;
 
       const patchKeys = Object.keys(patch);
 
@@ -843,12 +872,7 @@ function App() {
       }
 
       let changed = false;
-
-      const updatedLayers: Layer[] = scene.layers.map((layer) => {
-        if (layer.id !== selectedLayerId) {
-          return layer;
-        }
-
+      const updatedLayers = updateLayerById(scene.layers, selectedLayerId, (layer) => {
         const layerRecord = layer as unknown as Record<string, unknown>;
         const patchRecord = patch as Record<string, unknown>;
         const hasChanged = patchKeys.some(
@@ -860,6 +884,22 @@ function App() {
         }
 
         changed = true;
+
+        if (layer.type === "group" && ("width" in patch || "height" in patch)) {
+          const requestedWidth = patch.width ?? layer.width * layer.scaleX;
+          const requestedHeight = patch.height ?? layer.height * layer.scaleY;
+          const scale = "width" in patch
+            ? requestedWidth / layer.width
+            : requestedHeight / layer.height;
+          return {
+            ...layer,
+            ...patch,
+            width: layer.width,
+            height: layer.height,
+            scaleX: Math.max(0.01, scale),
+            scaleY: Math.max(0.01, scale),
+          };
+        }
 
         return {
           ...layer,
@@ -884,14 +924,12 @@ function App() {
       if (!scene || !selectedLayerId) {
         return;
       }
+      const selected = findLayerById(scene.layers, selectedLayerId);
+      const parentGroup = findParentGroup(scene.layers, selectedLayerId);
+      if (!selected || selected.locked || parentGroup?.locked) return;
 
       let changed = false;
-
-      const updatedLayers = scene.layers.map((layer) => {
-        if (layer.id !== selectedLayerId) {
-          return layer;
-        }
-
+      const updatedLayers = updateLayerById(scene.layers, selectedLayerId, (layer) => {
         const isSame =
           layer.animations.length === animations.length &&
           layer.animations.every((animation, index) => {
@@ -984,6 +1022,10 @@ function App() {
       return;
     }
 
+    const clickedLayer = findLayerById(scene.layers, layerId);
+    const parentGroup = findParentGroup(scene.layers, layerId);
+    if (!clickedLayer || clickedLayer.locked || parentGroup?.locked) return;
+
     setSelectedLayerIds((currentLayerIds) => {
       if (!additive) {
         return currentLayerIds.length === 1 && currentLayerIds[0] === layerId
@@ -991,9 +1033,16 @@ function App() {
           : [layerId];
       }
 
-      return currentLayerIds.includes(layerId)
-        ? currentLayerIds.filter((candidate) => candidate !== layerId)
-        : [...currentLayerIds, layerId];
+      if (currentLayerIds.includes(layerId)) {
+        return currentLayerIds.filter((candidate) => candidate !== layerId);
+      }
+      const normalized = clickedLayer.type === "group"
+        ? currentLayerIds.filter(
+            (candidate) =>
+              !clickedLayer.children.some((child) => child.id === candidate),
+          )
+        : currentLayerIds.filter((candidate) => candidate !== parentGroup?.id);
+      return [...normalized, layerId];
     });
     setInspectorScope("layer");
   }
@@ -1088,9 +1137,26 @@ function App() {
     previewWindow?.focus();
   }, []);
 
-  const selectedLayer: Layer | null = scene
-    ? (scene.layers.find((layer) => layer.id === selectedLayerId) ?? null)
+  const selectedLayer: Layer | null = scene && selectedLayerId
+    ? findLayerById(scene.layers, selectedLayerId)
     : null;
+  const selectedTopLevelLayers = scene
+    ? scene.layers.filter((layer) => selectedLayerIds.includes(layer.id))
+    : [];
+  const canGroup =
+    selectedLayerIds.length >= 2 &&
+    selectedTopLevelLayers.length === selectedLayerIds.length &&
+    selectedTopLevelLayers.every(
+      (layer) => layer.type !== "group" && !layer.locked,
+    );
+  const canUngroup =
+    selectedLayer?.type === "group" && canFlattenGroup(selectedLayer);
+  const isGroupSelected = selectedLayer?.type === "group";
+  const canOpenLayerContextMenu = selectedLayerIds.length > 0;
+
+  const openLayerContextMenu = (x: number, y: number): void => {
+    if (canOpenLayerContextMenu) setContextMenu({ x, y });
+  };
 
   if (loadError) {
     return (
@@ -1123,7 +1189,19 @@ function App() {
       : "All changes saved";
 
   return (
-    <main className="editor-app">
+    <main
+      className="editor-app"
+      onClick={() => setContextMenu(null)}
+      onContextMenu={(event) => {
+        if (!canOpenLayerContextMenu) return;
+        if (
+          !(event.target instanceof Element) ||
+          !event.target.closest(".canvas-workspace, .layer-item")
+        ) return;
+        event.preventDefault();
+        openLayerContextMenu(event.clientX, event.clientY);
+      }}
+    >
       <header className="topbar">
         <div className="project-context">
           <div className="app-logo">B</div>
@@ -1196,6 +1274,7 @@ function App() {
                 displayScale={0.5}
                 onSceneChange={handleSceneChange}
                 onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
+                onContextMenuRequest={openLayerContextMenu}
                 selectedLayerIds={selectedLayerIds}
               />
             </div>
@@ -1236,9 +1315,18 @@ function App() {
                   onSceneChange={handleSceneChange}
                 />
               ) : selectedLayerIds.length > 1 ? (
-                <p className="app-stage multiple-selection-message">
-                  Multiple layers selected: {selectedLayerIds.length}
-                </p>
+                <div className="app-stage multiple-selection-message">
+                  <p>Multiple layers selected: {selectedLayerIds.length}</p>
+                  <button
+                    type="button"
+                    className="button-primary selection-group-button"
+                    disabled={!canGroup}
+                    onClick={handleGroupSelection}
+                  >
+                    Group
+                    <span>⌘G</span>
+                  </button>
+                </div>
               ) : (
                 <LayerPropertiesPanel
                   layer={selectedLayer}
@@ -1265,6 +1353,25 @@ function App() {
           </div>
         </aside>
       </div>
+      {contextMenu ? (
+        <div
+          className="layer-context-menu"
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {!isGroupSelected ? (
+            <button type="button" role="menuitem" disabled={!canGroup} onClick={handleGroupSelection}>
+              <span>Group</span><kbd>⌘G</kbd>
+            </button>
+          ) : null}
+          {isGroupSelected ? (
+            <button type="button" role="menuitem" disabled={!canUngroup} onClick={handleUngroupSelection}>
+              <span>Ungroup</span><kbd>⇧⌘G</kbd>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </main>
   );
 }

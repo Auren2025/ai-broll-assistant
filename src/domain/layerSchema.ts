@@ -7,7 +7,8 @@ export const StrokePositionSchema = z.literal('inside')
 
 // Coordinate rules shared by Fabric.js Adapter and Remotion Adapter:
 // - Canvas origin is the top-left corner (0, 0).
-// - x and y are the top-left of the layer's unrotated bounding box.
+// - Top-level x and y are relative to the scene. Group child coordinates are
+//   relative to the group's unscaled, unrotated top-left corner.
 // - width and height are the base size before scale is applied.
 // - scaleX and scaleY are multipliers applied around the layer's center.
 // - rotation is in degrees, applied around the layer's center.
@@ -23,6 +24,8 @@ export const StrokePositionSchema = z.literal('inside')
 // - Time-window enforcement against the parent Scene duration is done in
 //   SceneSchema.superRefine; the layer itself only knows local frame
 //   numbers.
+// - Group and child transforms/animations compose hierarchically. Opacity is
+//   multiplicative and child zIndex values are local to their group.
 
 export const LayerBaseSchema = z
   .object({

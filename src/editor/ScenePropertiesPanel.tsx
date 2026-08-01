@@ -43,11 +43,18 @@ export function ScenePropertiesPanel({
   const color = scene.backgroundColor ?? lastColor;
   const maximumAnimationEnd = Math.max(
     1,
-    ...scene.layers.flatMap((layer) =>
-      layer.animations.map(
+    ...scene.layers.flatMap((layer) => [
+      ...layer.animations.map(
         (animation) => animation.startFrame + animation.durationInFrames,
       ),
-    ),
+      ...(layer.type === "group"
+        ? layer.children.flatMap((child) =>
+            child.animations.map(
+              (animation) => animation.startFrame + animation.durationInFrames,
+            ),
+          )
+        : []),
+    ]),
   );
 
   useEffect(() => {

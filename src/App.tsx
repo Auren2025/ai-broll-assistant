@@ -5,6 +5,7 @@ import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
 import { AlignmentToolbar, type AlignmentAction } from "./editor/AlignmentToolbar";
+import { EditorToolbar } from "./editor/EditorToolbar";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
 import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
 import {
@@ -240,6 +241,26 @@ function hasSameLayerIds(
   );
 }
 
+function getNextLayerId(
+  layers: readonly Layer[],
+  type: "text" | "rectangle",
+): string {
+  const pattern = new RegExp(`^${type}-(\\d+)$`);
+  const usedIds = new Set(layers.map((layer) => layer.id));
+  let nextSequence = layers.reduce((highest, layer) => {
+    const match = pattern.exec(layer.id);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 0) + 1;
+  let candidate = `${type}-${nextSequence}`;
+
+  while (usedIds.has(candidate)) {
+    nextSequence += 1;
+    candidate = `${type}-${nextSequence}`;
+  }
+
+  return candidate;
+}
+
 function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -371,6 +392,70 @@ function App() {
     },
     [handleSceneChange, project, scene, selectedLayerIds],
   );
+
+  function handleAddLayer(type: "text" | "rectangle"): void {
+    if (!scene || !project) {
+      return;
+    }
+
+    const id = getNextLayerId(scene.layers, type);
+    const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
+    const layer: Layer =
+      type === "text"
+        ? {
+            id,
+            name: "Text",
+            type: "text",
+            x: (project.width - 600) / 2,
+            y: (project.height - 120) / 2,
+            width: 600,
+            height: 120,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            opacity: 1,
+            zIndex,
+            visible: true,
+            locked: false,
+            animations: [],
+            text: "Text",
+            fontFamily: "Arial",
+            fontSize: 72,
+            fontWeight: 400,
+            fontStyle: "normal",
+            lineHeight: 1.2,
+            letterSpacing: 0,
+            textAlign: "center",
+            fill: "#ffffff",
+          }
+        : {
+            id,
+            name: "Rectangle",
+            type: "rectangle",
+            x: (project.width - 400) / 2,
+            y: (project.height - 240) / 2,
+            width: 400,
+            height: 240,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            opacity: 1,
+            zIndex,
+            visible: true,
+            locked: false,
+            animations: [],
+            fill: "#6b7280",
+            stroke: null,
+            strokeWidth: 0,
+            cornerRadius: 0,
+          };
+
+    setSelectedLayerIds([layer.id]);
+    handleSceneChange({
+      ...scene,
+      layers: [...scene.layers, layer],
+    });
+  }
 
   const handleSelectedLayerPatch = useCallback(
     (patch: EditableLayerPatch) => {
@@ -653,21 +738,14 @@ function App() {
             <span className="status-dot" />
             {saveStatus}
           </span>
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={handleOpenPreview}
-          >
-            Open Preview
-          </button>
-          <button
-            className="button-primary"
-            type="button"
-            disabled={!isDirty || isSaving}
-            onClick={() => void handleSave()}
-          >
-            {isSaving ? "Saving…" : "Save"}
-          </button>
+          <EditorToolbar
+            isSaving={isSaving}
+            isSaveDisabled={!isDirty || isSaving}
+            onAddText={() => handleAddLayer("text")}
+            onAddRectangle={() => handleAddLayer("rectangle")}
+            onOpenPreview={handleOpenPreview}
+            onSave={() => void handleSave()}
+          />
         </div>
       </header>
 

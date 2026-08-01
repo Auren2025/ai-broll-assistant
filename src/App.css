@@ -84,6 +84,45 @@ button {
   gap: 9px;
 }
 
+.editor-toolbar,
+.editor-tool-group,
+.editor-toolbar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.editor-toolbar {
+  gap: 12px;
+}
+
+.editor-tool-group,
+.editor-toolbar-actions {
+  gap: 4px;
+}
+
+.topbar .editor-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #696c75;
+  background: transparent;
+}
+
+.topbar .editor-tool:hover,
+.topbar .editor-tool.is-active {
+  color: #5545cf;
+  background: #efedff;
+}
+
+.tool-symbol {
+  display: inline-grid;
+  min-width: 14px;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .topbar button,
 .inspector-tabs button,
 .scene-item,

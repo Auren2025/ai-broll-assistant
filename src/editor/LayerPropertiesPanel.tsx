@@ -18,9 +18,16 @@ type TextEditableLayerPatch = {
   text: string;
 };
 
+type ShapeEditableLayerPatch = {
+  fill?: string;
+  stroke?: string | null;
+  strokeWidth?: number;
+};
+
 export type EditableLayerPatch =
   | CommonEditableLayerPatch
-  | TextEditableLayerPatch;
+  | TextEditableLayerPatch
+  | ShapeEditableLayerPatch;
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
@@ -85,6 +92,16 @@ export function LayerPropertiesPanel({
     });
   }
 
+  function patchStrokeWidth(value: number): void {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+
+    onPatch({
+      strokeWidth: Math.max(0, value),
+    });
+  }
+
   return (
     <section className="inspector-panel" aria-label="Layer properties">
       <h3>Transform & appearance</h3>
@@ -108,6 +125,52 @@ export function LayerPropertiesPanel({
                   onPatch({
                     text: event.currentTarget.value,
                   });
+                }}
+              />
+            </dd>
+          </>
+        ) : null}
+
+        {layer.type === "rectangle" ||
+        layer.type === "circle" ||
+        layer.type === "triangle" ? (
+          <>
+            <dt>Fill</dt>
+            <dd>
+              <input
+                type="text"
+                value={layer.fill}
+                aria-label="Layer fill color"
+                onChange={(event) => {
+                  onPatch({ fill: event.currentTarget.value });
+                }}
+              />
+            </dd>
+
+            <dt>Stroke</dt>
+            <dd>
+              <input
+                type="text"
+                value={layer.stroke ?? ""}
+                placeholder="None"
+                aria-label="Layer stroke color"
+                onChange={(event) => {
+                  const value = event.currentTarget.value.trim();
+                  onPatch({ stroke: value === "" ? null : value });
+                }}
+              />
+            </dd>
+
+            <dt>Stroke width</dt>
+            <dd>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={layer.strokeWidth}
+                aria-label="Layer stroke width"
+                onChange={(event) => {
+                  patchStrokeWidth(event.currentTarget.valueAsNumber);
                 }}
               />
             </dd>

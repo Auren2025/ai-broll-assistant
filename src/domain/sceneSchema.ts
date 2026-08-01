@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { CircleLayerSchema } from "./circleLayerSchema";
 import { RectangleLayerSchema } from "./rectangleLayerSchema";
 import { TextLayerSchema } from "./textLayerSchema";
+import { TriangleLayerSchema } from "./triangleLayerSchema";
 
 // Scene timeline rules:
 // - startFrame is the scene's starting frame on the full project timeline.
@@ -18,6 +20,8 @@ import { TextLayerSchema } from "./textLayerSchema";
 export const LayerSchema = z.discriminatedUnion("type", [
   TextLayerSchema,
   RectangleLayerSchema,
+  CircleLayerSchema,
+  TriangleLayerSchema,
 ]);
 
 export type Layer = z.infer<typeof LayerSchema>;

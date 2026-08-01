@@ -22,6 +22,7 @@ import {
 const PROJECT_ID = "video001";
 
 type InspectorTab = "design" | "animate";
+type AddableLayerType = "text" | "rectangle" | "circle" | "triangle";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -243,7 +244,7 @@ function hasSameLayerIds(
 
 function getNextLayerId(
   layers: readonly Layer[],
-  type: "text" | "rectangle",
+  type: AddableLayerType,
 ): string {
   const pattern = new RegExp(`^${type}-(\\d+)$`);
   const usedIds = new Set(layers.map((layer) => layer.id));
@@ -393,16 +394,17 @@ function App() {
     [handleSceneChange, project, scene, selectedLayerIds],
   );
 
-  function handleAddLayer(type: "text" | "rectangle"): void {
+  function handleAddLayer(type: AddableLayerType): void {
     if (!scene || !project) {
       return;
     }
 
     const id = getNextLayerId(scene.layers, type);
     const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
-    const layer: Layer =
-      type === "text"
-        ? {
+    const layer: Layer = (() => {
+      switch (type) {
+        case "text":
+          return {
             id,
             name: "Text",
             type: "text",
@@ -427,8 +429,9 @@ function App() {
             letterSpacing: 0,
             textAlign: "center",
             fill: "#ffffff",
-          }
-        : {
+          };
+        case "rectangle":
+          return {
             id,
             name: "Rectangle",
             type: "rectangle",
@@ -449,6 +452,50 @@ function App() {
             strokeWidth: 0,
             cornerRadius: 0,
           };
+        case "circle":
+          return {
+            id,
+            name: "Circle",
+            type: "circle",
+            x: (project.width - 240) / 2,
+            y: (project.height - 240) / 2,
+            width: 240,
+            height: 240,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            opacity: 1,
+            zIndex,
+            visible: true,
+            locked: false,
+            animations: [],
+            fill: "#6b7280",
+            stroke: null,
+            strokeWidth: 0,
+          };
+        case "triangle":
+          return {
+            id,
+            name: "Triangle",
+            type: "triangle",
+            x: (project.width - 280) / 2,
+            y: (project.height - 240) / 2,
+            width: 280,
+            height: 240,
+            scaleX: 1,
+            scaleY: 1,
+            rotation: 0,
+            opacity: 1,
+            zIndex,
+            visible: true,
+            locked: false,
+            animations: [],
+            fill: "#6b7280",
+            stroke: null,
+            strokeWidth: 0,
+          };
+      }
+    })();
 
     setSelectedLayerIds([layer.id]);
     handleSceneChange({
@@ -743,6 +790,8 @@ function App() {
             isSaveDisabled={!isDirty || isSaving}
             onAddText={() => handleAddLayer("text")}
             onAddRectangle={() => handleAddLayer("rectangle")}
+            onAddCircle={() => handleAddLayer("circle")}
+            onAddTriangle={() => handleAddLayer("triangle")}
             onOpenPreview={handleOpenPreview}
             onSave={() => void handleSave()}
           />

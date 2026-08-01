@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { ActiveSelection, Canvas, Rect, Textbox } from "fabric";
+import { ActiveSelection, Canvas, Circle, Rect, Textbox, Triangle } from "fabric";
 import type { FabricObject } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
 
@@ -98,6 +98,25 @@ function applyLayerToFabricObject(
     return;
   }
 
+  if (layer.type === "circle" && object instanceof Circle) {
+    object.set({
+      radius: Math.min(layer.width, layer.height) / 2,
+      fill: layer.fill,
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+    });
+    return;
+  }
+
+  if (layer.type === "triangle" && object instanceof Triangle) {
+    object.set({
+      fill: layer.fill,
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+    });
+    return;
+  }
+
   if (layer.type === "text" && object instanceof Textbox) {
     const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
 
@@ -117,16 +136,25 @@ function applyLayerToFabricObject(
 }
 
 function createFabricObjectForLayer(layer: Layer): FabricObject {
-  const object =
-    layer.type === "rectangle"
-      ? new Rect({
-          originX: "center",
-          originY: "center",
-        })
-      : new Textbox(layer.text, {
-          originX: "center",
-          originY: "center",
-        });
+  let object: FabricObject;
+
+  switch (layer.type) {
+    case "rectangle":
+      object = new Rect({ originX: "center", originY: "center" });
+      break;
+    case "circle":
+      object = new Circle({ originX: "center", originY: "center" });
+      break;
+    case "triangle":
+      object = new Triangle({ originX: "center", originY: "center" });
+      break;
+    case "text":
+      object = new Textbox(layer.text, {
+        originX: "center",
+        originY: "center",
+      });
+      break;
+  }
 
   applyLayerToFabricObject(object, layer);
   return object;
@@ -136,9 +164,16 @@ function isFabricObjectForLayer(
   object: FabricObject,
   layer: Layer,
 ): boolean {
-  return layer.type === "rectangle"
-    ? object instanceof Rect
-    : object instanceof Textbox;
+  switch (layer.type) {
+    case "rectangle":
+      return object instanceof Rect;
+    case "circle":
+      return object instanceof Circle;
+    case "triangle":
+      return object instanceof Triangle;
+    case "text":
+      return object instanceof Textbox;
+  }
 }
 
 function applySelectionToCanvas(

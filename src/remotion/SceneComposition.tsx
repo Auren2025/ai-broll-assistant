@@ -22,7 +22,6 @@ function getLayerBaseStyle(layer: Layer): CSSProperties {
 
 export function SceneComposition({ scene }: SceneCompositionProps) {
   const frame = useCurrentFrame();
-
   const sortedLayers = [...scene.layers].sort(
     (first, second) => first.zIndex - second.zIndex,
   );
@@ -43,8 +42,12 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           layer.animations,
           frame,
         );
-
         const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY}) scale(${animationStyle.scale})`;
+        const style: CSSProperties = {
+          ...getLayerBaseStyle(layer),
+          opacity: layer.opacity * animationStyle.opacityMultiplier,
+          transform,
+        };
 
         if (layer.type === "rectangle") {
           const cornerRadius = Math.min(
@@ -53,14 +56,7 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           );
 
           return (
-            <div
-              key={layer.id}
-              style={{
-                ...getLayerBaseStyle(layer),
-                opacity: layer.opacity * animationStyle.opacityMultiplier,
-                transform,
-              }}
-            >
+            <div key={layer.id} style={style}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -83,13 +79,53 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           );
         }
 
+        if (layer.type === "circle") {
+          return (
+            <div key={layer.id} style={style}>
+              <svg
+                width={layer.width}
+                height={layer.height}
+                viewBox={`0 0 ${layer.width} ${layer.height}`}
+                overflow="visible"
+              >
+                <circle
+                  cx={layer.width / 2}
+                  cy={layer.height / 2}
+                  r={Math.min(layer.width, layer.height) / 2}
+                  fill={layer.fill}
+                  stroke={layer.stroke ?? "none"}
+                  strokeWidth={layer.strokeWidth}
+                />
+              </svg>
+            </div>
+          );
+        }
+
+        if (layer.type === "triangle") {
+          return (
+            <div key={layer.id} style={style}>
+              <svg
+                width={layer.width}
+                height={layer.height}
+                viewBox={`0 0 ${layer.width} ${layer.height}`}
+                overflow="visible"
+              >
+                <polygon
+                  points={`${layer.width / 2},0 ${layer.width},${layer.height} 0,${layer.height}`}
+                  fill={layer.fill}
+                  stroke={layer.stroke ?? "none"}
+                  strokeWidth={layer.strokeWidth}
+                />
+              </svg>
+            </div>
+          );
+        }
+
         return (
           <div
             key={layer.id}
             style={{
-              ...getLayerBaseStyle(layer),
-              opacity: layer.opacity * animationStyle.opacityMultiplier,
-              transform,
+              ...style,
               color: layer.fill,
               fontFamily: layer.fontFamily,
               fontSize: layer.fontSize,

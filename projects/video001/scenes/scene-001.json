@@ -67,6 +67,14 @@
           "startFrame": 10,
           "durationInFrames": 20,
           "easing": "ease-out"
+        },
+        {
+          "id": "title-exit",
+          "phase": "exit",
+          "preset": "slide-up",
+          "startFrame": 125,
+          "durationInFrames": 20,
+          "easing": "ease-in"
         }
       ]
     }

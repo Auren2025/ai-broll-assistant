@@ -67,6 +67,14 @@
           "startFrame": 8,
           "durationInFrames": 22,
           "easing": "ease-out"
+        },
+        {
+          "id": "scene-002-title-exit",
+          "phase": "exit",
+          "preset": "fade",
+          "startFrame": 130,
+          "durationInFrames": 20,
+          "easing": "ease-in"
         }
       ]
     }

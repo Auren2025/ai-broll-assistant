@@ -84,12 +84,63 @@ function applyEnterPreset(
   }
 }
 
-export function getLayerEnterAnimationStyle(
+function applyExitPreset(
+  preset: AnimationPreset,
+  progress: number,
+): LayerAnimationStyle {
+  switch (preset) {
+    case "fade":
+      return {
+        opacityMultiplier: 1 - progress,
+        translateX: 0,
+        translateY: 0,
+        scale: 1,
+      };
+    case "slide-up":
+      return {
+        opacityMultiplier: 1 - progress,
+        translateX: 0,
+        translateY: -80 * progress,
+        scale: 1,
+      };
+    case "slide-down":
+      return {
+        opacityMultiplier: 1 - progress,
+        translateX: 0,
+        translateY: 80 * progress,
+        scale: 1,
+      };
+    case "slide-left":
+      return {
+        opacityMultiplier: 1 - progress,
+        translateX: -120 * progress,
+        translateY: 0,
+        scale: 1,
+      };
+    case "slide-right":
+      return {
+        opacityMultiplier: 1 - progress,
+        translateX: 120 * progress,
+        translateY: 0,
+        scale: 1,
+      };
+    case "scale":
+      return {
+        opacityMultiplier: 1 - progress,
+        translateX: 0,
+        translateY: 0,
+        scale: 1 - 0.15 * progress,
+      };
+  }
+}
+
+function getPhaseAnimationStyle(
   animations: readonly LayerAnimation[],
+  phase: "enter" | "exit",
   frame: number,
 ): LayerAnimationStyle {
   const animation = animations.find(
-    (candidate) => candidate.phase === "enter",
+    (candidate) => candidate.phase === phase,
   );
 
   if (!animation) {
@@ -112,5 +163,36 @@ export function getLayerEnterAnimationStyle(
     },
   );
 
-  return applyEnterPreset(animation.preset, progress);
+  return phase === "enter"
+    ? applyEnterPreset(animation.preset, progress)
+    : applyExitPreset(animation.preset, progress);
+}
+
+export function getLayerEnterAnimationStyle(
+  animations: readonly LayerAnimation[],
+  frame: number,
+): LayerAnimationStyle {
+  return getPhaseAnimationStyle(animations, "enter", frame);
+}
+
+export function getLayerExitAnimationStyle(
+  animations: readonly LayerAnimation[],
+  frame: number,
+): LayerAnimationStyle {
+  return getPhaseAnimationStyle(animations, "exit", frame);
+}
+
+export function getLayerAnimationStyle(
+  animations: readonly LayerAnimation[],
+  frame: number,
+): LayerAnimationStyle {
+  const enter = getPhaseAnimationStyle(animations, "enter", frame);
+  const exit = getPhaseAnimationStyle(animations, "exit", frame);
+
+  return {
+    opacityMultiplier: enter.opacityMultiplier * exit.opacityMultiplier,
+    translateX: enter.translateX + exit.translateX,
+    translateY: enter.translateY + exit.translateY,
+    scale: enter.scale * exit.scale,
+  };
 }

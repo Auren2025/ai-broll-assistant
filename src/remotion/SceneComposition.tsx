@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { AbsoluteFill, useCurrentFrame } from "remotion";
 import type { Layer, Scene } from "../domain/sceneSchema";
-import { getLayerEnterAnimationStyle } from "./layerAnimationStyle";
+import { getLayerAnimationStyle } from "./layerAnimationStyle";
 
 export interface SceneCompositionProps {
   scene: Scene;
@@ -39,7 +39,7 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
           return null;
         }
 
-        const animationStyle = getLayerEnterAnimationStyle(
+        const animationStyle = getLayerAnimationStyle(
           layer.animations,
           frame,
         );

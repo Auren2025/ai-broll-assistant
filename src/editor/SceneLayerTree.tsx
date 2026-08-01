@@ -34,10 +34,6 @@ export function SceneLayerTree({
   }, [currentSceneId]);
 
   function toggleScene(sceneId: string): void {
-    if (sceneId === currentSceneId) {
-      return;
-    }
-
     setExpandedSceneIds((current) =>
       current.includes(sceneId)
         ? current.filter((candidate) => candidate !== sceneId)
@@ -67,8 +63,7 @@ export function SceneLayerTree({
         {sceneReferences.map((sceneReference, index) => {
           const scene = scenesById[sceneReference.id];
           const isCurrent = sceneReference.id === currentSceneId;
-          const isExpanded =
-            isCurrent || expandedSceneIds.includes(sceneReference.id);
+          const isExpanded = expandedSceneIds.includes(sceneReference.id);
           const sortedLayers = scene
             ? [...scene.layers].sort(
                 (first, second) => second.zIndex - first.zIndex,
@@ -83,10 +78,9 @@ export function SceneLayerTree({
                   type="button"
                   aria-label={`${isExpanded ? "Collapse" : "Expand"} ${sceneReference.id}`}
                   aria-expanded={isExpanded}
-                  disabled={isCurrent}
                   onClick={() => toggleScene(sceneReference.id)}
                 >
-                  {isExpanded ? "⌄" : "›"}
+                  {isExpanded ? "▾" : "▸"}
                 </button>
                 <button
                   className="scene-tree-main"

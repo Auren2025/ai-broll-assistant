@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "dev:server": "tsx watch server/index.ts",
+    "studio": "remotion studio src/remotion/Studio.tsx",
     "validate:project": "tsx scripts/validateProject.ts projects/video001"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.502",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

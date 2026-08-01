@@ -28,6 +28,9 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   }
   res.statusCode = status
   res.setHeader('Content-Type', CONTENT_TYPE)
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   res.end(JSON.stringify(body))
 }
 
@@ -249,6 +252,11 @@ async function handlePutScene(
 const server = http.createServer((req, res) => {
   const method = req.method ?? 'GET'
   const url = req.url ?? ''
+
+  if (method === 'OPTIONS') {
+    sendJson(res, 204, {})
+    return
+  }
 
   if (url === '/api/health') {
     if (method !== 'GET') {

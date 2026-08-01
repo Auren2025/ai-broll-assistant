@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Canvas, Rect, Textbox } from "fabric";
+import { ActiveSelection, Canvas, Rect, Textbox } from "fabric";
 import type { FabricObject } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
 
@@ -9,8 +9,8 @@ interface FabricSceneCanvasProps {
   projectHeight: number;
   displayScale?: number;
   onSceneChange: (scene: Scene) => void;
-  onSelectedLayerChange: (layerId: string | null) => void;
-  selectedLayerId: string | null;
+  onSelectedLayerIdsChange: (layerIds: string[]) => void;
+  selectedLayerIds: readonly string[];
 }
 
 function roundNumber(value: number): number {
@@ -30,6 +30,7 @@ function readPositionFromObject(obj: FabricObject): {
   const height = obj.height ?? 0;
   const x = roundNumber((obj.left ?? 0) - width / 2);
   const y = roundNumber((obj.top ?? 0) - height / 2);
+
   return {
     x,
     y,
@@ -38,6 +39,28 @@ function readPositionFromObject(obj: FabricObject): {
     scaleX: roundNumber(obj.scaleX ?? 1),
     scaleY: roundNumber(obj.scaleY ?? 1),
     rotation: roundNumber(obj.angle ?? 0),
+  };
+}
+
+function updateLayerFromFabricObject(
+  layer: Layer,
+  object: FabricObject,
+): Layer {
+  const position = readPositionFromObject(object);
+
+  if (layer.type === "text" && object instanceof Textbox) {
+    return {
+      ...layer,
+      ...position,
+      text: object.text ?? "",
+      width: roundNumber(object.width),
+      height: roundNumber(object.height),
+    };
+  }
+
+  return {
+    ...layer,
+    ...position,
   };
 }
 
@@ -64,6 +87,7 @@ function applyLayerToFabricObject(
       layer.cornerRadius,
       Math.min(layer.width, layer.height) / 2,
     );
+
     object.set({
       fill: layer.fill,
       stroke: layer.stroke ?? undefined,
@@ -76,6 +100,7 @@ function applyLayerToFabricObject(
 
   if (layer.type === "text" && object instanceof Textbox) {
     const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
+
     object.set({
       text: layer.text,
       fontFamily: layer.fontFamily,
@@ -91,19 +116,43 @@ function applyLayerToFabricObject(
   }
 }
 
+function applySelectionToCanvas(
+  canvas: Canvas,
+  selectedLayerIds: readonly string[],
+  layerIdToObject: ReadonlyMap<string, FabricObject>,
+): void {
+  const selectedObjects = selectedLayerIds
+    .map((layerId) => layerIdToObject.get(layerId))
+    .filter((object): object is FabricObject => object !== undefined);
+
+  if (selectedObjects.length === 0) {
+    canvas.discardActiveObject();
+    return;
+  }
+
+  if (selectedObjects.length === 1) {
+    canvas.setActiveObject(selectedObjects[0]);
+    return;
+  }
+
+  canvas.setActiveObject(new ActiveSelection(selectedObjects, { canvas }));
+}
+
 export function FabricSceneCanvas({
   scene,
   projectWidth,
   projectHeight,
   displayScale = 0.5,
   onSceneChange,
-  onSelectedLayerChange,
-  selectedLayerId,
+  onSelectedLayerIdsChange,
+  selectedLayerIds,
 }: FabricSceneCanvasProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
+  const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   const sceneRef = useRef<Scene>(scene);
+  const isApplyingSelectionRef = useRef(false);
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -119,71 +168,58 @@ export function FabricSceneCanvas({
     const canvas = new Canvas(canvasElement, {
       width: projectWidth * displayScale,
       height: projectHeight * displayScale,
-      selection: false,
+      selection: true,
+      selectionKey: "shiftKey",
       preserveObjectStacking: true,
     });
 
     canvas.setViewportTransform([displayScale, 0, 0, displayScale, 0, 0]);
-
     fabricCanvasRef.current = canvas;
 
-    const objectToLayerId = new Map<FabricObject, string>();
+    const objectToLayerId = objectToLayerIdRef.current;
     const layerIdToObject = layerIdToObjectRef.current;
+    objectToLayerId.clear();
     layerIdToObject.clear();
 
-    const syncLayerFromObject = (
-      layerId: string,
-      object: FabricObject,
-    ): void => {
+    const syncObjectsToScene = (objects: readonly FabricObject[]): void => {
+      const objectByLayerId = new Map<string, FabricObject>();
+
+      for (const object of objects) {
+        const layerId = objectToLayerId.get(object);
+
+        if (layerId) {
+          objectByLayerId.set(layerId, object);
+        }
+      }
+
+      if (objectByLayerId.size === 0) {
+        return;
+      }
+
       const currentScene = sceneRef.current;
-      const position = readPositionFromObject(object);
-
-      const updatedLayers: Layer[] = currentScene.layers.map((layer) => {
-        if (layer.id !== layerId) {
-          return layer;
-        }
-
-        if (layer.type === "text" && object instanceof Textbox) {
-          return {
-            ...layer,
-            ...position,
-            text: object.text ?? "",
-            width: roundNumber(object.width),
-            height: roundNumber(object.height),
-          };
-        }
-
-        return {
-          ...layer,
-          ...position,
-        };
-      });
-
       const updatedScene: Scene = {
         ...currentScene,
-        layers: updatedLayers,
+        layers: currentScene.layers.map((layer) => {
+          const object = objectByLayerId.get(layer.id);
+          return object ? updateLayerFromFabricObject(layer, object) : layer;
+        }),
       };
 
       sceneRef.current = updatedScene;
       onSceneChange(updatedScene);
     };
 
-    const syncSelectedLayer = (): void => {
-      const active = canvas.getActiveObject();
-
-      if (!active) {
-        onSelectedLayerChange(null);
+    const syncSelectedLayers = (): void => {
+      if (isApplyingSelectionRef.current) {
         return;
       }
 
-      const layerId = objectToLayerId.get(active);
+      const layerIds = canvas
+        .getActiveObjects()
+        .map((object) => objectToLayerId.get(object))
+        .filter((layerId): layerId is string => layerId !== undefined);
 
-      if (layerId !== undefined) {
-        onSelectedLayerChange(layerId);
-        return;
-      }
-
-      onSelectedLayerChange(null);
+      onSelectedLayerIdsChange(layerIds);
     };
 
     const sortedLayers = [...sceneRef.current.layers].sort(
@@ -224,7 +260,6 @@ export function FabricSceneCanvas({
       }
 
       const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
-
       const textbox = new Textbox(layer.text, {
         width: layer.width,
         fontFamily: layer.fontFamily,
@@ -257,7 +292,7 @@ export function FabricSceneCanvas({
       canvas.add(textbox);
 
       textbox.on("editing:exited", () => {
-        syncLayerFromObject(layer.id, textbox);
+        syncObjectsToScene([textbox]);
       });
     }
 
@@ -268,30 +303,47 @@ export function FabricSceneCanvas({
         return;
       }
 
-      const layerId = objectToLayerId.get(target);
+      if (target instanceof ActiveSelection) {
+        const selectedObjects = target.getObjects();
+        const selectedIds = selectedObjects
+          .map((object) => objectToLayerId.get(object))
+          .filter((layerId): layerId is string => layerId !== undefined);
 
-      if (!layerId) {
+        queueMicrotask(() => {
+          isApplyingSelectionRef.current = true;
+          canvas.discardActiveObject();
+          syncObjectsToScene(selectedObjects);
+          applySelectionToCanvas(canvas, selectedIds, layerIdToObject);
+          isApplyingSelectionRef.current = false;
+          canvas.requestRenderAll();
+        });
         return;
       }
 
-      syncLayerFromObject(layerId, target);
+      syncObjectsToScene([target]);
     });
 
-    canvas.on("selection:created", syncSelectedLayer);
-    canvas.on("selection:updated", syncSelectedLayer);
-    canvas.on("selection:cleared", syncSelectedLayer);
+    canvas.on("selection:created", syncSelectedLayers);
+    canvas.on("selection:updated", syncSelectedLayers);
+    canvas.on("selection:cleared", syncSelectedLayers);
+    canvas.on("mouse:down", (event) => {
+      if (!event.target) {
+        onSelectedLayerIdsChange([]);
+      }
+    });
 
     canvas.requestRenderAll();
 
     return () => {
       void canvas.dispose();
       fabricCanvasRef.current = null;
+      objectToLayerId.clear();
       layerIdToObject.clear();
     };
   }, [
     displayScale,
     onSceneChange,
-    onSelectedLayerChange,
+    onSelectedLayerIdsChange,
     projectHeight,
     projectWidth,
     scene.id,
@@ -305,44 +357,21 @@ export function FabricSceneCanvas({
     }
 
     const layerIdToObject = layerIdToObjectRef.current;
+    isApplyingSelectionRef.current = true;
+    canvas.discardActiveObject();
 
     for (const layer of scene.layers) {
       const object = layerIdToObject.get(layer.id);
 
-      if (!object) {
-        continue;
+      if (object) {
+        applyLayerToFabricObject(object, layer);
       }
-
-      applyLayerToFabricObject(object, layer);
     }
 
+    applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
+    isApplyingSelectionRef.current = false;
     canvas.requestRenderAll();
-  }, [scene]);
-
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current;
-
-    if (!canvas) {
-      return;
-    }
-
-    if (selectedLayerId === null) {
-      canvas.discardActiveObject();
-      canvas.requestRenderAll();
-      return;
-    }
-
-    const object = layerIdToObjectRef.current.get(selectedLayerId);
-
-    if (!object) {
-      canvas.discardActiveObject();
-      canvas.requestRenderAll();
-      return;
-    }
-
-    canvas.setActiveObject(object);
-    canvas.requestRenderAll();
-  }, [selectedLayerId]);
+  }, [scene, selectedLayerIds]);
 
   return (
     <div

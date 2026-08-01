@@ -4,12 +4,14 @@ import { fetchProject, fetchScene, saveScene } from "./api/projectApi";
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
+import { AlignmentToolbar, type AlignmentAction } from "./editor/AlignmentToolbar";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
 import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
 import {
   LayerPropertiesPanel,
   type EditableLayerPatch,
 } from "./editor/LayerPropertiesPanel";
+import { SceneLayerTree } from "./editor/SceneLayerTree";
 import {
   PREVIEW_CHANNEL_NAME,
   type PreviewStateMessage,
@@ -24,20 +26,237 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+interface LayerBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+}
+
+function roundCoordinate(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function getLayerBounds(layer: Layer): LayerBounds {
+  const radians = (layer.rotation * Math.PI) / 180;
+  const scaledWidth = layer.width * layer.scaleX;
+  const scaledHeight = layer.height * layer.scaleY;
+  const width =
+    Math.abs(scaledWidth * Math.cos(radians)) +
+    Math.abs(scaledHeight * Math.sin(radians));
+  const height =
+    Math.abs(scaledWidth * Math.sin(radians)) +
+    Math.abs(scaledHeight * Math.cos(radians));
+  const centerX = layer.x + layer.width / 2;
+  const centerY = layer.y + layer.height / 2;
+  const left = centerX - width / 2;
+  const top = centerY - height / 2;
+
+  return {
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    centerX,
+    centerY,
+  };
+}
+
+function getCombinedBounds(bounds: readonly LayerBounds[]): LayerBounds {
+  const left = Math.min(...bounds.map((candidate) => candidate.left));
+  const top = Math.min(...bounds.map((candidate) => candidate.top));
+  const right = Math.max(...bounds.map((candidate) => candidate.right));
+  const bottom = Math.max(...bounds.map((candidate) => candidate.bottom));
+
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+  };
+}
+
+function alignSceneLayers(
+  scene: Scene,
+  selectedLayerIds: readonly string[],
+  action: AlignmentAction,
+  projectWidth: number,
+  projectHeight: number,
+): Scene {
+  const selectedLayerIdSet = new Set(selectedLayerIds);
+  const selectedLayers = scene.layers.filter((layer) =>
+    selectedLayerIdSet.has(layer.id),
+  );
+
+  if (selectedLayers.length === 0) {
+    return scene;
+  }
+
+  const boundsById = new Map(
+    selectedLayers.map((layer) => [layer.id, getLayerBounds(layer)]),
+  );
+  const nextCenters = new Map<string, { x?: number; y?: number }>();
+
+  if (
+    action === "distribute-horizontal" ||
+    action === "distribute-vertical"
+  ) {
+    if (selectedLayers.length < 3) {
+      return scene;
+    }
+
+    const isHorizontal = action === "distribute-horizontal";
+    const sortedLayers = [...selectedLayers].sort((first, second) => {
+      const firstBounds = boundsById.get(first.id);
+      const secondBounds = boundsById.get(second.id);
+
+      if (!firstBounds || !secondBounds) {
+        return 0;
+      }
+
+      return isHorizontal
+        ? firstBounds.left - secondBounds.left
+        : firstBounds.top - secondBounds.top;
+    });
+    const firstBounds = boundsById.get(sortedLayers[0]?.id ?? "");
+    const lastBounds = boundsById.get(sortedLayers.at(-1)?.id ?? "");
+
+    if (!firstBounds || !lastBounds) {
+      return scene;
+    }
+
+    const totalSize = sortedLayers.reduce((total, layer) => {
+      const bounds = boundsById.get(layer.id);
+      return total + (bounds ? (isHorizontal ? bounds.width : bounds.height) : 0);
+    }, 0);
+    const span = isHorizontal
+      ? lastBounds.right - firstBounds.left
+      : lastBounds.bottom - firstBounds.top;
+    const gap = (span - totalSize) / (selectedLayers.length - 1);
+    let cursor = isHorizontal ? firstBounds.left : firstBounds.top;
+
+    for (const layer of sortedLayers) {
+      const bounds = boundsById.get(layer.id);
+
+      if (!bounds) {
+        continue;
+      }
+
+      const size = isHorizontal ? bounds.width : bounds.height;
+      nextCenters.set(
+        layer.id,
+        isHorizontal
+          ? { x: cursor + size / 2 }
+          : { y: cursor + size / 2 },
+      );
+      cursor += size + gap;
+    }
+  } else {
+    const selectedBounds = [...boundsById.values()];
+    const targetBounds =
+      selectedLayers.length === 1
+        ? {
+            left: 0,
+            top: 0,
+            right: projectWidth,
+            bottom: projectHeight,
+            width: projectWidth,
+            height: projectHeight,
+            centerX: projectWidth / 2,
+            centerY: projectHeight / 2,
+          }
+        : getCombinedBounds(selectedBounds);
+
+    for (const layer of selectedLayers) {
+      const bounds = boundsById.get(layer.id);
+
+      if (!bounds) {
+        continue;
+      }
+
+      if (action === "left") {
+        nextCenters.set(layer.id, { x: targetBounds.left + bounds.width / 2 });
+      } else if (action === "horizontal-center") {
+        nextCenters.set(layer.id, { x: targetBounds.centerX });
+      } else if (action === "right") {
+        nextCenters.set(layer.id, { x: targetBounds.right - bounds.width / 2 });
+      } else if (action === "top") {
+        nextCenters.set(layer.id, { y: targetBounds.top + bounds.height / 2 });
+      } else if (action === "vertical-center") {
+        nextCenters.set(layer.id, { y: targetBounds.centerY });
+      } else if (action === "bottom") {
+        nextCenters.set(layer.id, { y: targetBounds.bottom - bounds.height / 2 });
+      }
+    }
+  }
+
+  let changed = false;
+  const layers = scene.layers.map((layer) => {
+    const nextCenter = nextCenters.get(layer.id);
+
+    if (!nextCenter) {
+      return layer;
+    }
+
+    const nextX = roundCoordinate(
+      (nextCenter.x ?? layer.x + layer.width / 2) - layer.width / 2,
+    );
+    const nextY = roundCoordinate(
+      (nextCenter.y ?? layer.y + layer.height / 2) - layer.height / 2,
+    );
+
+    if (nextX === layer.x && nextY === layer.y) {
+      return layer;
+    }
+
+    changed = true;
+    return {
+      ...layer,
+      x: nextX,
+      y: nextY,
+    };
+  });
+
+  return changed ? { ...scene, layers } : scene;
+}
+
+function hasSameLayerIds(
+  first: readonly string[],
+  second: readonly string[],
+): boolean {
+  return (
+    first.length === second.length &&
+    first.every((layerId) => second.includes(layerId))
+  );
+}
+
 function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
+  const [scenesById, setScenesById] = useState<Record<string, Scene>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sceneError, setSceneError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
-  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const previewStateRef = useRef<PreviewStateMessage | null>(null);
+  const selectedLayerId =
+    selectedLayerIds.length === 1 ? (selectedLayerIds[0] ?? null) : null;
 
   previewStateRef.current =
     project && scene
@@ -55,21 +274,26 @@ function App() {
     async function loadProject(): Promise<void> {
       try {
         const loadedProject = await fetchProject(PROJECT_ID);
-        const firstSceneReference = loadedProject.scenes[0];
+        const loadedScenes = await Promise.all(
+          loadedProject.scenes.map((sceneReference) =>
+            fetchScene(loadedProject.id, sceneReference.id),
+          ),
+        );
+        const loadedScene = loadedScenes[0];
 
-        if (!firstSceneReference) {
+        if (!loadedScene) {
           throw new Error("Project contains no scenes");
         }
-
-        const loadedScene = await fetchScene(
-          loadedProject.id,
-          firstSceneReference.id,
-        );
 
         if (!cancelled) {
           setProject(loadedProject);
           setScene(loadedScene);
-          setSelectedLayerId(null);
+          setScenesById(
+            Object.fromEntries(
+              loadedScenes.map((candidate) => [candidate.id, candidate]),
+            ),
+          );
+          setSelectedLayerIds([]);
           setIsDirty(false);
         }
       } catch (error: unknown) {
@@ -120,6 +344,33 @@ function App() {
     setIsDirty(true);
     setSaveError(null);
   }, []);
+
+  const handleSelectedLayerIdsChange = useCallback((layerIds: string[]) => {
+    setSelectedLayerIds((currentLayerIds) =>
+      hasSameLayerIds(currentLayerIds, layerIds) ? currentLayerIds : layerIds,
+    );
+  }, []);
+
+  const handleAlign = useCallback(
+    (action: AlignmentAction) => {
+      if (!scene || !project) {
+        return;
+      }
+
+      const updatedScene = alignSceneLayers(
+        scene,
+        selectedLayerIds,
+        action,
+        project.width,
+        project.height,
+      );
+
+      if (updatedScene !== scene) {
+        handleSceneChange(updatedScene);
+      }
+    },
+    [handleSceneChange, project, scene, selectedLayerIds],
+  );
 
   const handleSelectedLayerPatch = useCallback(
     (patch: EditableLayerPatch) => {
@@ -240,7 +491,10 @@ function App() {
     [scene, selectedLayerId],
   );
 
-  async function handleSceneSelect(sceneId: string): Promise<void> {
+  async function handleSceneSelect(
+    sceneId: string,
+    nextSelectedLayerIds: string[] = [],
+  ): Promise<void> {
     if (
       !project ||
       sceneId === scene?.id ||
@@ -258,7 +512,11 @@ function App() {
       const loadedScene = await fetchScene(project.id, sceneId);
 
       setScene(loadedScene);
-      setSelectedLayerId(null);
+      setScenesById((current) => ({
+        ...current,
+        [loadedScene.id]: loadedScene,
+      }));
+      setSelectedLayerIds(nextSelectedLayerIds);
       setIsDirty(false);
       setSaveError(null);
     } catch (error: unknown) {
@@ -266,6 +524,29 @@ function App() {
     } finally {
       setIsSceneLoading(false);
     }
+  }
+
+  function handleTreeLayerSelect(
+    sceneId: string,
+    layerId: string,
+    additive: boolean,
+  ): void {
+    if (sceneId !== scene?.id) {
+      void handleSceneSelect(sceneId, [layerId]);
+      return;
+    }
+
+    setSelectedLayerIds((currentLayerIds) => {
+      if (!additive) {
+        return currentLayerIds.length === 1 && currentLayerIds[0] === layerId
+          ? currentLayerIds
+          : [layerId];
+      }
+
+      return currentLayerIds.includes(layerId)
+        ? currentLayerIds.filter((candidate) => candidate !== layerId)
+        : [...currentLayerIds, layerId];
+    });
   }
 
   async function handleSave(): Promise<void> {
@@ -280,6 +561,10 @@ function App() {
       const savedScene = await saveScene(project.id, scene);
 
       setScene(savedScene);
+      setScenesById((current) => ({
+        ...current,
+        [savedScene.id]: savedScene,
+      }));
       setIsDirty(false);
     } catch (error: unknown) {
       setSaveError(getErrorMessage(error));
@@ -315,10 +600,6 @@ function App() {
     ? (scene.layers.find((layer) => layer.id === selectedLayerId) ?? null)
     : null;
 
-  const sortedLayers: Layer[] = scene
-    ? [...scene.layers].sort((first, second) => second.zIndex - first.zIndex)
-    : [];
-
   if (loadError) {
     return (
       <main className="status-page">
@@ -337,6 +618,10 @@ function App() {
     );
   }
 
+  const scenesForTree: Record<string, Scene> = {
+    ...scenesById,
+    [scene.id]: scene,
+  };
   const saveStatus = isSaving
     ? "Saving changes…"
     : isDirty
@@ -388,76 +673,22 @@ function App() {
 
       <div className="editor-workspace">
         <aside className="sidebar sidebar-left">
-          <section className="sidebar-section">
-            <div className="section-heading">
-              <h2>Scenes</h2>
-              <span>{project.scenes.length}</span>
-            </div>
-            <nav className="scene-list" aria-label="Scenes">
-              {project.scenes.map((sceneReference, index) => {
-                const isCurrent = sceneReference.id === scene.id;
-
-                return (
-                  <button
-                    className={`scene-item${isCurrent ? " is-current" : ""}`}
-                    key={sceneReference.id}
-                    type="button"
-                    aria-current={isCurrent ? "page" : undefined}
-                    disabled={
-                      isCurrent || isDirty || isSceneLoading || isSaving
-                    }
-                    onClick={() => void handleSceneSelect(sceneReference.id)}
-                  >
-                    <span className="scene-number">{index + 1}</span>
-                    <span className="scene-copy">
-                      <strong>{sceneReference.id}</strong>
-                      <small>{isCurrent ? scene.topic : "Scene"}</small>
-                    </span>
-                    {isCurrent ? <span className="current-marker" /> : null}
-                  </button>
-                );
-              })}
-            </nav>
-            {isDirty ? (
-              <p className="sidebar-hint">Save before switching scenes.</p>
-            ) : null}
-          </section>
-
-          <section className="sidebar-section layer-section">
-            <div className="section-heading">
-              <h2>Layers</h2>
-              <span>{scene.layers.length}</span>
-            </div>
-            <div className="layer-list" aria-label="Layers">
-              {sortedLayers.map((layer) => {
-                const isSelected = layer.id === selectedLayerId;
-
-                return (
-                  <button
-                    className={`layer-item${isSelected ? " is-selected" : ""}`}
-                    key={layer.id}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() =>
-                      setSelectedLayerId(isSelected ? null : layer.id)
-                    }
-                  >
-                    <span className={`layer-icon layer-icon-${layer.type}`}>
-                      {layer.type === "text" ? "T" : "□"}
-                    </span>
-                    <span className="layer-copy">
-                      <strong>{layer.name}</strong>
-                      <small>{layer.type}</small>
-                    </span>
-                    <span className="layer-index">{layer.zIndex}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <SceneLayerTree
+            sceneReferences={project.scenes}
+            scenesById={scenesForTree}
+            currentSceneId={scene.id}
+            selectedLayerIds={selectedLayerIds}
+            isSceneSwitchDisabled={isDirty || isSceneLoading || isSaving}
+            onSceneSelect={(sceneId) => void handleSceneSelect(sceneId)}
+            onLayerSelect={handleTreeLayerSelect}
+          />
         </aside>
 
         <section className="canvas-workspace" aria-label="Fabric editor">
+          <AlignmentToolbar
+            selectionCount={selectedLayerIds.length}
+            onAlign={handleAlign}
+          />
           <div className="canvas-stage">
             <div className="canvas-frame">
               <FabricSceneCanvas
@@ -466,8 +697,8 @@ function App() {
                 projectHeight={project.height}
                 displayScale={0.5}
                 onSceneChange={handleSceneChange}
-                onSelectedLayerChange={setSelectedLayerId}
-                selectedLayerId={selectedLayerId}
+                onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
+                selectedLayerIds={selectedLayerIds}
               />
             </div>
           </div>
@@ -497,16 +728,29 @@ function App() {
 
           <div className="inspector-scroll">
             <div className="selection-summary">
-              <span>Selected layer</span>
-              <strong>{selectedLayer?.name ?? "None"}</strong>
+              <span>
+                {selectedLayerIds.length > 1
+                  ? "Selected layers"
+                  : "Selected layer"}
+              </span>
+              <strong>
+                {selectedLayerIds.length > 1
+                  ? `${selectedLayerIds.length} layers`
+                  : (selectedLayer?.name ?? "None")}
+              </strong>
               {selectedLayer ? <small>{selectedLayer.type}</small> : null}
             </div>
 
             {inspectorTab === "design" ? (
               <LayerPropertiesPanel
                 layer={selectedLayer}
+                selectionCount={selectedLayerIds.length}
                 onPatch={handleSelectedLayerPatch}
               />
+            ) : selectedLayerIds.length > 1 ? (
+              <p className="app-stage multiple-selection-message">
+                Select one layer to edit animations.
+              </p>
             ) : (
               <LayerAnimationPanel
                 layer={selectedLayer}

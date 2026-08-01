@@ -24,13 +24,23 @@ export type EditableLayerPatch =
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
+  selectionCount: number;
   onPatch: (patch: EditableLayerPatch) => void;
 }
 
 export function LayerPropertiesPanel({
   layer,
+  selectionCount,
   onPatch,
 }: LayerPropertiesPanelProps) {
+  if (selectionCount > 1) {
+    return (
+      <p className="app-stage multiple-selection-message">
+        Multiple layers selected: {selectionCount}
+      </p>
+    );
+  }
+
   if (!layer) {
     return <p className="app-stage">Select a layer to view its properties.</p>;
   }

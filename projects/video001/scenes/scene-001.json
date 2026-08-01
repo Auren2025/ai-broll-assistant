@@ -69,6 +69,14 @@
           "easing": "ease-out"
         },
         {
+          "id": "title-emphasis",
+          "phase": "emphasis",
+          "preset": "scale",
+          "startFrame": 65,
+          "durationInFrames": 24,
+          "easing": "ease-in-out"
+        },
+        {
           "id": "title-exit",
           "phase": "exit",
           "preset": "slide-up",

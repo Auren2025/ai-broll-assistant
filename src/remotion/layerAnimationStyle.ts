@@ -1,6 +1,7 @@
 import { Easing, interpolate } from "remotion";
 import type {
   AnimationEasing,
+  AnimationPhase,
   AnimationPreset,
   LayerAnimation,
 } from "../domain/layerAnimationSchema";
@@ -134,9 +135,61 @@ function applyExitPreset(
   }
 }
 
+function applyEmphasisPreset(
+  preset: AnimationPreset,
+  progress: number,
+): LayerAnimationStyle {
+  const intensity = Math.sin(Math.PI * progress);
+
+  switch (preset) {
+    case "fade":
+      return {
+        opacityMultiplier: 1 - 0.35 * intensity,
+        translateX: 0,
+        translateY: 0,
+        scale: 1,
+      };
+    case "slide-up":
+      return {
+        opacityMultiplier: 1,
+        translateX: 0,
+        translateY: -30 * intensity,
+        scale: 1,
+      };
+    case "slide-down":
+      return {
+        opacityMultiplier: 1,
+        translateX: 0,
+        translateY: 30 * intensity,
+        scale: 1,
+      };
+    case "slide-left":
+      return {
+        opacityMultiplier: 1,
+        translateX: -40 * intensity,
+        translateY: 0,
+        scale: 1,
+      };
+    case "slide-right":
+      return {
+        opacityMultiplier: 1,
+        translateX: 40 * intensity,
+        translateY: 0,
+        scale: 1,
+      };
+    case "scale":
+      return {
+        opacityMultiplier: 1,
+        translateX: 0,
+        translateY: 0,
+        scale: 1 + 0.08 * intensity,
+      };
+  }
+}
+
 function getPhaseAnimationStyle(
   animations: readonly LayerAnimation[],
-  phase: "enter" | "exit",
+  phase: AnimationPhase,
   frame: number,
 ): LayerAnimationStyle {
   const animation = animations.find(
@@ -163,9 +216,14 @@ function getPhaseAnimationStyle(
     },
   );
 
-  return phase === "enter"
-    ? applyEnterPreset(animation.preset, progress)
-    : applyExitPreset(animation.preset, progress);
+  switch (phase) {
+    case "enter":
+      return applyEnterPreset(animation.preset, progress);
+    case "exit":
+      return applyExitPreset(animation.preset, progress);
+    case "emphasis":
+      return applyEmphasisPreset(animation.preset, progress);
+  }
 }
 
 export function getLayerEnterAnimationStyle(
@@ -187,12 +245,14 @@ export function getLayerAnimationStyle(
   frame: number,
 ): LayerAnimationStyle {
   const enter = getPhaseAnimationStyle(animations, "enter", frame);
+  const emphasis = getPhaseAnimationStyle(animations, "emphasis", frame);
   const exit = getPhaseAnimationStyle(animations, "exit", frame);
 
   return {
-    opacityMultiplier: enter.opacityMultiplier * exit.opacityMultiplier,
-    translateX: enter.translateX + exit.translateX,
-    translateY: enter.translateY + exit.translateY,
-    scale: enter.scale * exit.scale,
+    opacityMultiplier:
+      enter.opacityMultiplier * emphasis.opacityMultiplier * exit.opacityMultiplier,
+    translateX: enter.translateX + emphasis.translateX + exit.translateX,
+    translateY: enter.translateY + emphasis.translateY + exit.translateY,
+    scale: enter.scale * emphasis.scale * exit.scale,
   };
 }

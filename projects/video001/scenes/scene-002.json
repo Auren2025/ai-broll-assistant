@@ -69,6 +69,14 @@
           "easing": "ease-out"
         },
         {
+          "id": "scene-002-title-emphasis",
+          "phase": "emphasis",
+          "preset": "slide-up",
+          "startFrame": 65,
+          "durationInFrames": 24,
+          "easing": "ease-in-out"
+        },
+        {
           "id": "scene-002-title-exit",
           "phase": "exit",
           "preset": "fade",

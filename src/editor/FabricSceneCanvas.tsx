@@ -2,39 +2,218 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   ActiveSelection,
   Canvas,
-  Circle,
   FabricObject,
-  Rect,
   Textbox,
-  Triangle,
   classRegistry,
 } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
 
-class FabricLineObject extends FabricObject {
-  static type = "FabricLine";
+type CornerRadii = {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+};
 
-  declare stroke: string;
-  declare strokeWidth: number;
+function roundedRectanglePath(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  radii: CornerRadii,
+): void {
+  const maximum = Math.min(width, height) / 2;
+  const topLeft = Math.min(radii.topLeft, maximum);
+  const topRight = Math.min(radii.topRight, maximum);
+  const bottomRight = Math.min(radii.bottomRight, maximum);
+  const bottomLeft = Math.min(radii.bottomLeft, maximum);
+  const left = -width / 2;
+  const top = -height / 2;
+  const right = width / 2;
+  const bottom = height / 2;
 
-  constructor(options: Record<string, unknown> = {}) {
-    super(options);
-    this.stroke = (options.stroke as string | undefined) ?? "#1f2937";
-    this.strokeWidth = (options.strokeWidth as number | undefined) ?? 6;
+  ctx.beginPath();
+  ctx.moveTo(left + topLeft, top);
+  ctx.lineTo(right - topRight, top);
+  ctx.quadraticCurveTo(right, top, right, top + topRight);
+  ctx.lineTo(right, bottom - bottomRight);
+  ctx.quadraticCurveTo(right, bottom, right - bottomRight, bottom);
+  ctx.lineTo(left + bottomLeft, bottom);
+  ctx.quadraticCurveTo(left, bottom, left, bottom - bottomLeft);
+  ctx.lineTo(left, top + topLeft);
+  ctx.quadraticCurveTo(left, top, left + topLeft, top);
+  ctx.closePath();
+}
+
+function roundedTrianglePath(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const points = [
+    { x: 0, y: -height / 2 },
+    { x: width / 2, y: height / 2 },
+    { x: -width / 2, y: height / 2 },
+  ];
+  const corners = points.map((point, index) => {
+    const previous = points[(index + points.length - 1) % points.length];
+    const next = points[(index + 1) % points.length];
+    const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
+    const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
+    const previousUnit = {
+      x: (previous.x - point.x) / previousLength,
+      y: (previous.y - point.y) / previousLength,
+    };
+    const nextUnit = {
+      x: (next.x - point.x) / nextLength,
+      y: (next.y - point.y) / nextLength,
+    };
+    const angle = Math.acos(
+      Math.min(
+        1,
+        Math.max(-1, previousUnit.x * nextUnit.x + previousUnit.y * nextUnit.y),
+      ),
+    );
+    const tangentScale = Math.tan(angle / 2);
+    const requestedDistance = tangentScale > 0 ? radius / tangentScale : 0;
+    const distance = Math.min(
+      requestedDistance,
+      previousLength / 2,
+      nextLength / 2,
+    );
+    const effectiveRadius = distance * tangentScale;
+    return {
+      point,
+      radius: effectiveRadius,
+      entry: {
+        x: point.x + previousUnit.x * distance,
+        y: point.y + previousUnit.y * distance,
+      },
+      exit: {
+        x: point.x + nextUnit.x * distance,
+        y: point.y + nextUnit.y * distance,
+      },
+    };
+  });
+
+  ctx.beginPath();
+  ctx.moveTo(corners[0].entry.x, corners[0].entry.y);
+  for (const corner of corners) {
+    ctx.arcTo(
+      corner.point.x,
+      corner.point.y,
+      corner.exit.x,
+      corner.exit.y,
+      corner.radius,
+    );
+    const nextCorner = corners[(corners.indexOf(corner) + 1) % corners.length];
+    ctx.lineTo(nextCorner.entry.x, nextCorner.entry.y);
+  }
+  ctx.closePath();
+}
+
+function paintShape(
+  ctx: CanvasRenderingContext2D,
+  path: () => void,
+  fill: string | null,
+  stroke: string | null,
+  strokeWidth: number,
+): void {
+  ctx.save();
+  path();
+
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill("evenodd");
+  }
+
+  if (stroke && strokeWidth > 0) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth * 2;
+    ctx.save();
+    ctx.clip("evenodd");
+    path();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+class FabricRoundedRectangleObject extends FabricObject {
+  static type = "FabricRoundedRectangle";
+
+  declare fillColor: string | null;
+  declare strokeColor: string | null;
+  declare shapeStrokeWidth: number;
+  declare cornerRadii: CornerRadii;
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    paintShape(
+      ctx,
+      () => roundedRectanglePath(ctx, this.width, this.height, this.cornerRadii),
+      this.fillColor,
+      this.strokeColor,
+      this.shapeStrokeWidth,
+    );
+  }
+}
+
+class FabricEllipseObject extends FabricObject {
+  static type = "FabricEllipse";
+
+  declare fillColor: string | null;
+  declare strokeColor: string | null;
+  declare shapeStrokeWidth: number;
+  declare donut: number;
+  declare sweep: number;
+  declare startAngle: number;
+
+  private ellipsePath(ctx: CanvasRenderingContext2D): void {
+    const outerX = this.width / 2;
+    const outerY = this.height / 2;
+    const innerX = outerX * this.donut;
+    const innerY = outerY * this.donut;
+    const start = ((this.startAngle - 90) * Math.PI) / 180;
+    const end = start + (this.sweep * Math.PI) / 180;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, outerX, outerY, 0, start, end);
+    if (innerX > 0 && innerY > 0) {
+      ctx.ellipse(0, 0, innerX, innerY, 0, end, start, true);
+    } else if (this.sweep < 360) {
+      ctx.lineTo(0, 0);
+    }
+    ctx.closePath();
   }
 
   override _render(ctx: CanvasRenderingContext2D): void {
-    const w = this.width;
-    const sw = this.strokeWidth;
+    paintShape(
+      ctx,
+      () => this.ellipsePath(ctx),
+      this.fillColor,
+      this.strokeColor,
+      this.shapeStrokeWidth,
+    );
+  }
+}
 
-    if (w <= 0 || sw <= 0) {
-      return;
-    }
+class FabricRoundedTriangleObject extends FabricObject {
+  static type = "FabricRoundedTriangle";
 
-    ctx.save();
-    ctx.fillStyle = this.stroke;
-    ctx.fillRect(-w / 2, -sw / 2, w, sw);
-    ctx.restore();
+  declare fillColor: string | null;
+  declare strokeColor: string | null;
+  declare shapeStrokeWidth: number;
+  declare cornerRadius: number;
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    paintShape(
+      ctx,
+      () => roundedTrianglePath(ctx, this.width, this.height, this.cornerRadius),
+      this.fillColor,
+      this.strokeColor,
+      this.shapeStrokeWidth,
+    );
   }
 }
 
@@ -44,6 +223,51 @@ class FabricArrowObject extends FabricObject {
   declare stroke: string;
   declare strokeWidth: number;
   declare arrowHeadSize: number;
+  declare arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+  declare arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+
+  private renderArrowHead(
+    ctx: CanvasRenderingContext2D,
+    side: "start" | "end",
+    style: "triangle" | "line" | "diamond" | "circle",
+    size: number,
+  ): void {
+    const direction = side === "start" ? -1 : 1;
+    const tipX = direction * (this.width / 2);
+    const innerX = tipX - direction * size;
+
+    const halfSize = size / 2;
+
+    if (style === "line") {
+      ctx.strokeStyle = this.stroke;
+      ctx.lineWidth = this.strokeWidth;
+      ctx.beginPath();
+      ctx.moveTo(innerX, -halfSize);
+      ctx.lineTo(tipX, 0);
+      ctx.lineTo(innerX, halfSize);
+      ctx.stroke();
+      return;
+    }
+
+    ctx.fillStyle = this.stroke;
+    ctx.beginPath();
+    if (style === "diamond") {
+      const middleX = tipX - direction * (size / 2);
+      ctx.moveTo(tipX, 0);
+      ctx.lineTo(middleX, -halfSize);
+      ctx.lineTo(innerX, 0);
+      ctx.lineTo(middleX, halfSize);
+    } else if (style === "circle") {
+      const centerX = tipX - direction * (size / 2);
+      ctx.arc(centerX, 0, size / 2, 0, Math.PI * 2);
+    } else {
+      ctx.moveTo(tipX, 0);
+      ctx.lineTo(innerX, -halfSize);
+      ctx.lineTo(innerX, halfSize);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
 
   constructor(options: Record<string, unknown> = {}) {
     super(options);
@@ -56,7 +280,7 @@ class FabricArrowObject extends FabricObject {
     const w = this.width;
     const h = this.height;
     const sw = this.strokeWidth;
-    const ah = Math.max(0, Math.min(this.arrowHeadSize, w, h));
+    const ah = Math.max(0, Math.min(this.arrowHeadSize, w / 2));
 
     if (w <= 0 || h <= 0) {
       return;
@@ -65,28 +289,29 @@ class FabricArrowObject extends FabricObject {
     ctx.save();
     ctx.fillStyle = this.stroke;
 
-    const shaftWidth = w - ah;
+    const startInset = this.arrowStartStyle !== "none" ? ah : 0;
+    const endInset = this.arrowEndStyle !== "none" ? ah : 0;
+    const shaftWidth = w - startInset - endInset;
 
     if (sw > 0 && shaftWidth > 0) {
-      ctx.fillRect(-w / 2, -sw / 2, shaftWidth, sw);
+      ctx.fillRect(-w / 2 + startInset, -sw / 2, shaftWidth, sw);
     }
 
-    if (ah > 0) {
-      const baseX = w / 2 - ah;
-      ctx.beginPath();
-      ctx.moveTo(baseX, -h / 2);
-      ctx.lineTo(w / 2, 0);
-      ctx.lineTo(baseX, h / 2);
-      ctx.closePath();
-      ctx.fill();
+    if (ah > 0 && this.arrowStartStyle !== "none") {
+      this.renderArrowHead(ctx, "start", this.arrowStartStyle, ah);
+    }
+    if (ah > 0 && this.arrowEndStyle !== "none") {
+      this.renderArrowHead(ctx, "end", this.arrowEndStyle, ah);
     }
 
     ctx.restore();
   }
 }
 
-classRegistry.setClass(FabricLineObject);
 classRegistry.setClass(FabricArrowObject);
+classRegistry.setClass(FabricRoundedRectangleObject);
+classRegistry.setClass(FabricEllipseObject);
+classRegistry.setClass(FabricRoundedTriangleObject);
 
 interface FabricSceneCanvasProps {
   scene: Scene;
@@ -99,7 +324,7 @@ interface FabricSceneCanvasProps {
 }
 
 function roundNumber(value: number): number {
-  return Math.round(value * 1000) / 1000;
+  return Math.round(value * 10) / 10;
 }
 
 function readPositionFromObject(obj: FabricObject): {
@@ -111,18 +336,26 @@ function readPositionFromObject(obj: FabricObject): {
   scaleY: number;
   rotation: number;
 } {
-  const width = obj.width ?? 0;
-  const height = obj.height ?? 0;
+  const width = (obj.width ?? 0) * Math.abs(obj.scaleX ?? 1);
+  const height = (obj.height ?? 0) * Math.abs(obj.scaleY ?? 1);
   const x = roundNumber((obj.left ?? 0) - width / 2);
   const y = roundNumber((obj.top ?? 0) - height / 2);
+
+  obj.set({
+    width,
+    height,
+    scaleX: 1,
+    scaleY: 1,
+  });
+  obj.setCoords();
 
   return {
     x,
     y,
     width: roundNumber(width),
     height: roundNumber(height),
-    scaleX: roundNumber(obj.scaleX ?? 1),
-    scaleY: roundNumber(obj.scaleY ?? 1),
+    scaleX: 1,
+    scaleY: 1,
     rotation: roundNumber(obj.angle ?? 0),
   };
 }
@@ -137,7 +370,7 @@ function updateLayerFromFabricObject(
     return {
       ...layer,
       ...position,
-      text: object.text ?? "",
+      text: layer.textCase === "normal" ? (object.text ?? "") : layer.text,
       width: roundNumber(object.width),
       height: roundNumber(object.height),
     };
@@ -161,52 +394,62 @@ function applyLayerToFabricObject(
     scaleX: layer.scaleX,
     scaleY: layer.scaleY,
     angle: layer.rotation,
-    opacity: layer.opacity,
+    opacity: layer.opacityEnabled ? layer.opacity : 1,
+    globalCompositeOperation:
+      layer.blendMode === "normal" ? "source-over" : layer.blendMode,
     visible: layer.visible,
     selectable: !layer.locked,
     evented: !layer.locked,
   });
 
-  if (layer.type === "rectangle" && object instanceof Rect) {
-    const cornerRadius = Math.min(
-      layer.cornerRadius,
-      Math.min(layer.width, layer.height) / 2,
-    );
-
+  if (
+    layer.type === "rectangle" &&
+    object instanceof FabricRoundedRectangleObject
+  ) {
+    const cornerRadii = layer.cornerEnabled
+      ? (layer.cornerRadii ?? {
+          topLeft: layer.cornerRadius,
+          topRight: layer.cornerRadius,
+          bottomRight: layer.cornerRadius,
+          bottomLeft: layer.cornerRadius,
+        })
+      : { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 };
     object.set({
-      fill: layer.fill,
-      stroke: layer.stroke,
-      strokeWidth: layer.strokeWidth,
-      rx: cornerRadius,
-      ry: cornerRadius,
+      fillColor: layer.fillEnabled ? layer.fill : null,
+      strokeColor: layer.stroke,
+      shapeStrokeWidth: layer.strokeWidth,
+      cornerRadii,
     });
+    object.dirty = true;
+    object.setCoords();
     return;
   }
 
-  if (layer.type === "circle" && object instanceof Circle) {
+  if (layer.type === "circle" && object instanceof FabricEllipseObject) {
     object.set({
-      radius: Math.min(layer.width, layer.height) / 2,
-      fill: layer.fill,
-      stroke: layer.stroke,
-      strokeWidth: layer.strokeWidth,
+      fillColor: layer.fillEnabled ? layer.fill : null,
+      strokeColor: layer.stroke,
+      shapeStrokeWidth: layer.strokeWidth,
+      donut: layer.donut,
+      sweep: layer.sweep,
+      startAngle: layer.startAngle,
     });
+    object.dirty = true;
+    object.setCoords();
     return;
   }
 
-  if (layer.type === "triangle" && object instanceof Triangle) {
+  if (
+    layer.type === "triangle" &&
+    object instanceof FabricRoundedTriangleObject
+  ) {
     object.set({
-      fill: layer.fill,
-      stroke: layer.stroke,
-      strokeWidth: layer.strokeWidth,
+      fillColor: layer.fillEnabled ? layer.fill : null,
+      strokeColor: layer.stroke,
+      shapeStrokeWidth: layer.strokeWidth,
+      cornerRadius: layer.cornerEnabled ? layer.cornerRadius : 0,
     });
-    return;
-  }
-
-  if (layer.type === "line" && object instanceof FabricLineObject) {
-    object.set({
-      stroke: layer.stroke,
-      strokeWidth: layer.strokeWidth,
-    });
+    object.dirty = true;
     object.setCoords();
     return;
   }
@@ -216,7 +459,10 @@ function applyLayerToFabricObject(
       stroke: layer.stroke,
       strokeWidth: layer.strokeWidth,
       arrowHeadSize: layer.arrowHeadSize,
+      arrowStartStyle: layer.arrowStartStyle,
+      arrowEndStyle: layer.arrowEndStyle,
     });
+    object.dirty = true;
     object.setCoords();
     return;
   }
@@ -224,8 +470,15 @@ function applyLayerToFabricObject(
   if (layer.type === "text" && object instanceof Textbox) {
     const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
 
+    const displayText =
+      layer.textCase === "uppercase"
+        ? layer.text.toUpperCase()
+        : layer.textCase === "lowercase"
+          ? layer.text.toLowerCase()
+          : layer.text;
+
     object.set({
-      text: layer.text,
+      text: displayText,
       fontFamily: layer.fontFamily,
       fontSize: layer.fontSize,
       fontWeight: layer.fontWeight,
@@ -233,7 +486,10 @@ function applyLayerToFabricObject(
       lineHeight: layer.lineHeight,
       charSpacing: characterSpacing,
       textAlign: layer.textAlign,
-      fill: layer.fill,
+      fill: layer.fillEnabled ? layer.fill : "transparent",
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+      paintFirst: "fill",
       editable: !layer.locked,
     });
   }
@@ -244,13 +500,25 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
 
   switch (layer.type) {
     case "rectangle":
-      object = new Rect({ originX: "center", originY: "center" });
+      object = new FabricRoundedRectangleObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      });
       break;
     case "circle":
-      object = new Circle({ originX: "center", originY: "center" });
+      object = new FabricEllipseObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      });
       break;
     case "triangle":
-      object = new Triangle({ originX: "center", originY: "center" });
+      object = new FabricRoundedTriangleObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      });
       break;
     case "text":
       object = new Textbox(layer.text, {
@@ -258,13 +526,11 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
         originY: "center",
       });
       break;
-    case "line":
-      object = new FabricLineObject({ originX: "center", originY: "center" });
-      break;
     case "arrow":
       object = new FabricArrowObject({
         originX: "center",
         originY: "center",
+        objectCaching: false,
       });
       break;
   }
@@ -279,15 +545,13 @@ function isFabricObjectForLayer(
 ): boolean {
   switch (layer.type) {
     case "rectangle":
-      return object instanceof Rect;
+      return object instanceof FabricRoundedRectangleObject;
     case "circle":
-      return object instanceof Circle;
+      return object instanceof FabricEllipseObject;
     case "triangle":
-      return object instanceof Triangle;
+      return object instanceof FabricRoundedTriangleObject;
     case "text":
       return object instanceof Textbox;
-    case "line":
-      return object instanceof FabricLineObject;
     case "arrow":
       return object instanceof FabricArrowObject;
   }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
+import { BufferedNumberInput } from "./BufferedNumberInput";
 
 interface ScenePropertiesPanelProps {
   scene: Scene;
@@ -102,23 +103,17 @@ export function ScenePropertiesPanel({
         <div className="scene-design-row">
           <span>Size</span>
           <div className="scene-size-inputs">
-            <input
-              type="number"
+            <BufferedNumberInput
               min="1"
               aria-label="Scene width"
               value={project.width}
-              onChange={(event) =>
-                patchProjectSize(event.currentTarget.valueAsNumber, project.height)
-              }
+              onValueChange={(value) => patchProjectSize(value, project.height)}
             />
-            <input
-              type="number"
+            <BufferedNumberInput
               min="1"
               aria-label="Scene height"
               value={project.height}
-              onChange={(event) =>
-                patchProjectSize(project.width, event.currentTarget.valueAsNumber)
-              }
+              onValueChange={(value) => patchProjectSize(project.width, value)}
             />
           </div>
         </div>
@@ -172,16 +167,15 @@ export function ScenePropertiesPanel({
       <section className="scene-design-section scene-duration-section">
         <h4>Duration</h4>
         <div className="scene-duration-control">
-          <input
-            type="number"
+          <BufferedNumberInput
             min={maximumAnimationEnd / project.fps}
             step={1 / project.fps}
             aria-label="Scene duration in seconds"
             value={Number((scene.durationInFrames / project.fps).toFixed(3))}
-            onChange={(event) => {
+            onValueChange={(value) => {
               const frames = Math.max(
                 maximumAnimationEnd,
-                Math.round(event.currentTarget.valueAsNumber * project.fps),
+                Math.round(value * project.fps),
               );
               if (Number.isFinite(frames)) {
                 onSceneChange({ ...scene, durationInFrames: frames });

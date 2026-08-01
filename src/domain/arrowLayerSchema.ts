@@ -19,6 +19,12 @@ export const ArrowLayerSchema = LayerBaseSchema.extend({
   stroke: z.string().min(1),
   strokeWidth: z.number().finite().min(1),
   arrowHeadSize: z.number().finite().min(4),
+  arrowStartStyle: z
+    .enum(['none', 'triangle', 'line', 'diamond', 'circle'])
+    .default('none'),
+  arrowEndStyle: z
+    .enum(['none', 'triangle', 'line', 'diamond', 'circle'])
+    .default('triangle'),
 }).strict()
 
 export type ArrowLayer = z.infer<typeof ArrowLayerSchema>

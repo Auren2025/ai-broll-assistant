@@ -1,359 +1,276 @@
+import { useEffect, useState } from "react";
+import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
+import type { TextLayer } from "../domain/textLayerSchema";
+import type { AlignmentAction } from "./AlignmentToolbar";
+import { BufferedNumberInput } from "./BufferedNumberInput";
 
-type CommonEditableLayerPatch = Partial<
-  Pick<
-    Layer,
-    | "x"
-    | "y"
-    | "width"
-    | "height"
-    | "scaleX"
-    | "scaleY"
-    | "rotation"
-    | "opacity"
-  >
->;
-
-type TextEditableLayerPatch = {
+export type EditableLayerPatch = Partial<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  opacityEnabled: boolean;
   text: string;
-};
-
-type ShapeEditableLayerPatch = {
-  fill?: string;
-  stroke?: string | null;
-  strokeWidth?: number;
-};
-
-type LineEditableLayerPatch = {
-  stroke?: string;
-  strokeWidth?: number;
-};
-
-type ArrowEditableLayerPatch = {
-  stroke?: string;
-  strokeWidth?: number;
-  arrowHeadSize?: number;
-};
-
-export type EditableLayerPatch =
-  | CommonEditableLayerPatch
-  | TextEditableLayerPatch
-  | ShapeEditableLayerPatch
-  | LineEditableLayerPatch
-  | ArrowEditableLayerPatch;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  fontStyle: TextLayer["fontStyle"];
+  lineHeight: number;
+  letterSpacing: number;
+  textAlign: TextLayer["textAlign"];
+  verticalAlign: TextLayer["verticalAlign"];
+  autoResize: TextLayer["autoResize"];
+  textCase: TextLayer["textCase"];
+  kerningPairs: boolean;
+  ligatures: boolean;
+  fill: string;
+  fillEnabled: boolean;
+  stroke: string | null;
+  strokeWidth: number;
+  cornerEnabled: boolean;
+  cornerRadius: number;
+  cornerRadii: RectangleLayer["cornerRadii"];
+  donut: number;
+  sweep: number;
+  startAngle: number;
+  arrowHeadSize: number;
+  arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+  arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+}>;
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
   selectionCount: number;
   onPatch: (patch: EditableLayerPatch) => void;
+  onAlign: (action: AlignmentAction) => void;
+}
+
+const ALIGN_BUTTONS: readonly { action: AlignmentAction; label: string; icon: string }[] = [
+  { action: "left", label: "Align left", icon: "⊢" },
+  { action: "horizontal-center", label: "Align horizontal center", icon: "↔" },
+  { action: "right", label: "Align right", icon: "⊣" },
+  { action: "top", label: "Align top", icon: "⊤" },
+  { action: "vertical-center", label: "Align vertical center", icon: "↕" },
+  { action: "bottom", label: "Align bottom", icon: "⊥" },
+];
+
+function ColorControl({
+  value,
+  label,
+  onChange,
+}: {
+  value: string;
+  label: string;
+  onChange: (value: string) => void;
+}) {
+  const [input, setInput] = useState(value.replace(/^#/, "").toUpperCase());
+
+  useEffect(() => {
+    setInput(value.replace(/^#/, "").toUpperCase());
+  }, [value]);
+
+  function update(nextInput: string): void {
+    setInput(nextInput);
+    const normalized = `#${nextInput.replace(/^#/, "")}`;
+    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) onChange(normalized.toLowerCase());
+  }
+
+  return (
+    <div className="layer-color-control">
+      <input
+        type="text"
+        aria-label={`${label} hex color`}
+        maxLength={7}
+        value={input}
+        onChange={(event) => update(event.currentTarget.value)}
+        onBlur={() => setInput(value.replace(/^#/, "").toUpperCase())}
+      />
+      <input
+        type="color"
+        aria-label={`Choose ${label.toLowerCase()}`}
+        value={value}
+        onChange={(event) => update(event.currentTarget.value)}
+      />
+    </div>
+  );
+}
+
+function SegmentedControl<T extends string>({
+  value,
+  label,
+  options,
+  onChange,
+}: {
+  value: T;
+  label: string;
+  options: readonly { value: T; label: string; icon: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="layer-segmented-control" role="group" aria-label={label}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          title={option.label}
+          aria-label={option.label}
+          aria-pressed={value === option.value}
+          className={value === option.value ? "is-active" : ""}
+          onClick={() => onChange(option.value)}
+        >
+          {option.icon}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export function LayerPropertiesPanel({
   layer,
   selectionCount,
   onPatch,
+  onAlign,
 }: LayerPropertiesPanelProps) {
   if (selectionCount > 1) {
-    return (
-      <p className="app-stage multiple-selection-message">
-        Multiple layers selected: {selectionCount}
-      </p>
-    );
+    return <p className="app-stage multiple-selection-message">Multiple layers selected: {selectionCount}</p>;
   }
 
-  if (!layer) {
-    return <p className="app-stage">Select a layer to view its properties.</p>;
-  }
+  if (!layer) return <p className="app-stage">Select a layer to view its properties.</p>;
 
-  const currentLayer = layer;
-
-  function patchPosition(property: "x" | "y", value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
-    }
-
-    onPatch({
-      [property]: value,
-    });
-  }
-
-  function patchScale(property: "scaleX" | "scaleY", value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
-    }
-
-    onPatch({
-      [property]: Math.max(0.01, value),
-    });
-  }
-
-  function patchRotation(value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
-    }
-
-    onPatch({
-      rotation: value,
-    });
-  }
-
-  function patchOpacity(value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
-    }
-
-    onPatch({
-      opacity: Math.min(1, Math.max(0, value)),
-    });
-  }
-
-  function patchStrokeWidth(value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
-    }
-
-    if (
-      currentLayer.type === "line" ||
-      currentLayer.type === "arrow"
-    ) {
-      onPatch({
-        strokeWidth: Math.max(1, value),
-      });
-      return;
-    }
-
-    onPatch({
-      strokeWidth: Math.max(0, value),
-    });
-  }
-
-  function patchArrowHeadSize(value: number): void {
-    if (!Number.isFinite(value) || currentLayer.type !== "arrow") {
-      return;
-    }
-
-    onPatch({
-      arrowHeadSize: Math.max(4, value),
-    });
-  }
-
-  const isFilledShape =
-    layer.type === "rectangle" ||
-    layer.type === "circle" ||
-    layer.type === "triangle";
-  const isStrokedShape =
-    isFilledShape || layer.type === "line" || layer.type === "arrow";
-  const isArrow = layer.type === "arrow";
-  const filledShapeStrokePlaceholder = isFilledShape ? "None" : undefined;
+  const isText = layer.type === "text";
+  const isRectangle = layer.type === "rectangle";
+  const isCircle = layer.type === "circle";
+  const isTriangle = layer.type === "triangle";
+  const hasFill = isText || isRectangle || isCircle || layer.type === "triangle";
+  const hasStroke = hasFill || layer.type === "arrow";
+  const stroke = hasStroke ? layer.stroke : null;
+  const strokeWidth = hasStroke ? layer.strokeWidth : 0;
+  const fill = hasFill ? layer.fill : "#000000";
+  const fillEnabled = hasFill ? layer.fillEnabled : false;
 
   return (
-    <section className="inspector-panel" aria-label="Layer properties">
-      <h3>Transform & appearance</h3>
+    <section className="layer-design-panel" aria-label="Layer properties">
+      <header className="layer-design-header">
+        <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
+          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : "□"}
+        </span>
+        <h3>{layer.type.charAt(0).toUpperCase() + layer.type.slice(1)}</h3>
+      </header>
 
-      <dl className="property-grid">
-        <dt>ID</dt>
-        <dd>{layer.id}</dd>
+      <div className="layer-align-row" aria-label="Layer alignment controls">
+        {ALIGN_BUTTONS.map((button) => (
+          <button
+            key={button.action}
+            type="button"
+            title={button.label}
+            aria-label={button.label}
+            onClick={() => onAlign(button.action)}
+          >
+            {button.icon}
+          </button>
+        ))}
+      </div>
 
-        <dt>Type</dt>
-        <dd>{layer.type}</dd>
+      <section className="layer-design-section layer-layout-section">
+        <h4>Layout</h4>
+        <div className="layer-design-row">
+          <span>Position</span>
+          <div className="layer-double-input">
+            <BufferedNumberInput step="1" aria-label="Layer X position" value={layer.x} onValueChange={(value) => onPatch({ x: value })} />
+            <BufferedNumberInput step="1" aria-label="Layer Y position" value={layer.y} onValueChange={(value) => onPatch({ y: value })} />
+          </div>
+        </div>
+        <div className="layer-design-row">
+          <span>Size</span>
+          <div className="layer-double-input">
+            <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={layer.width} onValueChange={(value) => onPatch({ width: Math.max(1, value) })} />
+            <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={layer.height} onValueChange={(value) => onPatch({ height: Math.max(1, value) })} />
+          </div>
+        </div>
+        <div className="layer-design-row">
+          <span>Angle</span>
+          <div className="layer-single-input">
+            <BufferedNumberInput step="1" aria-label="Layer rotation" value={layer.rotation} onValueChange={(value) => onPatch({ rotation: value })} />
+            <span>°</span>
+          </div>
+        </div>
+      </section>
 
-        {layer.type === "text" ? (
-          <>
-            <dt>Text</dt>
-            <dd>
-              <textarea
-                value={layer.text}
-                aria-label="Layer text content"
-                rows={4}
-                onChange={(event) => {
-                  onPatch({
-                    text: event.currentTarget.value,
-                  });
-                }}
-              />
-            </dd>
-          </>
-        ) : null}
+      {isCircle ? (
+        <section className="layer-design-section">
+          <h4>Ellipse</h4>
+          <div className="layer-design-row"><span>Donut</span><div className="layer-single-input"><BufferedNumberInput min="0" max="100" aria-label="Ellipse donut" value={Math.round(layer.donut * 100)} onValueChange={(value) => onPatch({ donut: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div></div>
+          <div className="layer-design-row"><span>Sweep</span><div className="layer-single-input"><BufferedNumberInput min="0" max="100" aria-label="Ellipse sweep" value={Math.round((layer.sweep / 360) * 100)} onValueChange={(value) => onPatch({ sweep: Math.min(360, Math.max(0, value * 3.6)) })} /><span>%</span></div></div>
+          <div className="layer-design-row"><span>Start angle</span><div className="layer-single-input"><BufferedNumberInput aria-label="Ellipse start angle" value={layer.startAngle} onValueChange={(value) => onPatch({ startAngle: value })} /><span>°</span></div></div>
+        </section>
+      ) : null}
 
-        {isFilledShape ? (
-          <>
-            <dt>Fill</dt>
-            <dd>
-              <input
-                type="text"
-                value={layer.fill}
-                aria-label="Layer fill color"
-                onChange={(event) => {
-                  onPatch({ fill: event.currentTarget.value });
-                }}
-              />
-            </dd>
-          </>
-        ) : null}
+      {isText ? (
+        <section className="layer-design-section layer-text-section">
+          <h4>Text</h4>
+          <label className="layer-design-row"><span>Font Family</span><select aria-label="Font family" value={layer.fontFamily} onChange={(event) => onPatch({ fontFamily: event.currentTarget.value })}><option>Arial</option><option>Inter</option><option>Montserrat</option><option>Helvetica</option><option>Georgia</option><option>Courier New</option></select></label>
+          <label className="layer-design-row"><span>Style</span><select aria-label="Font style" value={`${layer.fontStyle}-${layer.fontWeight}`} onChange={(event) => { const [fontStyle, weight] = event.currentTarget.value.split("-"); onPatch({ fontStyle: fontStyle as TextLayer["fontStyle"], fontWeight: Number(weight) }); }}><option value="normal-400">Regular 400</option><option value="italic-400">Italic 400</option><option value="normal-500">Medium 500</option><option value="normal-600">Semi Bold 600</option><option value="normal-700">Bold 700</option><option value="normal-800">Extra Bold 800</option></select></label>
+          <div className="layer-design-row"><span>Size</span><div className="layer-full-input"><BufferedNumberInput min="1" aria-label="Font size" value={layer.fontSize} onValueChange={(value) => onPatch({ fontSize: Math.max(1, value) })} /></div></div>
+          <div className="layer-design-row"><span>Text align</span><SegmentedControl value={layer.textAlign} label="Text align" options={[{ value: "left", label: "Left aligned", icon: "≡" }, { value: "center", label: "Center aligned", icon: "≡" }, { value: "right", label: "Right aligned", icon: "≡" }]} onChange={(textAlign) => onPatch({ textAlign })} /></div>
+          <div className="layer-design-row"><span>Vertical align</span><SegmentedControl value={layer.verticalAlign} label="Vertical align" options={[{ value: "top", label: "Top", icon: "⊤" }, { value: "middle", label: "Middle", icon: "↕" }, { value: "bottom", label: "Bottom", icon: "⊥" }]} onChange={(verticalAlign) => onPatch({ verticalAlign })} /></div>
+          <div className="layer-design-row"><span>Auto resize</span><SegmentedControl value={layer.autoResize} label="Auto resize" options={[{ value: "both", label: "Fluid width and height", icon: "↔" }, { value: "height", label: "Fluid height", icon: "↕" }, { value: "fixed", label: "Fixed size", icon: "□" }]} onChange={(autoResize) => onPatch({ autoResize })} /></div>
+          <div className="layer-design-row"><span>Line height</span><div className="layer-single-input layer-wide-input"><BufferedNumberInput min="1" aria-label="Line height" value={Math.round(layer.lineHeight * 100)} onValueChange={(value) => onPatch({ lineHeight: Math.max(0.01, value / 100) })} /><span>%</span></div></div>
+          <div className="layer-design-row"><span>Letter spacing</span><div className="layer-single-input layer-wide-input"><BufferedNumberInput aria-label="Letter spacing" value={layer.letterSpacing} onValueChange={(value) => onPatch({ letterSpacing: value })} /><span>%</span></div></div>
+          <div className="layer-design-row"><span>Case</span><SegmentedControl value={layer.textCase} label="Case" options={[{ value: "normal", label: "Normal", icon: "Aa" }, { value: "uppercase", label: "Uppercase", icon: "AA" }, { value: "lowercase", label: "Lowercase", icon: "aa" }]} onChange={(textCase) => onPatch({ textCase })} /></div>
+          <label className="layer-design-row layer-checkbox-row"><span>Kerning pairs</span><input type="checkbox" aria-label="Kerning pairs" checked={layer.kerningPairs} onChange={(event) => onPatch({ kerningPairs: event.currentTarget.checked })} /></label>
+          <label className="layer-design-row layer-checkbox-row"><span>Ligatures</span><input type="checkbox" aria-label="Ligatures" checked={layer.ligatures} onChange={(event) => onPatch({ ligatures: event.currentTarget.checked })} /></label>
+        </section>
+      ) : null}
 
-        {isStrokedShape ? (
-          <>
-            <dt>Stroke</dt>
-            <dd>
-              <input
-                type="text"
-                value={isFilledShape ? (layer.stroke ?? "") : layer.stroke}
-                placeholder={filledShapeStrokePlaceholder}
-                aria-label="Layer stroke color"
-                onChange={(event) => {
-                  const value = event.currentTarget.value.trim();
-                  if (isFilledShape) {
-                    onPatch({ stroke: value === "" ? null : value });
-                  } else {
-                    onPatch({ stroke: value === "" ? "#000000" : value });
-                  }
-                }}
-              />
-            </dd>
+      <section className="layer-design-section layer-opacity-section">
+        <div className="layer-toggle-value-row layer-opacity-row">
+          <strong>Opacity</strong>
+          <div className={`layer-single-input layer-wide-input${layer.opacityEnabled ? "" : " is-disabled"}`}><BufferedNumberInput min="0" max="100" aria-label="Layer opacity" disabled={!layer.opacityEnabled} value={Math.round(layer.opacity * 100)} onValueChange={(value) => onPatch({ opacity: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div>
+          <input type="checkbox" aria-label="Enable layer opacity" checked={layer.opacityEnabled} onChange={(event) => onPatch({ opacityEnabled: event.currentTarget.checked })} />
+        </div>
+      </section>
 
-            <dt>Stroke width</dt>
-            <dd>
-              <input
-                type="number"
-                min={isFilledShape ? 0 : 1}
-                step={1}
-                value={layer.strokeWidth}
-                aria-label="Layer stroke width"
-                onChange={(event) => {
-                  patchStrokeWidth(event.currentTarget.valueAsNumber);
-                }}
-              />
-            </dd>
-          </>
-        ) : null}
+      {isRectangle || isTriangle ? (
+        <section className="layer-design-section layer-corner-section">
+          <div className="layer-toggle-value-row layer-corner-row">
+            <strong>Corner</strong>
+            <div className={`layer-corner-main${isTriangle ? " is-single" : ""}${layer.cornerEnabled ? "" : " is-disabled"}`}>
+              <BufferedNumberInput value={layer.cornerRadius} min={0} disabled={!layer.cornerEnabled} aria-label="Corner radius" onValueChange={(value) => onPatch({ cornerRadius: Math.max(0, value), ...(isRectangle ? { cornerRadii: layer.cornerRadii ? { topLeft: Math.max(0, value), topRight: Math.max(0, value), bottomRight: Math.max(0, value), bottomLeft: Math.max(0, value) } : null } : {}) })} />
+              {isRectangle ? <button type="button" disabled={!layer.cornerEnabled} aria-label={layer.cornerRadii ? "Uniform corners" : "Independent corners"} className={layer.cornerRadii ? "is-active" : ""} onClick={() => onPatch({ cornerRadii: layer.cornerRadii ? null : { topLeft: layer.cornerRadius, topRight: layer.cornerRadius, bottomRight: layer.cornerRadius, bottomLeft: layer.cornerRadius } })}>⌗</button> : null}
+            </div>
+            <input type="checkbox" aria-label="Enable layer corners" checked={layer.cornerEnabled} onChange={(event) => onPatch({ cornerEnabled: event.currentTarget.checked })} />
+          </div>
+          {isRectangle && layer.cornerRadii ? (
+            <div className={`layer-corner-grid${layer.cornerEnabled ? "" : " is-disabled"}`}>
+              {(["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).map((corner) => <BufferedNumberInput key={corner} value={layer.cornerRadii?.[corner] ?? 0} min={0} disabled={!layer.cornerEnabled} aria-label={`${corner} corner radius`} onValueChange={(value) => { if (layer.cornerRadii) onPatch({ cornerRadii: { ...layer.cornerRadii, [corner]: Math.max(0, value) } }); }} />)}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-        {isArrow ? (
-          <>
-            <dt>Arrow head size</dt>
-            <dd>
-              <input
-                type="number"
-                min={4}
-                step={1}
-                value={layer.arrowHeadSize}
-                aria-label="Arrow head size"
-                onChange={(event) => {
-                  patchArrowHeadSize(event.currentTarget.valueAsNumber);
-                }}
-              />
-            </dd>
-          </>
-        ) : null}
+      {hasFill ? (
+        <section className="layer-design-section layer-paint-section">
+          <div className="layer-section-title"><h4>Fill</h4><input type="checkbox" aria-label="Enable layer fill" checked={fillEnabled} onChange={(event) => onPatch({ fillEnabled: event.currentTarget.checked })} /></div>
+          {fillEnabled ? <div className="layer-design-row layer-paint-row"><span>Color</span><ColorControl value={fill} label="Layer fill" onChange={(nextFill) => onPatch({ fill: nextFill })} /></div> : null}
+        </section>
+      ) : null}
 
-        <dt>X</dt>
-        <dd>
-          <input
-            type="number"
-            step={1}
-            value={layer.x}
-            aria-label="Layer X position"
-            onChange={(event) => {
-              patchPosition("x", event.currentTarget.valueAsNumber);
-            }}
-          />
-        </dd>
+      {hasStroke ? (
+        <section className="layer-design-section layer-paint-section">
+          <div className="layer-section-title"><h4>Stroke</h4><input type="checkbox" aria-label="Enable layer stroke" checked={stroke != null} onChange={(event) => onPatch({ stroke: event.currentTarget.checked ? "#000000" : null, strokeWidth: event.currentTarget.checked ? Math.max(1, strokeWidth) : strokeWidth })} /></div>
+          {stroke != null ? (
+            <>
+              <div className="layer-design-row"><span>Weight</span><div className="layer-full-input"><BufferedNumberInput value={strokeWidth} min={0} aria-label="Layer stroke width" onValueChange={(value) => onPatch({ strokeWidth: Math.max(0, value) })} /></div></div>
+              <div className="layer-design-row layer-paint-row"><span>Color</span><ColorControl value={stroke} label="Layer stroke" onChange={(nextStroke) => onPatch({ stroke: nextStroke })} /></div>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
-        <dt>Y</dt>
-        <dd>
-          <input
-            type="number"
-            step={1}
-            value={layer.y}
-            aria-label="Layer Y position"
-            onChange={(event) => {
-              patchPosition("y", event.currentTarget.valueAsNumber);
-            }}
-          />
-        </dd>
-
-        <dt>Width</dt>
-        <dd>{layer.width}</dd>
-
-        <dt>Height</dt>
-        <dd>{layer.height}</dd>
-
-        <dt>Scale X</dt>
-        <dd>
-          <input
-            type="number"
-            min={0.01}
-            step={0.05}
-            value={layer.scaleX}
-            aria-label="Layer horizontal scale"
-            onChange={(event) => {
-              patchScale("scaleX", event.currentTarget.valueAsNumber);
-            }}
-          />
-        </dd>
-
-        <dt>Scale Y</dt>
-        <dd>
-          <input
-            type="number"
-            min={0.01}
-            step={0.05}
-            value={layer.scaleY}
-            aria-label="Layer vertical scale"
-            onChange={(event) => {
-              patchScale("scaleY", event.currentTarget.valueAsNumber);
-            }}
-          />
-        </dd>
-
-        <dt>Rotation</dt>
-        <dd>
-          <input
-            type="number"
-            step={1}
-            value={layer.rotation}
-            aria-label="Layer rotation"
-            onChange={(event) => {
-              patchRotation(event.currentTarget.valueAsNumber);
-            }}
-          />
-        </dd>
-
-        <dt>Opacity</dt>
-        <dd>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={layer.opacity}
-            aria-label="Layer opacity slider"
-            onChange={(event) => {
-              patchOpacity(event.currentTarget.valueAsNumber);
-            }}
-          />
-
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.05}
-            value={layer.opacity}
-            aria-label="Layer opacity value"
-            onChange={(event) => {
-              patchOpacity(event.currentTarget.valueAsNumber);
-            }}
-          />
-        </dd>
-
-        <dt>Z-index</dt>
-        <dd>{layer.zIndex}</dd>
-
-        <dt>Visible</dt>
-        <dd>{layer.visible ? "Yes" : "No"}</dd>
-
-        <dt>Locked</dt>
-        <dd>{layer.locked ? "Yes" : "No"}</dd>
-      </dl>
+      {layer.type === "arrow" ? <section className="layer-design-section"><h4>Arrow</h4><label className="layer-design-row"><span>Start style</span><select aria-label="Start arrowhead style" value={layer.arrowStartStyle} onChange={(event) => onPatch({ arrowStartStyle: event.currentTarget.value as "none" | "triangle" | "line" | "diamond" | "circle" })}><option value="none">None</option><option value="triangle">Triangle</option><option value="line">Line</option><option value="diamond">Diamond</option><option value="circle">Circle</option></select></label><label className="layer-design-row"><span>End style</span><select aria-label="End arrowhead style" value={layer.arrowEndStyle} onChange={(event) => onPatch({ arrowEndStyle: event.currentTarget.value as "none" | "triangle" | "line" | "diamond" | "circle" })}><option value="none">None</option><option value="triangle">Triangle</option><option value="line">Line</option><option value="diamond">Diamond</option><option value="circle">Circle</option></select></label><div className="layer-design-row"><span>Head size</span><div className="layer-full-input"><BufferedNumberInput min="4" aria-label="Arrow head size" value={layer.arrowHeadSize} onValueChange={(value) => onPatch({ arrowHeadSize: Math.max(4, value) })} /></div></div></section> : null}
     </section>
   );
 }

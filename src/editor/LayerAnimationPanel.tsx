@@ -5,6 +5,7 @@ import type {
   AnimationPreset,
   LayerAnimation,
 } from "../domain/layerAnimationSchema";
+import { BufferedNumberInput } from "./BufferedNumberInput";
 
 const ANIMATION_PRESETS = [
   "fade",
@@ -250,31 +251,25 @@ function PhaseEditor({
 
       <label>
         Start frame
-        <input
-          type="number"
+        <BufferedNumberInput
           min={0}
           max={sceneDurationInFrames - 1}
           step={1}
           value={animation.startFrame}
           aria-label={startAria}
-          onChange={(event) => {
-            handleStartFrameChange(event.currentTarget.valueAsNumber);
-          }}
+          onValueChange={handleStartFrameChange}
         />
       </label>
 
       <label>
         Duration
-        <input
-          type="number"
+        <BufferedNumberInput
           min={1}
           max={sceneDurationInFrames - animation.startFrame}
           step={1}
           value={animation.durationInFrames}
           aria-label={durationAria}
-          onChange={(event) => {
-            handleDurationChange(event.currentTarget.valueAsNumber);
-          }}
+          onValueChange={handleDurationChange}
         />
       </label>
 

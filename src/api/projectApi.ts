@@ -120,3 +120,15 @@ export async function createScene(
 
   return { project, scene };
 }
+
+export async function deleteScene(
+  projectId: string,
+  sceneId: string,
+): Promise<Project> {
+  const input = await fetchJson(
+    `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`,
+    { method: "DELETE" },
+  );
+
+  return parseProject(input);
+}

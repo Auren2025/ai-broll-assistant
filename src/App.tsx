@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import {
   createScene,
+  deleteScene as deleteSceneRequest,
   fetchProject,
   fetchScene,
   saveProject,
@@ -30,7 +31,16 @@ const PROJECT_ID = "video001";
 
 type InspectorTab = "design" | "animate";
 type InspectorScope = "scene" | "layer";
-type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "line" | "arrow";
+type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "arrow";
+
+interface EditorSnapshot {
+  project: Project;
+  scene: Scene;
+  scenesById: Record<string, Scene>;
+  selectedLayerIds: string[];
+  inspectorScope: InspectorScope;
+  isDirty: boolean;
+}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -288,6 +298,10 @@ function App() {
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const previewStateRef = useRef<PreviewStateMessage | null>(null);
+  const editorSnapshotRef = useRef<EditorSnapshot | null>(null);
+  const undoStackRef = useRef<EditorSnapshot[]>([]);
+  const redoStackRef = useRef<EditorSnapshot[]>([]);
+  const isApplyingHistoryRef = useRef(false);
   const selectedLayerId =
     selectedLayerIds.length === 1 ? (selectedLayerIds[0] ?? null) : null;
 
@@ -297,6 +311,18 @@ function App() {
           type: "state",
           project,
           scene,
+          isDirty,
+        }
+      : null;
+
+  editorSnapshotRef.current =
+    project && scene
+      ? {
+          project,
+          scene,
+          scenesById: { ...scenesById, [scene.id]: scene },
+          selectedLayerIds: [...selectedLayerIds],
+          inspectorScope,
           isDirty,
         }
       : null;
@@ -372,17 +398,34 @@ function App() {
     } satisfies PreviewStateMessage);
   }, [isDirty, project, scene]);
 
+  const recordHistory = useCallback(() => {
+    if (isApplyingHistoryRef.current || !editorSnapshotRef.current) {
+      return;
+    }
+
+    undoStackRef.current.push(editorSnapshotRef.current);
+    if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+    redoStackRef.current = [];
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, []);
+
   const handleSceneChange = useCallback((updatedScene: Scene) => {
+    recordHistory();
     setScene(updatedScene);
     setIsDirty(true);
     setSaveError(null);
-  }, []);
+  }, [recordHistory]);
 
   const handleProjectChange = useCallback((updatedProject: Project) => {
+    recordHistory();
     setProject(updatedProject);
     setIsDirty(true);
     setSaveError(null);
-  }, []);
+  }, [recordHistory]);
 
   const handleSelectedLayerIdsChange = useCallback((layerIds: string[]) => {
     setSelectedLayerIds((currentLayerIds) =>
@@ -412,6 +455,194 @@ function App() {
     },
     [handleSceneChange, scene],
   );
+
+  const applyHistorySnapshot = useCallback(async (snapshot: EditorSnapshot) => {
+    const current = editorSnapshotRef.current;
+    if (!current) return;
+
+    const currentSceneIds = new Set(
+      current.project.scenes.map((reference) => reference.id),
+    );
+    const targetSceneIds = new Set(
+      snapshot.project.scenes.map((reference) => reference.id),
+    );
+    const removedSceneIds = [...currentSceneIds].filter(
+      (sceneId) => !targetSceneIds.has(sceneId),
+    );
+    const restoredSceneIds = [...targetSceneIds].filter(
+      (sceneId) => !currentSceneIds.has(sceneId),
+    );
+
+    if (restoredSceneIds.length > 0) {
+      await saveProject(snapshot.project);
+      for (const sceneId of restoredSceneIds) {
+        const restoredScene = snapshot.scenesById[sceneId];
+        if (!restoredScene) throw new Error(`Missing scene snapshot: ${sceneId}`);
+        await saveScene(snapshot.project.id, restoredScene);
+      }
+    } else if (removedSceneIds.length > 0) {
+      for (const sceneId of removedSceneIds) {
+        await deleteSceneRequest(current.project.id, sceneId);
+      }
+      await saveProject(snapshot.project);
+    }
+
+    setProject(snapshot.project);
+    setScene(snapshot.scene);
+    setScenesById(snapshot.scenesById);
+    setSelectedLayerIds(snapshot.selectedLayerIds);
+    setInspectorScope(snapshot.inspectorScope);
+    setIsDirty(snapshot.isDirty);
+    setSaveError(null);
+    setSceneError(null);
+  }, []);
+
+  const handleUndo = useCallback(async () => {
+    if (isApplyingHistoryRef.current || isSaving || isSceneLoading) return;
+    const current = editorSnapshotRef.current;
+    const previous = undoStackRef.current.pop();
+    if (!current || !previous) return;
+
+    isApplyingHistoryRef.current = true;
+    redoStackRef.current.push(current);
+    try {
+      await applyHistorySnapshot(previous);
+    } catch (error: unknown) {
+      redoStackRef.current.pop();
+      undoStackRef.current.push(previous);
+      setSceneError(getErrorMessage(error));
+    } finally {
+      isApplyingHistoryRef.current = false;
+    }
+  }, [applyHistorySnapshot, isSaving, isSceneLoading]);
+
+  const handleRedo = useCallback(async () => {
+    if (isApplyingHistoryRef.current || isSaving || isSceneLoading) return;
+    const current = editorSnapshotRef.current;
+    const next = redoStackRef.current.pop();
+    if (!current || !next) return;
+
+    isApplyingHistoryRef.current = true;
+    undoStackRef.current.push(current);
+    try {
+      await applyHistorySnapshot(next);
+    } catch (error: unknown) {
+      undoStackRef.current.pop();
+      redoStackRef.current.push(next);
+      setSceneError(getErrorMessage(error));
+    } finally {
+      isApplyingHistoryRef.current = false;
+    }
+  }, [applyHistorySnapshot, isSaving, isSceneLoading]);
+
+  const handleDeleteSelection = useCallback(async () => {
+    if (!project || !scene || isSaving || isSceneLoading) {
+      return;
+    }
+
+    if (inspectorScope === "layer") {
+      if (selectedLayerIds.length === 0) {
+        return;
+      }
+
+      const selectedIdSet = new Set(selectedLayerIds);
+      handleSceneChange({
+        ...scene,
+        layers: scene.layers.filter((layer) => !selectedIdSet.has(layer.id)),
+      });
+      setSelectedLayerIds([]);
+      setInspectorScope("scene");
+      return;
+    }
+
+    if (project.scenes.length <= 1) {
+      setSceneError("A project must contain at least one scene");
+      return;
+    }
+
+    recordHistory();
+    setIsSceneLoading(true);
+    setSceneError(null);
+
+    try {
+      const deletedIndex = project.scenes.findIndex(
+        (reference) => reference.id === scene.id,
+      );
+      const nextProject = await deleteSceneRequest(project.id, scene.id);
+      const nextReference =
+        nextProject.scenes[Math.min(deletedIndex, nextProject.scenes.length - 1)];
+
+      if (!nextReference) {
+        throw new Error("Project contains no scenes");
+      }
+
+      const nextScene =
+        scenesById[nextReference.id] ??
+        (await fetchScene(nextProject.id, nextReference.id));
+
+      setProject(nextProject);
+      setScene(nextScene);
+      setScenesById((current) => {
+        const next = { ...current };
+        delete next[scene.id];
+        return next;
+      });
+      setSelectedLayerIds([]);
+      setInspectorScope("scene");
+      setIsDirty(false);
+      setSaveError(null);
+    } catch (error: unknown) {
+      undoStackRef.current.pop();
+      setSceneError(getErrorMessage(error));
+    } finally {
+      setIsSceneLoading(false);
+    }
+  }, [
+    handleSceneChange,
+    inspectorScope,
+    isSaving,
+    isSceneLoading,
+    project,
+    recordHistory,
+    scene,
+    scenesById,
+    selectedLayerIds,
+  ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (modifier && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) void handleRedo();
+        else void handleUndo();
+        return;
+      }
+
+      if (event.ctrlKey && key === "y") {
+        event.preventDefault();
+        void handleRedo();
+        return;
+      }
+
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+
+      event.preventDefault();
+      void handleDeleteSelection();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleDeleteSelection, handleRedo, handleUndo]);
 
   const handleAlign = useCallback(
     (action: AlignmentAction) => {
@@ -456,6 +687,8 @@ function App() {
             scaleY: 1,
             rotation: 0,
             opacity: 1,
+            opacityEnabled: true,
+            blendMode: "normal",
             zIndex,
             visible: true,
             locked: false,
@@ -468,7 +701,16 @@ function App() {
             lineHeight: 1.2,
             letterSpacing: 0,
             textAlign: "center",
+            verticalAlign: "middle",
+            autoResize: "height",
+            textCase: "normal",
+            kerningPairs: true,
+            ligatures: true,
             fill: "#ffffff",
+            fillEnabled: true,
+            stroke: null,
+            strokeWidth: 0,
+            strokePosition: "inside",
           };
         case "rectangle":
           return {
@@ -483,14 +725,20 @@ function App() {
             scaleY: 1,
             rotation: 0,
             opacity: 1,
+            opacityEnabled: true,
+            blendMode: "normal",
             zIndex,
             visible: true,
             locked: false,
             animations: [],
             fill: "#6b7280",
+            fillEnabled: true,
             stroke: null,
             strokeWidth: 0,
+            strokePosition: "inside",
+            cornerEnabled: true,
             cornerRadius: 0,
+            cornerRadii: null,
           };
         case "circle":
           return {
@@ -505,13 +753,20 @@ function App() {
             scaleY: 1,
             rotation: 0,
             opacity: 1,
+            opacityEnabled: true,
+            blendMode: "normal",
             zIndex,
             visible: true,
             locked: false,
             animations: [],
             fill: "#6b7280",
+            fillEnabled: true,
             stroke: null,
             strokeWidth: 0,
+            strokePosition: "inside",
+            donut: 0,
+            sweep: 360,
+            startAngle: 0,
           };
         case "triangle":
           return {
@@ -526,33 +781,18 @@ function App() {
             scaleY: 1,
             rotation: 0,
             opacity: 1,
+            opacityEnabled: true,
+            blendMode: "normal",
             zIndex,
             visible: true,
             locked: false,
             animations: [],
             fill: "#6b7280",
+            fillEnabled: true,
             stroke: null,
             strokeWidth: 0,
-          };
-        case "line":
-          return {
-            id,
-            name: "Line",
-            type: "line",
-            x: (project.width - 360) / 2,
-            y: (project.height - 6) / 2,
-            width: 360,
-            height: 6,
-            scaleX: 1,
-            scaleY: 1,
-            rotation: 0,
-            opacity: 1,
-            zIndex,
-            visible: true,
-            locked: false,
-            animations: [],
-            stroke: "#1f2937",
-            strokeWidth: 6,
+            cornerEnabled: true,
+            cornerRadius: 0,
           };
         case "arrow":
           return {
@@ -567,6 +807,8 @@ function App() {
             scaleY: 1,
             rotation: 0,
             opacity: 1,
+            opacityEnabled: true,
+            blendMode: "normal",
             zIndex,
             visible: true,
             locked: false,
@@ -574,6 +816,8 @@ function App() {
             stroke: "#1f2937",
             strokeWidth: 6,
             arrowHeadSize: 24,
+            arrowStartStyle: "none",
+            arrowEndStyle: "triangle",
           };
       }
     })();
@@ -592,7 +836,7 @@ function App() {
         return;
       }
 
-      const patchKeys = Object.keys(patch) as (keyof EditableLayerPatch)[];
+      const patchKeys = Object.keys(patch);
 
       if (patchKeys.length === 0) {
         return;
@@ -600,26 +844,15 @@ function App() {
 
       let changed = false;
 
-      const updatedLayers = scene.layers.map((layer) => {
+      const updatedLayers: Layer[] = scene.layers.map((layer) => {
         if (layer.id !== selectedLayerId) {
           return layer;
         }
 
-        if ("text" in patch) {
-          if (layer.type !== "text" || layer.text === patch.text) {
-            return layer;
-          }
-
-          changed = true;
-
-          return {
-            ...layer,
-            text: patch.text,
-          };
-        }
-
+        const layerRecord = layer as unknown as Record<string, unknown>;
+        const patchRecord = patch as Record<string, unknown>;
         const hasChanged = patchKeys.some(
-          (key) => layer[key] !== patch[key],
+          (key) => layerRecord[key] !== patchRecord[key],
         );
 
         if (!hasChanged) {
@@ -638,15 +871,12 @@ function App() {
         return;
       }
 
-      setScene({
+      handleSceneChange({
         ...scene,
         layers: updatedLayers,
       });
-
-      setIsDirty(true);
-      setSaveError(null);
     },
-    [scene, selectedLayerId],
+    [handleSceneChange, scene, selectedLayerId],
   );
 
   const handleSelectedLayerAnimationsChange = useCallback(
@@ -694,15 +924,12 @@ function App() {
         return;
       }
 
-      setScene({
+      handleSceneChange({
         ...scene,
         layers: updatedLayers,
       });
-
-      setIsDirty(true);
-      setSaveError(null);
     },
-    [scene, selectedLayerId],
+    [handleSceneChange, scene, selectedLayerId],
   );
 
   async function handleSceneSelect(
@@ -738,6 +965,7 @@ function App() {
       setSelectedLayerIds(nextSelectedLayerIds);
       setInspectorScope(nextScope);
       setIsDirty(false);
+      clearHistory();
       setSaveError(null);
     } catch (error: unknown) {
       setSceneError(getErrorMessage(error));
@@ -791,6 +1019,7 @@ function App() {
         [savedScene.id]: savedScene,
       }));
       setIsDirty(false);
+      clearHistory();
     } catch (error: unknown) {
       setSaveError(getErrorMessage(error));
     } finally {
@@ -812,6 +1041,7 @@ function App() {
     setCreateSceneError(null);
     setSceneError(null);
 
+    recordHistory();
     try {
       const { project: nextProject, scene: newScene } = await createScene(
         project.id,
@@ -828,6 +1058,7 @@ function App() {
       setIsDirty(false);
       setSaveError(null);
     } catch (error: unknown) {
+      undoStackRef.current.pop();
       setCreateSceneError(getErrorMessage(error));
     } finally {
       setIsCreatingScene(false);
@@ -928,7 +1159,6 @@ function App() {
             onAddRectangle={() => handleAddLayer("rectangle")}
             onAddCircle={() => handleAddLayer("circle")}
             onAddTriangle={() => handleAddLayer("triangle")}
-            onAddLine={() => handleAddLayer("line")}
             onAddArrow={() => handleAddLayer("arrow")}
             onAddScene={() => void handleAddScene()}
             onOpenPreview={handleOpenPreview}
@@ -995,22 +1225,6 @@ function App() {
           </div>
 
           <div className="inspector-scroll">
-            {inspectorScope === "scene" ? null : (
-              <div className="selection-summary">
-                <span>
-                  {selectedLayerIds.length > 1
-                    ? "Selected layers"
-                    : "Selected layer"}
-                </span>
-                <strong>
-                  {selectedLayerIds.length > 1
-                    ? `${selectedLayerIds.length} layers`
-                    : (selectedLayer?.name ?? "None")}
-                </strong>
-                {selectedLayer ? <small>{selectedLayer.type}</small> : null}
-              </div>
-            )}
-
             {inspectorTab === "design" ? (
               inspectorScope === "scene" ? (
                 <ScenePropertiesPanel
@@ -1030,6 +1244,7 @@ function App() {
                   layer={selectedLayer}
                   selectionCount={selectedLayerIds.length}
                   onPatch={handleSelectedLayerPatch}
+                  onAlign={handleAlign}
                 />
               )
             ) : inspectorScope === "scene" ? (

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { ArrowLayerSchema } from "./arrowLayerSchema";
 import { CircleLayerSchema } from "./circleLayerSchema";
-import { LineLayerSchema } from "./lineLayerSchema";
 import { RectangleLayerSchema } from "./rectangleLayerSchema";
 import { TextLayerSchema } from "./textLayerSchema";
 import { TriangleLayerSchema } from "./triangleLayerSchema";
@@ -24,7 +23,6 @@ export const LayerSchema = z.discriminatedUnion("type", [
   RectangleLayerSchema,
   CircleLayerSchema,
   TriangleLayerSchema,
-  LineLayerSchema,
   ArrowLayerSchema,
 ]);
 

@@ -29,7 +29,7 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.statusCode = status
   res.setHeader('Content-Type', CONTENT_TYPE)
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   res.end(JSON.stringify(body))
 }
@@ -285,6 +285,63 @@ async function handlePutScene(
   sendJson(res, 200, scene)
 }
 
+async function handleDeleteScene(
+  res: http.ServerResponse,
+  projectId: string,
+  sceneId: string,
+): Promise<void> {
+  const project = await readAndParseProject(res, projectId)
+  if (project === null) return
+
+  if (project.scenes.length <= 1) {
+    sendJson(res, 409, { error: 'Cannot delete the last scene' })
+    return
+  }
+
+  const reference = project.scenes.find((scene) => scene.id === sceneId)
+  if (!reference) {
+    sendJson(res, 404, { error: 'Scene not found' })
+    return
+  }
+
+  let nextProject: Project
+  try {
+    nextProject = parseProject({
+      ...project,
+      scenes: project.scenes.filter((scene) => scene.id !== sceneId),
+    })
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to update project' })
+    return
+  }
+
+  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const projectPath = path.join(projectDir, 'project.json')
+  const tempPath = buildSceneTempPath(projectPath)
+
+  try {
+    await fs.writeFile(
+      tempPath,
+      JSON.stringify(nextProject, null, 2) + '\n',
+      'utf-8',
+    )
+    await fs.rename(tempPath, projectPath)
+  } catch (err) {
+    console.error(err)
+    await fs.unlink(tempPath).catch(() => {})
+    sendJson(res, 500, { error: 'Failed to update project' })
+    return
+  }
+
+  const scenePath = path.join(projectDir, reference.file)
+  await fs.unlink(scenePath).catch((err) => {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error(err)
+  })
+
+  sendJson(res, 200, nextProject)
+}
+
 const SCENE_ID_PATTERN = /^scene-(\d+)$/
 const NEW_SCENE_DURATION_IN_FRAMES = 150
 
@@ -533,6 +590,10 @@ const server = http.createServer((req, res) => {
       }
       if (method === 'PUT') {
         void handlePutScene(req, res, projectIdPart, sceneId)
+        return
+      }
+      if (method === 'DELETE') {
+        void handleDeleteScene(res, projectIdPart, sceneId)
         return
       }
       sendJson(res, 405, { error: 'Method not allowed' })

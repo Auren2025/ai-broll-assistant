@@ -12,8 +12,6 @@ function getLayerIcon(type: Scene["layers"][number]["type"]): string {
       return "○";
     case "triangle":
       return "△";
-    case "line":
-      return "―";
     case "arrow":
       return "→";
     default:

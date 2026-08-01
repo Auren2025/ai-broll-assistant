@@ -688,7 +688,8 @@ button {
   padding: 16px;
 }
 
-.inspector-scroll:has(.scene-design-panel) {
+.inspector-scroll:has(.scene-design-panel),
+.inspector-scroll:has(.layer-design-panel) {
   padding: 0;
 }
 
@@ -924,6 +925,324 @@ button {
   font-size: 13px;
   pointer-events: none;
   transform: translateY(-50%);
+}
+
+.layer-design-panel {
+  color: #19171c;
+  background: #fff;
+  font-size: 13px;
+}
+
+.layer-design-header {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  height: 61px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.layer-design-header h3 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-design-type-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: #19171c;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.layer-align-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  height: 52px;
+  align-items: center;
+  padding: 12px 8px;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.layer-align-row button {
+  height: 28px;
+  padding: 0;
+  border: 0;
+  color: #97979b;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.layer-align-row button:hover {
+  color: #7a40ed;
+  background: #f2ecfd;
+}
+
+.layer-design-section {
+  padding: 12px 0;
+  border-bottom: 1px solid #e5e4e7;
+}
+
+.layer-design-section h4,
+.layer-section-title {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  padding: 0 8px 0 16px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.layer-section-title {
+  justify-content: space-between;
+  padding-right: 10px;
+}
+
+.layer-section-title h4 {
+  height: auto;
+  padding: 0;
+}
+
+.layer-section-title input[type="checkbox"],
+.layer-checkbox-row input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #7a40ed;
+}
+
+.layer-design-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 8px 0 16px;
+  color: #97979b;
+  line-height: 16px;
+}
+
+.layer-design-row.is-disabled,
+.layer-corner-grid.is-disabled,
+.layer-toggle-value-row .is-disabled {
+  opacity: 0.42;
+}
+
+.layer-design-panel input:disabled,
+.layer-design-panel button:disabled {
+  cursor: default;
+}
+
+.layer-layout-section .layer-design-row {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+
+.layer-design-panel input,
+.layer-design-panel select,
+.layer-design-panel button {
+  font: inherit;
+}
+
+.layer-design-panel input[type="number"],
+.layer-design-panel input[type="text"],
+.layer-design-panel input[type="color"],
+.layer-design-panel select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: #19171c;
+  background: rgb(242 241 243 / 35%);
+  outline: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.layer-design-panel input[type="number"],
+.layer-design-panel input[type="text"] {
+  padding: 0 16px;
+  appearance: textfield;
+}
+
+.layer-design-panel input[type="number"]::-webkit-inner-spin-button,
+.layer-design-panel input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.layer-design-panel select {
+  padding: 0 8px 0 16px;
+}
+
+.layer-design-panel input:focus,
+.layer-design-panel select:focus,
+.layer-design-panel button:focus-visible {
+  box-shadow: inset 0 0 0 1px #7a40ed;
+}
+
+.layer-double-input {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.layer-single-input {
+  position: relative;
+  width: 80px;
+  justify-self: end;
+}
+
+.layer-single-input input {
+  padding-right: 26px !important;
+}
+
+.layer-single-input span {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  color: #19171c;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.layer-wide-input,
+.layer-full-input {
+  width: 112px;
+}
+
+.layer-full-input {
+  justify-self: end;
+}
+
+.layer-segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 112px;
+  height: 28px;
+}
+
+.layer-segmented-control button {
+  height: 28px;
+  padding: 0;
+  border: 0;
+  color: #97979b;
+  background: rgb(242 241 243 / 35%);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.layer-segmented-control button.is-active {
+  color: #7a40ed;
+  background: #f2ecfd;
+}
+
+.layer-checkbox-row input {
+  justify-self: end;
+}
+
+.layer-strong-label {
+  color: #19171c;
+  font-weight: 600;
+}
+
+.layer-toggle-value-row {
+  display: grid;
+  min-height: 32px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px 0 16px;
+}
+
+.layer-toggle-value-row strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.layer-toggle-value-row > input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #7a40ed;
+}
+
+.layer-opacity-row {
+  grid-template-columns: 112px minmax(0, 1fr) 13px;
+}
+
+.layer-opacity-row .layer-single-input {
+  width: 100%;
+  justify-self: stretch;
+}
+
+.layer-corner-row {
+  grid-template-columns: 112px minmax(0, 1fr) 13px;
+}
+
+.layer-corner-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 4px;
+}
+
+.layer-corner-main.is-single {
+  grid-template-columns: 1fr;
+}
+
+.layer-corner-main button {
+  height: 28px;
+  padding: 0;
+  border: 0;
+  color: #97979b;
+  background: rgb(242 241 243 / 35%);
+  cursor: pointer;
+}
+
+.layer-corner-main button.is-active {
+  color: #7a40ed;
+  background: #f2ecfd;
+}
+
+.layer-corner-grid {
+  display: grid;
+  grid-template-columns: 80px 80px;
+  gap: 4px;
+  margin: 4px 8px 0 76px;
+}
+
+.layer-color-control {
+  display: grid;
+  grid-template-columns: 80px 28px;
+  gap: 4px;
+}
+
+.layer-color-control input[type="text"] {
+  padding: 0 2px 0 16px;
+}
+
+.layer-color-control input[type="color"] {
+  padding: 0;
+  border-color: #d7d7db;
+  background: #fff;
+}
+
+.layer-color-control input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.layer-color-control input[type="color"]::-webkit-color-swatch {
+  border: 0;
 }
 
 .scene-animations-message {

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { LayerBaseSchema } from './layerSchema'
+import { LayerBaseSchema, StrokePositionSchema } from './layerSchema'
 
 // Geometry rules shared by Fabric.js Adapter and Remotion Adapter:
 // - width and height are the rectangle's base geometric size.
@@ -12,9 +12,22 @@ import { LayerBaseSchema } from './layerSchema'
 export const RectangleLayerSchema = LayerBaseSchema.extend({
   type: z.literal('rectangle'),
   fill: z.string().min(1),
+  fillEnabled: z.boolean().default(true),
   stroke: z.union([z.string().min(1), z.null()]),
   strokeWidth: z.number().finite().nonnegative(),
+  strokePosition: StrokePositionSchema.default('inside'),
+  cornerEnabled: z.boolean().default(true),
   cornerRadius: z.number().finite().nonnegative(),
+  cornerRadii: z
+    .object({
+      topLeft: z.number().finite().nonnegative(),
+      topRight: z.number().finite().nonnegative(),
+      bottomRight: z.number().finite().nonnegative(),
+      bottomLeft: z.number().finite().nonnegative(),
+    })
+    .strict()
+    .nullable()
+    .default(null),
 }).strict()
 
 export type RectangleLayer = z.infer<typeof RectangleLayerSchema>

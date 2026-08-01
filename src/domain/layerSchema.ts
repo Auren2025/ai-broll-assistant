@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { LayerAnimationSchema } from './layerAnimationSchema'
 
+export const BlendModeSchema = z.literal('normal')
+
+export const StrokePositionSchema = z.literal('inside')
+
 // Coordinate rules shared by Fabric.js Adapter and Remotion Adapter:
 // - Canvas origin is the top-left corner (0, 0).
 // - x and y are the top-left of the layer's unrotated bounding box.
@@ -32,6 +36,8 @@ export const LayerBaseSchema = z
     scaleY: z.number().finite().positive(),
     rotation: z.number().finite(),
     opacity: z.number().finite().min(0).max(1),
+    opacityEnabled: z.boolean().default(true),
+    blendMode: BlendModeSchema.default('normal'),
     zIndex: z.number().int().nonnegative(),
     visible: z.boolean(),
     locked: z.boolean(),

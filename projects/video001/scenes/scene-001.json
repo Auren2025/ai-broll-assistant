@@ -8,8 +8,8 @@
     {
       "id": "image-1",
       "name": "Image",
-      "x": 382.5,
-      "y": 91.7,
+      "x": 218.5,
+      "y": 81.7,
       "width": 961.5,
       "height": 773.7,
       "rotation": 0,
@@ -50,7 +50,16 @@
       "zIndex": 1,
       "visible": true,
       "locked": false,
-      "animations": [],
+      "animations": [
+        {
+          "id": "rectangle-1-enter",
+          "phase": "enter",
+          "preset": "slide-down",
+          "startFrame": 0,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ],
       "type": "rectangle",
       "fill": "#6b7280",
       "fillEnabled": true,

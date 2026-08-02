@@ -5,35 +5,56 @@ description: Generate and modify AI-Broll-Assistant projects and scene JSON from
 
 # AI B-roll Scene Workflow
 
-## Workflow
+## 处理项目流程
 
-1. Read `AGENTS.md` and the current schemas under `src/domain/` before making changes. Treat the schemas as the authoritative definition of every supported field, enum, constraint, and relationship.
-2. Confirm the target project directory with the user or from the request, such as `projects/video001`. Read its `project.json`, referenced scene files, and existing assets before planning changes.
-3. Parse the project's subtitles with:
+When the user says "处理 <project-id>" (or asks to create/generate scenes for a project), run this end-to-end procedure:
 
+1. **Confirm the project exists.** Read `AGENTS.md` and the current schemas under `src/domain/` first; treat the schemas as the authoritative definition of every field, enum, constraint, and relationship. If `projects/<project-id>/project.json` does not exist, scaffold it:
    ```bash
-   npm run --silent parse:srt -- projects/<project-id>/source.srt
+   npm run scaffold -- <project-id>
    ```
+   (This creates `project.json`, `source.srt`, empty `scene-001.json`, and the `scenes/ assets/ renders/` directories.)
 
-4. Generate only layer types the schemas support: `text`, `rectangle`, `circle`, `triangle`, `arrow`, `image`, and `group`. Do not invent layer types or schema fields.
-   - An `image` layer must reference an existing uploaded file under the project's `assets/` (e.g. `assets/image-<id>.png`). Never use an absolute path or reference a file that is not on disk; upload assets through the local service before referencing them.
-   - A `group` must contain at least two non-group children, children use group-local coordinates (offset from the group's top-left), and a group must not be nested inside another group.
-5. Write complete, explicit JSON objects. Include every field required by the current project, scene, layer, and animation schemas. Every layer must include `animations`, using `[]` when it has no animations. A project must contain at least one scene.
-6. Convert subtitle milliseconds to project frames using the `fps` from `project.json`:
-   - Start frame: `Math.floor(startMs * fps / 1000)`
-   - End frame: `Math.ceil(endMs * fps / 1000)`
-   - Derive scene duration from the converted frame boundaries.
-   - Scenes are contiguous and non-overlapping on the project timeline. Each scene's `startFrame` must equal the previous scene's `startFrame + durationInFrames` (the first scene starts at 0). After creating, deleting, or changing the duration of a scene, reflow the `startFrame` of every later scene so the sequence stays contiguous.
-7. Keep layer IDs and `zIndex` values unique within each scene. Keep animation IDs unique within each layer. A layer may have at most one animation for each `enter`, `emphasis`, and `exit` phase. Animation frame values are scene-local, and `animation.startFrame + animation.durationInFrames` must not exceed the scene duration.
-8. Before changing an existing file, read it. Do not overwrite existing project or scene files without explicit user approval. Preserve existing IDs, valid fields, layout choices, and manual edits wherever possible.
-9. For modification requests, change only the scenes or layers explicitly identified by the user. Do not reformat, regenerate, or revise unrelated content.
-10. After writing JSON, validate the project with:
+2. **Confirm the source script.** The user places the voiceover at `projects/<project-id>/source.srt`. If it is missing or empty, ask the user to copy it in before continuing.
 
-    ```bash
-    npx tsx scripts/validateProject.ts projects/<project-id>
-    ```
+3. **Build the scene skeleton from the SRT.** This splits the subtitles into a contiguous, non-overlapping timeline of empty scenes whose durations match the narration pauses:
+   ```bash
+   npm run skeleton -- <project-id>
+   ```
+   Optionally pass a gap threshold in ms (default 1500) to control how aggressively cues are grouped:
+   ```bash
+   npm run skeleton -- <project-id> 2000
+   ```
+   Read the generated `projects/<project-id>/scenes/scene-*.json` and `project.json`.
 
-    If validation fails, inspect the reported schema or relationship error, correct the JSON, and rerun validation until it passes.
+4. **Interpret the script intent and describe scenes.** For each skeleton scene, decide what the audience should SEE while the narration plays, not what the narration says. Map the spoken content to visual concepts:
+   - A named tool / brand (opencode, Claude Code, Figma…) → an icon + product name scene.
+   - An enumeration ("第一个区别…", "其次…", "最后…") → a comparison / list scene with one card per item.
+   - A number or conclusion ("性能提升 3 倍") → a large emphasized number or key point.
+   - A question or transition → a pause card that separates sections.
+   Keep the scene count aligned with the skeleton; merge or split only when the meaning clearly requires it, and re-check contiguity after any change (each scene's `startFrame` must equal the previous scene's end).
+
+5. **Generate the layers.** Use only the layer types the schemas support: `text`, `rectangle`, `circle`, `triangle`, `arrow`, `image`, and `group`. Follow these conventions:
+   - **Scene 1 (brand/intro):** product icon (image layer) plus a text title; give the icon a `fade` or `scale` enter and the title a `slide-up` enter.
+   - **Comparison / list scenes:** a background card (rounded rectangle), a heading, and one row per item. Use distinct `enter` animations staggered by ~8-12 frames so items appear one by one; a `scale` emphasis can highlight each item as it is mentioned.
+   - **Key point scenes:** one large text layer with a `scale` emphasis at the moment the number is spoken.
+   - **Image layers** reference an existing uploaded file under `assets/` (e.g. `assets/image-<id>.png`). Never invent a filename, use an absolute path, or reference a file that is not on disk. Before using a logo, list `projects/<project-id>/assets/`; if the needed icon is absent, tell the user to upload or drop it into that folder and wait for confirmation before referencing it.
+   - **Groups** need at least two non-group children, use group-local child coordinates, and must not nest.
+   - Give every layer `animations: []` unless it has a real animation. Presets are `fade`, `slide-up`, `slide-down`, `slide-left`, `slide-right`, `scale`; easings are `linear`, `ease-in`, `ease-out`, `ease-in-out`. Keep animation windows inside the scene: `startFrame + durationInFrames <= scene.durationInFrames`.
+
+6. **Write complete, explicit JSON.** Include every field required by the current schemas. Keep layer IDs and `zIndex` values unique within each scene and animation IDs unique within each layer. A layer may have at most one `enter`, one `emphasis`, and one `exit`. Preserve existing IDs, valid fields, layout choices, and manual edits wherever possible; change only the scenes or layers the user asked about.
+
+7. **Validate.** After writing, run:
+   ```bash
+   npm run validate:project -- projects/<project-id>
+   ```
+   Fix any schema or relationship error and re-run until it passes. The project must contain at least one scene, and scenes must be contiguous (startFrame of each scene = previous end frame) and non-overlapping.
+
+## 预览与渲染
+
+- Open the editor for a project with `http://localhost:5173/?project=<project-id>`.
+- Preview the whole project in Remotion Studio with `http://localhost:3000/?project=<project-id>`.
+- Render the transparent ProRes 4444 B-roll with `npm run render:project -- <project-id>`; the `.mov` is written to `projects/<project-id>/renders/`.
 
 ## Prohibited Actions
 
@@ -46,7 +67,13 @@ description: Generate and modify AI-Broll-Assistant projects and scene JSON from
 ## Examples
 
 ```text
-Use the ai-broll skill to generate scene drafts for video001.
+Use the ai-broll skill to process video-003.
+```
 
-Use the ai-broll skill to change scene-002 to a centered title with a scale emphasis animation.
+```text
+Use the ai-broll skill to change scene-002 in video-003 to a centered title with a scale emphasis animation.
+```
+
+```text
+Use the ai-broll skill to turn the comparison list in scene-003 of video-004 into cards that animate in one by one.
 ```

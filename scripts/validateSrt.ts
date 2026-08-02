@@ -14,16 +14,11 @@ function validateSrt(filePath: string): void {
   );
 }
 
-const filePath = process.argv[2];
+const filePath = process.argv[2] ?? "projects/video001/source.srt";
 
-if (!filePath) {
-  console.error("Usage: tsx scripts/validateSrt.ts <srt-file>");
+try {
+  validateSrt(filePath);
+} catch (error: unknown) {
+  console.error(error);
   process.exitCode = 1;
-} else {
-  try {
-    validateSrt(filePath);
-  } catch (error: unknown) {
-    console.error(error);
-    process.exitCode = 1;
-  }
 }

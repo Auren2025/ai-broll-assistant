@@ -31,16 +31,11 @@ function validateProject(projectDirectory: string): void {
   );
 }
 
-const projectDirectory = process.argv[2];
+const projectDirectory = process.argv[2] ?? "projects/video001";
 
-if (!projectDirectory) {
-  console.error("Usage: tsx scripts/validateProject.ts <project-directory>");
+try {
+  validateProject(projectDirectory);
+} catch (error: unknown) {
+  console.error(error);
   process.exitCode = 1;
-} else {
-  try {
-    validateProject(projectDirectory);
-  } catch (error: unknown) {
-    console.error(error);
-    process.exitCode = 1;
-  }
 }

@@ -56,7 +56,15 @@ import {
 } from "./preview/previewChannel";
 import { computeTextBoxSize, measureNaturalTextSize } from "./editor/textMetrics";
 
-const PROJECT_ID = "video001";
+const DEFAULT_PROJECT_ID = "video001";
+const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function resolveProjectIdFromUrl(): string {
+  const param = new URLSearchParams(window.location.search).get("project");
+  return param && PROJECT_ID_PATTERN.test(param) ? param : DEFAULT_PROJECT_ID;
+}
+
+const PROJECT_ID = resolveProjectIdFromUrl();
 const DEFAULT_TIMELINE_HEIGHT = 224;
 const MIN_TIMELINE_HEIGHT = 120;
 const MIN_CANVAS_HEIGHT = 240;

@@ -1,16 +1,13 @@
 import type { CSSProperties } from "react";
 import { AbsoluteFill, Img, useCurrentFrame } from "remotion";
 import type { Layer, Scene } from "../domain/sceneSchema";
+import { buildAssetUrl } from "../api/localService";
 import { applyTextCase } from "../domain/textCase";
 import { getLayerAnimationStyle } from "./layerAnimationStyle";
 
 export interface SceneCompositionProps {
   scene: Scene;
   projectId: string;
-}
-
-function buildAssetUrl(projectId: string, src: string): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/${src}`;
 }
 
 function getLayerBaseStyle(layer: Layer): CSSProperties {

@@ -10,10 +10,12 @@
     "preview": "vite preview",
     "dev:server": "tsx watch server/index.ts",
     "studio": "remotion studio src/remotion/Studio.tsx",
-    "render:project": "remotion render src/remotion/Studio.tsx Video001 projects/video001/renders/video001.mov --image-format=png --pixel-format=yuva444p10le --codec=prores --prores-profile=4444",
+    "render:project": "tsx scripts/renderProject.ts",
     "parse:srt": "tsx scripts/parseSrt.ts",
-    "validate:srt": "tsx scripts/validateSrt.ts projects/video001/source.srt",
-    "validate:project": "tsx scripts/validateProject.ts projects/video001",
+    "scaffold": "tsx scripts/scaffoldProject.ts",
+    "skeleton": "tsx scripts/buildSceneSkeleton.ts",
+    "validate:srt": "tsx scripts/validateSrt.ts",
+    "validate:project": "tsx scripts/validateProject.ts",
     "migrate:scales": "tsx scripts/migrateScales.ts projects/video001"
   },
   "dependencies": {

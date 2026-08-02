@@ -15,7 +15,7 @@ When the user says "处理 <project-id>" (or asks to create/generate scenes for 
    ```
    (This creates `project.json`, `source.srt`, empty `scene-001.json`, and the `scenes/ assets/ renders/` directories.)
 
-2. **Confirm the source script.** The user places the voiceover at `projects/<project-id>/source.srt`. If it is missing or empty, ask the user to copy it in before continuing.
+2. **Confirm the source script.** The user places the voiceover at `projects/<project-id>/source.srt`. If it is missing or empty, ask the user to copy it in before continuing. The user may also place the voiceover audio file in `projects/<project-id>/audio/` and reference it in `project.json` (`audioFile: "audio/<file>"`) so it plays in Remotion Studio; do not invent an `audioFile` value that does not exist on disk.
 
 3. **Build the scene skeleton from the SRT.** This splits the subtitles into a contiguous, non-overlapping timeline of empty scenes whose durations match the narration pauses:
    ```bash
@@ -32,7 +32,7 @@ When the user says "处理 <project-id>" (or asks to create/generate scenes for 
    - An enumeration ("第一个区别…", "其次…", "最后…") → a comparison / list scene with one card per item.
    - A number or conclusion ("性能提升 3 倍") → a large emphasized number or key point.
    - A question or transition → a pause card that separates sections.
-   Keep the scene count aligned with the skeleton; merge or split only when the meaning clearly requires it, and re-check contiguity after any change (each scene's `startFrame` must equal the previous scene's end).
+   Keep the scene count aligned with the skeleton; merge or split only when the meaning clearly requires it, keeping the timeline contiguous for a fresh generation. After the first generation, scene `startFrame` values are audio anchors — never shift a later scene to fix a gap created by manual edits.
 
 5. **Generate the layers.** Use only the layer types the schemas support: `text`, `rectangle`, `circle`, `triangle`, `arrow`, `image`, and `group`. Follow these conventions:
    - **Scene 1 (brand/intro):** product icon (image layer) plus a text title; give the icon a `fade` or `scale` enter and the title a `slide-up` enter.
@@ -48,7 +48,7 @@ When the user says "处理 <project-id>" (or asks to create/generate scenes for 
    ```bash
    npm run validate:project -- projects/<project-id>
    ```
-   Fix any schema or relationship error and re-run until it passes. The project must contain at least one scene, and scenes must be contiguous (startFrame of each scene = previous end frame) and non-overlapping.
+   Fix any schema or relationship error and re-run until it passes. The project must contain at least one scene, and scenes must be non-overlapping and ordered by increasing `startFrame` (first scene at 0). Overlap is always an error; a gap between scenes is allowed (the narration keeps playing) but reported as a warning. Use `npm run validate:project -- projects/<project-id> --strict` to also fail on gaps, which you should keep clean for a freshly generated timeline. After the first generation, never shift a later scene's `startFrame` to restore contiguity — scene starts are audio anchors tied to the narration; later scenes stay put.
 
 ## 预览与渲染
 

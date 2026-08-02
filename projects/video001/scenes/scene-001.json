@@ -8,8 +8,8 @@
     {
       "id": "image-1",
       "name": "Image",
-      "x": 218.5,
-      "y": 81.7,
+      "x": 920.5,
+      "y": 89.7,
       "width": 961.5,
       "height": 773.7,
       "rotation": 0,
@@ -39,8 +39,8 @@
     {
       "id": "rectangle-1",
       "name": "Rectangle",
-      "x": 759.8,
-      "y": 660.7,
+      "x": 267.8,
+      "y": 550.7,
       "width": 195,
       "height": 117,
       "rotation": 0,

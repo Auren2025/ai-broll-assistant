@@ -17,6 +17,7 @@ const ID_PATTERN = /^[A-Za-z0-9_-]+$/
 const PROJECTS_PREFIX = '/api/projects/'
 const SCENES_PREFIX = 'scenes/'
 const ASSETS_PREFIX = 'assets/'
+const AUDIO_PREFIX = 'audio/'
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -583,6 +584,72 @@ async function handleGetAsset(
   res.end(bytes)
 }
 
+function audioMimeFromExtension(ext: string): string {
+  switch (ext) {
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'wav':
+      return 'audio/wav'
+    case 'm4a':
+      return 'audio/mp4'
+    case 'aac':
+      return 'audio/aac'
+    case 'ogg':
+      return 'audio/ogg'
+    case 'flac':
+      return 'audio/flac'
+    case 'webm':
+      return 'audio/webm'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+async function handleGetAudio(
+  res: http.ServerResponse,
+  projectId: string,
+  filename: string,
+): Promise<void> {
+  if (!FILENAME_PATTERN.test(filename)) {
+    sendJson(res, 400, { error: 'Invalid audio filename' })
+    return
+  }
+
+  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const absolutePath = path.join(projectDir, 'audio', filename)
+
+  const resolved = path.resolve(absolutePath)
+  const allowedRoot = path.resolve(projectDir, 'audio') + path.sep
+  if (!resolved.startsWith(allowedRoot)) {
+    sendJson(res, 400, { error: 'Invalid audio path' })
+    return
+  }
+
+  let bytes: Buffer
+  try {
+    bytes = await fs.readFile(absolutePath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Audio not found' })
+    } else {
+      console.error(err)
+      sendJson(res, 500, { error: 'Failed to read audio' })
+    }
+    return
+  }
+
+  const dotIndex = filename.lastIndexOf('.')
+  const ext = dotIndex > 0 ? filename.slice(dotIndex + 1).toLowerCase() : ''
+
+  if (res.headersSent || res.writableEnded) return
+  res.statusCode = 200
+  res.setHeader('Content-Type', audioMimeFromExtension(ext))
+  res.setHeader('Content-Length', String(bytes.length))
+  res.setHeader('Cache-Control', 'no-cache')
+  res.end(bytes)
+}
+
 function buildSceneTempPath(target: string): string {
   const random = Math.random().toString(36).slice(2, 10)
   return `${target}.tmp-${process.pid}-${Date.now()}-${random}`
@@ -839,6 +906,20 @@ const server = http.createServer((req, res) => {
       }
       if (method === 'GET') {
         void handleGetAsset(res, projectIdPart, filename)
+        return
+      }
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return
+    }
+
+    if (restAfterProject.startsWith(AUDIO_PREFIX)) {
+      const filename = restAfterProject.slice(AUDIO_PREFIX.length)
+      if (!FILENAME_PATTERN.test(filename)) {
+        sendJson(res, 400, { error: 'Invalid audio filename' })
+        return
+      }
+      if (method === 'GET') {
+        void handleGetAudio(res, projectIdPart, filename)
         return
       }
       sendJson(res, 405, { error: 'Method not allowed' })

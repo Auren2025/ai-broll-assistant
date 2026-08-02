@@ -21,7 +21,12 @@ export const ProjectSchema = z
     width: z.number().int().positive(),
     height: z.number().int().positive(),
     fps: z.number().int().positive(),
-    scenes: z.array(SceneReferenceSchema),
+    audioFile: z
+      .string()
+      .regex(/^audio\/[A-Za-z0-9_.-]+$/, "Audio file must match audio/<name>")
+      .nullable()
+      .optional(),
+    scenes: z.array(SceneReferenceSchema).min(1, "Project must contain at least one scene"),
   })
   .strict()
   .superRefine((project, context) => {

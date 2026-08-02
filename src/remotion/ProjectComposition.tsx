@@ -1,6 +1,7 @@
-import { AbsoluteFill, Sequence } from "remotion";
+import { AbsoluteFill, Audio, Sequence } from "remotion";
 import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
+import { buildAssetUrl } from "../api/localService";
 import { SceneComposition } from "./SceneComposition";
 
 export interface ProjectCompositionProps {
@@ -19,6 +20,9 @@ export function ProjectComposition({
         overflow: "hidden",
       }}
     >
+      {project.audioFile ? (
+        <Audio src={buildAssetUrl(project.id, project.audioFile)} />
+      ) : null}
       {scenes.map((scene) => (
         <Sequence
           key={scene.id}

@@ -48,6 +48,7 @@ async function scaffold(projectId: string): Promise<void> {
   await Promise.all([
     mkdir(resolve(projectDir, "scenes"), { recursive: true }),
     mkdir(resolve(projectDir, "assets"), { recursive: true }),
+    mkdir(resolve(projectDir, "audio"), { recursive: true }),
     mkdir(resolve(projectDir, "renders"), { recursive: true }),
   ]);
 

@@ -2135,6 +2135,15 @@ function App() {
   };
   const sceneNumber =
     project.scenes.findIndex((reference) => reference.id === scene.id) + 1;
+  const currentSceneIndex =
+    project.scenes.findIndex((reference) => reference.id === scene.id);
+  const nextSceneReference = project.scenes[currentSceneIndex + 1];
+  const nextScene = nextSceneReference
+    ? scenesById[nextSceneReference.id]
+    : null;
+  const maximumDurationInFrames = nextScene
+    ? nextScene.startFrame - scene.startFrame
+    : Number.POSITIVE_INFINITY;
   const saveStatus = isSaving
     ? "Saving automatically…"
     : hasSaveConflict
@@ -2350,6 +2359,7 @@ function App() {
                   scene={scene}
                   project={project}
                   sceneNumber={sceneNumber}
+                  maximumDurationInFrames={maximumDurationInFrames}
                   onProjectChange={handleProjectChange}
                   onSceneChange={handleSceneChange}
                 />

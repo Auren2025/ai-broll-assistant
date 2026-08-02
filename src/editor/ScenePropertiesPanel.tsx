@@ -7,6 +7,7 @@ interface ScenePropertiesPanelProps {
   scene: Scene;
   project: Project;
   sceneNumber: number;
+  maximumDurationInFrames: number;
   onProjectChange: (project: Project) => void;
   onSceneChange: (scene: Scene) => void;
 }
@@ -30,6 +31,7 @@ export function ScenePropertiesPanel({
   scene,
   project,
   sceneNumber,
+  maximumDurationInFrames,
   onProjectChange,
   onSceneChange,
 }: ScenePropertiesPanelProps) {
@@ -241,14 +243,22 @@ export function ScenePropertiesPanel({
         <div className="scene-duration-control">
           <BufferedNumberInput
             min={maximumAnimationEnd / project.fps}
+            max={
+              Number.isFinite(maximumDurationInFrames)
+                ? maximumDurationInFrames / project.fps
+                : undefined
+            }
             step={1 / project.fps}
             aria-label="Scene duration in seconds"
             value={Number((scene.durationInFrames / project.fps).toFixed(3))}
             onValueChange={(value) => {
-              const frames = Math.max(
+              const requestedFrames = Math.max(
                 maximumAnimationEnd,
                 Math.round(value * project.fps),
               );
+              const frames = Number.isFinite(maximumDurationInFrames)
+                ? Math.min(requestedFrames, maximumDurationInFrames)
+                : requestedFrames;
               if (Number.isFinite(frames)) {
                 onSceneChange({ ...scene, durationInFrames: frames });
               }
@@ -256,6 +266,11 @@ export function ScenePropertiesPanel({
           />
           <span>s</span>
         </div>
+        {Number.isFinite(maximumDurationInFrames) ? (
+          <p className="layer-group-hint">
+            Cannot extend past the next scene's start frame.
+          </p>
+        ) : null}
       </section>
     </section>
   );

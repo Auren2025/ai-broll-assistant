@@ -2404,9 +2404,6 @@ function App() {
                 >
                   Fit
                 </button>
-                <span className="canvas-snap-hint" title="Hold ⌥ while dragging to move freely without snapping">
-                  ⌥ drag = no snap
-                </span>
               </div>
             ) : null}
           </div>

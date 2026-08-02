@@ -19,7 +19,6 @@ import {
   computeTextBoxSize,
   getCharSpacing,
 } from "./textMetrics";
-import { computeSnapGuides, type SnapResult } from "./snapGuides";
 
 type CornerRadii = {
   topLeft: number;
@@ -28,114 +27,10 @@ type CornerRadii = {
   bottomLeft: number;
 };
 
-// Snap-to-alignment guides while dragging. The distances are defined in screen
-// pixels and divided by the current viewport scale so the snap feels identical
-// at every zoom level. Numbers picked to match moveable.js (the most popular
-// open-source snapping engine, used by many Keynote-quality tools): a 5px
-// engage radius with no hysteresis — snap engages when very close to a
-// candidate and releases cleanly the moment the dragged moves away. We
-// deliberately do not carry held state across frames or gate snap on drag
-// velocity; those anti-jitter tricks end up fighting the user more than
-// helping them (every previous iteration of complexity here did exactly
-// that — verified against moveable's Snappable.tsx).
-const SNAP_MARGIN_SCREEN = 5;
-const SNAP_HYSTERESIS_SCREEN = 0;
-const SNAP_GUIDE_COLOR = "#ff4d5e";
-const SPACING_GUIDE_COLOR = "#2b9bff";
-
-interface SnapGuides {
-  vertical: number | null;
-  horizontal: number | null;
-  spacingX: {
-    from: number;
-    to: number;
-    gap: number;
-    anchor: number;
-  } | null;
-  spacingY: {
-    from: number;
-    to: number;
-    gap: number;
-    anchor: number;
-  } | null;
-  gapX: {
-    value: number;
-    side: "left" | "right" | "top" | "bottom";
-    from: number;
-    to: number;
-    anchor: number;
-  } | null;
-  gapY: {
-    value: number;
-    side: "left" | "right" | "top" | "bottom";
-    from: number;
-    to: number;
-    anchor: number;
-  } | null;
-}
-
-interface HeldSnap {
-  vertical: number | null;
-  horizontal: number | null;
-  spacingX: { from: number; to: number } | null;
-  spacingY: { from: number; to: number } | null;
-  gapX: { value: number; side: "left" | "right" | "top" | "bottom" } | null;
-  gapY: { value: number; side: "left" | "right" | "top" | "bottom" } | null;
-}
-
-function drawGuideLabel(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  text: string,
-  color: string,
-  fontSize: number,
-): void {
-  ctx.font = `${fontSize}px system-ui, -apple-system, sans-serif`;
-  const width = ctx.measureText(text).width;
-  const padX = fontSize * 0.25;
-  const height = fontSize * 1.2;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-  ctx.fillRect(x - width / 2 - padX, y - height / 2, width + padX * 2, height);
-  ctx.fillStyle = color;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, x, y);
-}
-
 /**
- * Filter snap candidates down to the single closest non-dragged object on
- * each axis (plus canvas edges), suppressing snap-to-everything noise when
- * the scene has many layers. Returns the original list when the closest
- * object cannot be determined.
- */
-function nearestObjectRects(
-  dragged: { left: number; top: number; width: number; height: number },
-  others: readonly { rect: { left: number; top: number; width: number; height: number } }[],
-): { left: number; top: number; width: number; height: number }[] {
-  let bestX: { rect: { left: number; top: number; width: number; height: number }; distance: number } | null = null;
-  let bestY: { rect: { left: number; top: number; width: number; height: number }; distance: number } | null = null;
-  const draggedCx = dragged.left + dragged.width / 2;
-  const draggedCy = dragged.top + dragged.height / 2;
-  for (const { rect } of others) {
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const dx = Math.abs(cx - draggedCx);
-    const dy = Math.abs(cy - draggedCy);
-    if (!bestX || dx < bestX.distance) bestX = { rect, distance: dx };
-    if (!bestY || dy < bestY.distance) bestY = { rect, distance: dy };
-  }
-  const out: { left: number; top: number; width: number; height: number }[] = [];
-  if (bestX) out.push(bestX.rect);
-  if (bestY && bestY.rect !== bestX?.rect) out.push(bestY.rect);
-  return out;
-}
-
-/**
- * Decide which axis a Shift-held drag is locked to. Called once per drag
- * (when shift first engages with non-trivial motion). Returns the axis the
- * dragged has been moving *more* along, or null if there's no motion yet
- * (in which case we wait for the next frame).
+ * Decide which axis a Shift-held drag is locked to. Returns the axis the
+ * dragged has been moving *more* along, or null if there is not yet
+ * enough motion to decide.
  */
 function resolveShiftLockAxis(
   dragStart: { x: number; y: number },
@@ -146,69 +41,6 @@ function resolveShiftLockAxis(
   const dy = Math.abs(current.y - dragStart.y);
   if (dx < motionFloor && dy < motionFloor) return null;
   return dx >= dy ? "x" : "y";
-}
-
-/**
- * Zero out snap deltas/guides on the axis that Shift is locking against.
- * Visual snap lines for the unlocked axis still show; we just don't act on
- * the locked one.
- */
-function applyShiftLock(
-  snap: SnapResult,
-  lockedAxis: "x" | "y" | null,
-): SnapResult {
-  if (lockedAxis === null) return snap;
-  const zero = { delta: 0, alignGuide: null, spacing: null, gap: null };
-  return lockedAxis === "x"
-    ? { x: snap.x, y: zero as typeof snap.y }
-    : { x: zero as typeof snap.x, y: snap.y };
-}
-
-function emptyHeldSnap(): HeldSnap {
-  return {
-    vertical: null,
-    horizontal: null,
-    spacingX: null,
-    spacingY: null,
-    gapX: null,
-    gapY: null,
-  };
-}
-
-function updateHeldSnap(
-  heldRef: { current: HeldSnap },
-  snap: SnapResult,
-): void {
-  // No held preservation across frames: every frame recomputes from the
-  // dragged's current position. This matches moveable's approach and keeps
-  // snap from feeling sticky.
-  heldRef.current = {
-    vertical: snap.x.alignGuide,
-    horizontal: snap.y.alignGuide,
-    spacingX: snap.x.spacing
-      ? { from: snap.x.spacing.from, to: snap.x.spacing.to }
-      : null,
-    spacingY: snap.y.spacing
-      ? { from: snap.y.spacing.from, to: snap.y.spacing.to }
-      : null,
-    gapX: snap.x.gap
-      ? { value: snap.x.gap.value, side: snap.x.gap.side as "left" | "right" }
-      : null,
-    gapY: snap.y.gap
-      ? { value: snap.y.gap.value, side: snap.y.gap.side as "top" | "bottom" }
-      : null,
-  };
-}
-
-function guidesFromSnap(snap: SnapResult): SnapGuides {
-  return {
-    vertical: snap.x.alignGuide,
-    horizontal: snap.y.alignGuide,
-    spacingX: snap.x.spacing,
-    spacingY: snap.y.spacing,
-    gapX: snap.x.gap,
-    gapY: snap.y.gap,
-  };
 }
 
 function roundedRectanglePath(
@@ -1155,10 +987,9 @@ export function FabricSceneCanvas({
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   const hoveredObjectRef = useRef<FabricObject | null>(null);
-  const snapGuidesRef = useRef<SnapGuides | null>(null);
-  const heldSnapRef = useRef<HeldSnap>(emptyHeldSnap());
-  // Shift-drag axis lock: the target's position when Shift is first detected
-  // mid-drag, and the locked axis once the initial direction is clear.
+  // Shift-drag axis lock: the dragged's center when Shift is first detected
+  // mid-drag, and the locked axis + the pin position of the locked-out
+  // axis once the initial direction is clear.
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const lockOriginRef = useRef<{ left: number; top: number } | null>(null);
   const lockedAxisRef = useRef<"x" | "y" | null>(null);
@@ -1381,7 +1212,6 @@ export function FabricSceneCanvas({
     };
 
     canvas.on("object:modified", (event) => {
-      heldSnapRef.current = emptyHeldSnap();
       lockedAxisRef.current = null;
       lockOriginRef.current = null;
       const target = event.target;
@@ -1450,22 +1280,8 @@ export function FabricSceneCanvas({
 
     canvas.on("object:moving", (event) => {
       const target = event.target;
-      if (!target) {
-        snapGuidesRef.current = null;
-        heldSnapRef.current = emptyHeldSnap();
-        return;
-      }
-      if (target instanceof FabricLayerTextbox && target.isEditing) {
-        snapGuidesRef.current = null;
-        heldSnapRef.current = emptyHeldSnap();
-        return;
-      }
-      // Hold Option/Alt while dragging to move freely without snapping.
-      if (event.e.altKey) {
-        snapGuidesRef.current = null;
-        heldSnapRef.current = emptyHeldSnap();
-        return;
-      }
+      if (!target) return;
+      if (target instanceof FabricLayerTextbox && target.isEditing) return;
 
       // Shift-drag axis lock: lock movement to whichever axis the user is
       // moving more on. We commit to the axis once motion clears the floor
@@ -1502,255 +1318,6 @@ export function FabricSceneCanvas({
           target.setCoords();
         }
       }
-
-      const activeObjects = canvas.getActiveObjects();
-      const activeSet = new Set<FabricObject>(activeObjects);
-      const viewScale = canvas.viewportTransform[0];
-
-      // Group child snapping: work in group-local coords (center-origin).
-      // Restricted to axis-aligned groups so scene-space delta equals
-      // local-space delta. Rotated groups skip snapping entirely (same as
-      // before this change).
-      if (target.parent instanceof FabricGroup) {
-        const group = target.parent;
-        const angle = Math.abs(group.angle ?? 0);
-        const scaleX = Math.abs(group.scaleX ?? 1);
-        const scaleY = Math.abs(group.scaleY ?? 1);
-        if (angle > 1e-3 || Math.abs(scaleX - 1) > 1e-3 || Math.abs(scaleY - 1) > 1e-3) {
-          snapGuidesRef.current = null;
-          heldSnapRef.current = emptyHeldSnap();
-          return;
-        }
-        const halfW = (group.width ?? 0) / 2;
-        const halfH = (group.height ?? 0) / 2;
-        const childHalfW = (target.width ?? 0) / 2;
-        const childHalfH = (target.height ?? 0) / 2;
-        const localLeft = (target.left ?? 0) - childHalfW;
-        const localTop = (target.top ?? 0) - childHalfH;
-        const draggedLocal = {
-          left: localLeft,
-          top: localTop,
-          width: target.width ?? 0,
-          height: target.height ?? 0,
-        };
-        const candidateX = [-halfW, 0, halfW];
-        const candidateY = [-halfH, 0, halfH];
-        const otherBoundsX: { start: number; end: number }[] = [];
-        const otherBoundsY: { start: number; end: number }[] = [];
-        for (const sibling of group.getObjects()) {
-          if (sibling === target || activeSet.has(sibling)) continue;
-          if (!sibling.visible) continue;
-          const sw = sibling.width ?? 0;
-          const sh = sibling.height ?? 0;
-          const sl = (sibling.left ?? 0) - sw / 2;
-          const st = (sibling.top ?? 0) - sh / 2;
-          candidateX.push(sl, sl + sw / 2, sl + sw);
-          candidateY.push(st, st + sh / 2, st + sh);
-          otherBoundsX.push({ start: sl, end: sl + sw });
-          otherBoundsY.push({ start: st, end: st + sh });
-        }
-        const held = heldSnapRef.current;
-        const rawSnap = computeSnapGuides(
-          draggedLocal,
-          candidateX,
-          candidateY,
-          otherBoundsX,
-          otherBoundsY,
-          {
-            threshold: SNAP_MARGIN_SCREEN / viewScale,
-            hysteresis: SNAP_HYSTERESIS_SCREEN / viewScale,
-            heldVertical: held.vertical,
-            heldHorizontal: held.horizontal,
-            heldSpacingX: held.spacingX,
-            heldSpacingY: held.spacingY,
-            heldGapX: held.gapX,
-            heldGapY: held.gapY,
-          },
-        );
-        const snap = applyShiftLock(rawSnap, lockedAxisRef.current);
-        if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
-        if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
-        target.setCoords();
-        updateHeldSnap(heldSnapRef, snap);
-        snapGuidesRef.current = guidesFromSnap(snap);
-        canvas.requestRenderAll();
-        return;
-      }
-
-      const draggedRect = target.getBoundingRect();
-
-      // Collect candidate objects, then filter to the nearest one per axis
-      // (plus canvas). This avoids snap-to-everything noise when the scene
-      // has many layers.
-      const otherRects: { rect: { left: number; top: number; width: number; height: number } }[] = [];
-      for (const object of canvas.getObjects()) {
-        if (object === target || activeSet.has(object)) continue;
-        if (!object.visible) continue;
-        const rect = object.getBoundingRect();
-        otherRects.push({ rect });
-      }
-      const nearest = nearestObjectRects(draggedRect, otherRects);
-      const nearestSet = new Set(nearest);
-
-      const candidateX = [projectWidth / 2, 0, projectWidth];
-      const candidateY = [projectHeight / 2, 0, projectHeight];
-      const otherBoundsX: { start: number; end: number }[] = [];
-      const otherBoundsY: { start: number; end: number }[] = [];
-      for (const { rect } of otherRects) {
-        if (!nearestSet.has(rect)) continue;
-        candidateX.push(
-          rect.left,
-          rect.left + rect.width / 2,
-          rect.left + rect.width,
-        );
-        candidateY.push(
-          rect.top,
-          rect.top + rect.height / 2,
-          rect.top + rect.height,
-        );
-        otherBoundsX.push({ start: rect.left, end: rect.left + rect.width });
-        otherBoundsY.push({ start: rect.top, end: rect.top + rect.height });
-      }
-
-      const held = heldSnapRef.current;
-      const rawSnap = computeSnapGuides(
-        draggedRect,
-        candidateX,
-        candidateY,
-        otherBoundsX,
-        otherBoundsY,
-        {
-          threshold: SNAP_MARGIN_SCREEN / viewScale,
-          hysteresis: SNAP_HYSTERESIS_SCREEN / viewScale,
-          heldVertical: held.vertical,
-          heldHorizontal: held.horizontal,
-          heldSpacingX: held.spacingX,
-          heldSpacingY: held.spacingY,
-          heldGapX: held.gapX,
-          heldGapY: held.gapY,
-        },
-      );
-
-      const snap = applyShiftLock(rawSnap, lockedAxisRef.current);
-
-      if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
-      if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
-      target.setCoords();
-
-      // Lock / rebase the drag offsets so snapped axes hold the guide and
-      // released axes continue following the pointer without a jump.
-      const transform = canvas._currentTransform;
-      if (transform) {
-        const pointer = canvas.getScenePoint(event.e);
-        transform.offsetX = pointer.x - (target.left ?? 0);
-        transform.offsetY = pointer.y - (target.top ?? 0);
-      }
-
-      updateHeldSnap(heldSnapRef, snap);
-      snapGuidesRef.current = guidesFromSnap(snap);
-      canvas.requestRenderAll();
-    });
-
-    canvas.on("object:scaling", (event) => {
-      const target = event.target;
-      if (!target || target.parent instanceof FabricGroup) {
-        snapGuidesRef.current = null;
-        heldSnapRef.current = emptyHeldSnap();
-        return;
-      }
-      if (event.e.altKey) {
-        snapGuidesRef.current = null;
-        heldSnapRef.current = emptyHeldSnap();
-        return;
-      }
-
-      const activeObjects = canvas.getActiveObjects();
-      const activeSet = new Set<FabricObject>(activeObjects);
-      const viewScale = canvas.viewportTransform[0];
-
-      // Build candidates from the nearest non-active object only.
-      const otherRects: { rect: { left: number; top: number; width: number; height: number } }[] = [];
-      for (const object of canvas.getObjects()) {
-        if (object === target || activeSet.has(object)) continue;
-        if (!object.visible) continue;
-        otherRects.push({ rect: object.getBoundingRect() });
-      }
-      const draggedRect = target.getBoundingRect();
-      const nearest = nearestObjectRects(draggedRect, otherRects);
-      const nearestSet = new Set(nearest);
-
-      const candidateX = [projectWidth / 2, 0, projectWidth];
-      const candidateY = [projectHeight / 2, 0, projectHeight];
-      const otherBoundsX: { start: number; end: number }[] = [];
-      const otherBoundsY: { start: number; end: number }[] = [];
-      for (const { rect } of otherRects) {
-        if (!nearestSet.has(rect)) continue;
-        candidateX.push(
-          rect.left,
-          rect.left + rect.width / 2,
-          rect.left + rect.width,
-        );
-        candidateY.push(
-          rect.top,
-          rect.top + rect.height / 2,
-          rect.top + rect.height,
-        );
-        otherBoundsX.push({ start: rect.left, end: rect.left + rect.width });
-        otherBoundsY.push({ start: rect.top, end: rect.top + rect.height });
-      }
-
-      const held = heldSnapRef.current;
-      const rawSnap = computeSnapGuides(
-        draggedRect,
-        candidateX,
-        candidateY,
-        otherBoundsX,
-        otherBoundsY,
-        {
-          threshold: SNAP_MARGIN_SCREEN / viewScale,
-          hysteresis: SNAP_HYSTERESIS_SCREEN / viewScale,
-          heldVertical: held.vertical,
-          heldHorizontal: held.horizontal,
-          heldSpacingX: held.spacingX,
-          heldSpacingY: held.spacingY,
-          heldGapX: held.gapX,
-          heldGapY: held.gapY,
-        },
-      );
-
-      const snap = rawSnap;
-
-      const intrinsicWidth = target.width ?? 0;
-      const intrinsicHeight = target.height ?? 0;
-      if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
-        canvas.requestRenderAll();
-        return;
-      }
-      // Snap the bbox outward by adjusting scale (Fabric scales around the
-      // object center by default when scaleX/Y are set). For an axis-aligned
-      // resize this gives a clean edge-aligned snap even though we don't know
-      // which corner the user is dragging.
-      const updates: { scaleX?: number; scaleY?: number } = {};
-      if (snap.x.delta !== 0) {
-        const newWidth = draggedRect.width + snap.x.delta;
-        if (newWidth > 0) {
-          updates.scaleX = newWidth / intrinsicWidth;
-        }
-      }
-      if (snap.y.delta !== 0) {
-        const newHeight = draggedRect.height + snap.y.delta;
-        if (newHeight > 0) {
-          updates.scaleY = newHeight / intrinsicHeight;
-        }
-      }
-      if (Object.keys(updates).length > 0) {
-        target.set(updates);
-        target.setCoords();
-      }
-
-      updateHeldSnap(heldSnapRef, snap);
-      snapGuidesRef.current = guidesFromSnap(snap);
-      canvas.requestRenderAll();
     });
 
     canvas.on("selection:created", syncSelectedLayers);
@@ -1784,118 +1351,6 @@ export function FabricSceneCanvas({
       canvas.requestRenderAll();
     });
     canvas.on("after:render", ({ ctx }) => {
-      const guides = snapGuidesRef.current;
-      if (guides) {
-        ctx.save();
-        ctx.transform(
-          canvas.viewportTransform[0],
-          canvas.viewportTransform[1],
-          canvas.viewportTransform[2],
-          canvas.viewportTransform[3],
-          canvas.viewportTransform[4],
-          canvas.viewportTransform[5],
-        );
-        const hairline = 1 / displayScale;
-
-        if (guides.vertical !== null) {
-          ctx.strokeStyle = SNAP_GUIDE_COLOR;
-          ctx.lineWidth = hairline;
-          ctx.setLineDash([4 / displayScale, 4 / displayScale]);
-          ctx.beginPath();
-          ctx.moveTo(guides.vertical, 0);
-          ctx.lineTo(guides.vertical, projectHeight);
-          ctx.stroke();
-        }
-
-        if (guides.horizontal !== null) {
-          ctx.strokeStyle = SNAP_GUIDE_COLOR;
-          ctx.lineWidth = hairline;
-          ctx.setLineDash([4 / displayScale, 4 / displayScale]);
-          ctx.beginPath();
-          ctx.moveTo(0, guides.horizontal);
-          ctx.lineTo(projectWidth, guides.horizontal);
-          ctx.stroke();
-        }
-
-        const labelFont = 12 / canvas.viewportTransform[0];
-        const drawSpacing = (
-          from: number,
-          to: number,
-          anchor: number,
-          gap: number,
-          vertical: boolean,
-        ): void => {
-          ctx.strokeStyle = SPACING_GUIDE_COLOR;
-          ctx.lineWidth = hairline;
-          ctx.setLineDash([4 / displayScale, 4 / displayScale]);
-          if (vertical) {
-            ctx.beginPath();
-            ctx.moveTo(anchor, from);
-            ctx.lineTo(anchor, to);
-            ctx.stroke();
-            drawGuideLabel(
-              ctx,
-              anchor,
-              (from + to) / 2,
-              String(Math.round(gap)),
-              SPACING_GUIDE_COLOR,
-              labelFont,
-            );
-          } else {
-            ctx.beginPath();
-            ctx.moveTo(from, anchor);
-            ctx.lineTo(to, anchor);
-            ctx.stroke();
-            drawGuideLabel(
-              ctx,
-              (from + to) / 2,
-              anchor,
-              String(Math.round(gap)),
-              SPACING_GUIDE_COLOR,
-              labelFont,
-            );
-          }
-        };
-        if (guides.spacingX) {
-          drawSpacing(
-            guides.spacingX.from,
-            guides.spacingX.to,
-            guides.spacingX.anchor,
-            guides.spacingX.gap,
-            false,
-          );
-        }
-        if (guides.spacingY) {
-          drawSpacing(
-            guides.spacingY.from,
-            guides.spacingY.to,
-            guides.spacingY.anchor,
-            guides.spacingY.gap,
-            true,
-          );
-        }
-        if (guides.gapX) {
-          drawSpacing(
-            guides.gapX.from,
-            guides.gapX.to,
-            guides.gapX.anchor,
-            guides.gapX.value,
-            false,
-          );
-        }
-        if (guides.gapY) {
-          drawSpacing(
-            guides.gapY.from,
-            guides.gapY.to,
-            guides.gapY.anchor,
-            guides.gapY.value,
-            true,
-          );
-        }
-
-        ctx.restore();
-      }
-
       const hoveredObject = hoveredObjectRef.current;
       if (
         !hoveredObject ||
@@ -1913,13 +1368,8 @@ export function FabricSceneCanvas({
       });
     });
     canvas.on("mouse:up", () => {
-      heldSnapRef.current = emptyHeldSnap();
       lockedAxisRef.current = null;
       lockOriginRef.current = null;
-      if (snapGuidesRef.current) {
-        snapGuidesRef.current = null;
-        canvas.requestRenderAll();
-      }
     });
     canvas.on("mouse:dblclick", (event) => {
       const selectedObject =

@@ -8,8 +8,8 @@
     {
       "id": "text-1",
       "name": "Text",
-      "x": 397.5,
-      "y": 571.3,
+      "x": 495.5,
+      "y": 273.3,
       "width": 133,
       "height": 81.4,
       "rotation": 0,
@@ -43,8 +43,8 @@
     {
       "id": "image-1",
       "name": "Image",
-      "x": 958.6,
-      "y": 137.6,
+      "x": 1064.5,
+      "y": 293.2,
       "width": 771.5,
       "height": 620.8,
       "rotation": 0,
@@ -122,8 +122,8 @@
     {
       "id": "rectangle-1",
       "name": "Rectangle",
-      "x": 339.6,
-      "y": 845.1,
+      "x": 215.975,
+      "y": 547.1,
       "width": 390.7,
       "height": 117,
       "rotation": 0,
@@ -138,7 +138,7 @@
           "id": "rectangle-1-enter",
           "phase": "enter",
           "preset": "slide-down",
-          "startFrame": 18,
+          "startFrame": 55,
           "durationInFrames": 20,
           "easing": "ease-out"
         }
@@ -156,8 +156,8 @@
     {
       "id": "rectangle-2",
       "name": "Rectangle",
-      "x": 6.3,
-      "y": 845.1,
+      "x": 466.55,
+      "y": 392.4,
       "width": 390.7,
       "height": 117,
       "rotation": 0,
@@ -172,7 +172,41 @@
           "id": "rectangle-1-enter",
           "phase": "enter",
           "preset": "slide-down",
-          "startFrame": 18,
+          "startFrame": 30,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ],
+      "type": "rectangle",
+      "fill": "#6b7280",
+      "fillEnabled": true,
+      "stroke": null,
+      "strokeWidth": 0,
+      "strokePosition": "inside",
+      "cornerEnabled": true,
+      "cornerRadius": 20,
+      "cornerRadii": null
+    },
+    {
+      "id": "rectangle-3",
+      "name": "Rectangle",
+      "x": 478.5,
+      "y": 821,
+      "width": 390.7,
+      "height": 117,
+      "rotation": 0,
+      "opacity": 1,
+      "opacityEnabled": true,
+      "blendMode": "normal",
+      "zIndex": 6,
+      "visible": true,
+      "locked": false,
+      "animations": [
+        {
+          "id": "rectangle-1-enter",
+          "phase": "enter",
+          "preset": "slide-down",
+          "startFrame": 13,
           "durationInFrames": 20,
           "easing": "ease-out"
         }

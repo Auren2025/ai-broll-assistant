@@ -249,8 +249,8 @@ export function LayerPropertiesPanel({
         <div className="layer-design-row">
           <span>Size</span>
           <div className="layer-double-input">
-            <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={isGroup ? Math.round(layer.width * layer.scaleX) : layer.width} onValueChange={(value) => onPatch({ width: Math.max(1, value) })} />
-            <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={isGroup ? Math.round(layer.height * layer.scaleY) : layer.height} onValueChange={(value) => onPatch({ height: Math.max(1, value) })} />
+            <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={layer.width} onValueChange={(value) => onPatch({ width: Math.max(1, value) })} />
+            <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={layer.height} onValueChange={(value) => onPatch({ height: Math.max(1, value) })} />
           </div>
         </div>
         <div className="layer-design-row">

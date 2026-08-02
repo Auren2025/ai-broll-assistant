@@ -8,9 +8,10 @@ export const StrokePositionSchema = z.literal('inside')
 // Coordinate rules shared by Fabric.js Adapter and Remotion Adapter:
 // - Canvas origin is the top-left corner (0, 0).
 // - Top-level x and y are relative to the scene. Group child coordinates are
-//   relative to the group's unscaled, unrotated top-left corner.
-// - width and height are the base size before scale is applied.
-// - scaleX and scaleY are multipliers applied around the layer's center.
+//   relative to the group's unrotated top-left corner.
+// - width and height are the rendered size on the canvas. They are the
+//   single source of truth for sizing; the inspector, drag-resize, and
+//   renderers all read and write these directly.
 // - rotation is in degrees, applied around the layer's center.
 // - opacity is in the range [0, 1].
 //
@@ -35,8 +36,6 @@ export const LayerBaseSchema = z
     y: z.number().finite(),
     width: z.number().finite().positive(),
     height: z.number().finite().positive(),
-    scaleX: z.number().finite().positive(),
-    scaleY: z.number().finite().positive(),
     rotation: z.number().finite(),
     opacity: z.number().finite().min(0).max(1),
     opacityEnabled: z.boolean().default(true),

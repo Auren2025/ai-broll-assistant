@@ -191,7 +191,7 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
   if (!layer.visible) return null;
 
   const animationStyle = getLayerAnimationStyle(layer.animations, frame);
-  const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY}) scale(${animationStyle.scale})`;
+  const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${animationStyle.scale})`;
   const style: CSSProperties = {
     ...getLayerBaseStyle(layer),
     opacity:

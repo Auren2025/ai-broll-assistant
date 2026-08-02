@@ -11,6 +11,7 @@ import {
 } from "fabric";
 import type { AtomicLayer } from "../domain/atomicLayerSchema";
 import type { GroupLayer } from "../domain/groupLayerSchema";
+import { scaleGroupChildren } from "../domain/groupOperations";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import {
   MIN_TEXT_WIDTH,
@@ -477,17 +478,6 @@ function roundNumber(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-const SCALE_PRECISION = 10000;
-const MIN_SCALE = 1 / SCALE_PRECISION;
-
-function roundScale(value: number): number {
-  return Math.round(value * SCALE_PRECISION) / SCALE_PRECISION;
-}
-
-function clampScale(value: number): number {
-  return Math.max(MIN_SCALE, roundScale(value));
-}
-
 function findLayerByIdOrChild(scene: Scene, layerId: string): Layer | null {
   for (const layer of scene.layers) {
     if (layer.id === layerId) return layer;
@@ -552,30 +542,18 @@ function fabricChildrenMatch(
   );
 }
 
-function readTransformFromObject(
-  obj: FabricObject,
-  baseWidth: number,
-  baseHeight: number,
-): {
-  x: number;
-  y: number;
-  scaleX: number;
-  scaleY: number;
-  rotation: number;
-} {
-  const centerX = obj.left ?? 0;
-  const centerY = obj.top ?? 0;
-  const scaleX = clampScale(Math.abs(obj.scaleX ?? 1));
-  const scaleY = clampScale(Math.abs(obj.scaleY ?? 1));
-  const rotation = obj.angle ?? 0;
+function readVisibleWidth(obj: FabricObject, minWidth = 1): number {
+  return Math.max(
+    minWidth,
+    roundNumber((obj.width ?? 0) * Math.abs(obj.scaleX ?? 1)),
+  );
+}
 
-  return {
-    x: roundNumber(centerX - baseWidth / 2),
-    y: roundNumber(centerY - baseHeight / 2),
-    scaleX,
-    scaleY,
-    rotation: roundNumber(rotation),
-  };
+function readVisibleHeight(obj: FabricObject, minHeight = 1): number {
+  return Math.max(
+    minHeight,
+    roundNumber((obj.height ?? 0) * Math.abs(obj.scaleY ?? 1)),
+  );
 }
 
 function updateLayerFromFabricObject(
@@ -583,53 +561,39 @@ function updateLayerFromFabricObject(
   object: FabricObject,
 ): Layer {
   if (layer.type === "group" && object instanceof FabricGroup) {
-    const objectScaleX = Math.abs(object.scaleX ?? 1);
-    const objectScaleY = Math.abs(object.scaleY ?? 1);
-    const rawScale =
-      Math.abs(objectScaleX - layer.scaleX) >=
-      Math.abs(objectScaleY - layer.scaleY)
-        ? objectScaleX
-        : objectScaleY;
-    const scale = clampScale(rawScale);
-    object.set({ scaleX: scale, scaleY: scale });
+    const scaleX = Math.abs(object.scaleX ?? 1);
+    const scaleY = Math.abs(object.scaleY ?? 1);
+    const rescaled = scaleGroupChildren(layer, scaleX, scaleY);
+    object.set({
+      scaleX: 1,
+      scaleY: 1,
+      width: rescaled.width,
+      height: rescaled.height,
+    });
     object.setCoords();
     return {
-      ...layer,
-      x: roundNumber((object.left ?? 0) - layer.width / 2),
-      y: roundNumber((object.top ?? 0) - layer.height / 2),
-      scaleX: scale,
-      scaleY: scale,
+      ...rescaled,
+      x: roundNumber((object.left ?? 0) - rescaled.width / 2),
+      y: roundNumber((object.top ?? 0) - rescaled.height / 2),
       rotation: roundNumber(object.angle ?? 0),
     };
   }
 
-  if (layer.type === "text" && object instanceof FabricLayerTextbox) {
-    const textWidth = Math.max(
-      MIN_TEXT_WIDTH,
-      roundNumber(object.width ?? 0),
-    );
-    const textHeight = Math.max(1, roundNumber(object.height ?? 0));
-    const transform = readTransformFromObject(
-      object,
-      textWidth,
-      textHeight,
-    );
-    return {
-      ...layer,
-      width: textWidth,
-      height: textHeight,
-      ...transform,
-    };
-  }
+  const isText = layer.type === "text";
+  const minWidth = isText ? MIN_TEXT_WIDTH : 1;
+  const minHeight = isText ? 1 : 1;
+  const width = readVisibleWidth(object, minWidth);
+  const height = readVisibleHeight(object, minHeight);
+  object.set({ scaleX: 1, scaleY: 1 });
+  object.setCoords();
 
-  const transform = readTransformFromObject(
-    object,
-    layer.width,
-    layer.height,
-  );
   return {
     ...layer,
-    ...transform,
+    x: roundNumber((object.left ?? 0) - width / 2),
+    y: roundNumber((object.top ?? 0) - height / 2),
+    width,
+    height,
+    rotation: roundNumber(object.angle ?? 0),
   };
 }
 
@@ -638,29 +602,23 @@ function updateChildLayerFromFabricObject(
   childLayer: AtomicLayer,
   childObject: FabricObject,
 ): AtomicLayer {
-  const childWidth =
-    childLayer.type === "text"
-      ? Math.max(MIN_TEXT_WIDTH, roundNumber(childObject.width ?? 0))
-      : childLayer.width;
-  const childHeight =
-    childLayer.type === "text"
-      ? Math.max(1, roundNumber(childObject.height ?? 0))
-      : childLayer.height;
+  const isText = childLayer.type === "text";
+  const width = readVisibleWidth(childObject, isText ? MIN_TEXT_WIDTH : 1);
+  const height = readVisibleHeight(childObject);
   const position = getChildLayerPositionFromObject(
     groupLayer,
-    childWidth,
-    childHeight,
+    width,
+    height,
     childObject,
   );
+  childObject.set({ scaleX: 1, scaleY: 1 });
+  childObject.setCoords();
   return {
     ...childLayer,
-    ...(childLayer.type === "text"
-      ? { width: childWidth, height: childHeight }
-      : {}),
+    width,
+    height,
     x: position.x,
     y: position.y,
-    scaleX: clampScale(Math.abs(childObject.scaleX ?? 1)),
-    scaleY: clampScale(Math.abs(childObject.scaleY ?? 1)),
     rotation: roundNumber(childObject.angle ?? 0),
   };
 }
@@ -689,8 +647,10 @@ function applyLayerToFabricObject(
     object.set({
       left: layer.x + layer.width / 2,
       top: layer.y + layer.height / 2,
-      scaleX: layer.scaleX,
-      scaleY: layer.scaleY,
+      width: layer.width,
+      height: layer.height,
+      scaleX: 1,
+      scaleY: 1,
       angle: layer.rotation,
       opacity: layer.opacityEnabled ? layer.opacity : 1,
       visible: layer.visible,
@@ -719,8 +679,8 @@ function applyLayerToFabricObject(
   object.set({
     left,
     top,
-    scaleX: layer.scaleX,
-    scaleY: layer.scaleY,
+    scaleX: 1,
+    scaleY: 1,
     angle: layer.rotation,
     opacity: layer.opacityEnabled ? layer.opacity : 1,
     globalCompositeOperation:
@@ -1284,16 +1244,28 @@ export function FabricSceneCanvas({
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
-    canvas.on("mouse:over", (event) => {
-      const target = event.target;
-      if (!target || target === hoveredObjectRef.current) return;
+    const resolveHoverTarget = (
+      target: FabricObject | null | undefined,
+    ): FabricObject | null => {
+      if (!target) return null;
+      const parent = target.parent;
+      return parent instanceof FabricGroup ? parent : target;
+    };
 
-      hoveredObjectRef.current = target;
-      onHoveredLayerIdChange(objectToLayerIdRef.current.get(target) ?? null);
+    canvas.on("mouse:move", (event) => {
+      const hoverTarget = resolveHoverTarget(event.target);
+      if (hoverTarget === hoveredObjectRef.current) return;
+
+      hoveredObjectRef.current = hoverTarget;
+      onHoveredLayerIdChange(
+        hoverTarget
+          ? (objectToLayerIdRef.current.get(hoverTarget) ?? null)
+          : null,
+      );
       canvas.requestRenderAll();
     });
-    canvas.on("mouse:out", (event) => {
-      if (event.target !== hoveredObjectRef.current) return;
+    canvas.on("mouse:out", () => {
+      if (!hoveredObjectRef.current) return;
 
       hoveredObjectRef.current = null;
       onHoveredLayerIdChange(null);
@@ -1486,29 +1458,24 @@ export function FabricSceneCanvas({
 
     const layerIdToObject = layerIdToObjectRef.current;
     const objectToLayerId = objectToLayerIdRef.current;
-    const desiredLayerIds = new Set<string>();
-    for (const layer of scene.layers) {
-      desiredLayerIds.add(layer.id);
-      if (layer.type === "group") {
-        layer.children.forEach((child) => desiredLayerIds.add(child.id));
-      }
-    }
     const forgetObject = (object: FabricObject): void => {
-      const childIds: string[] = [];
       if (object instanceof FabricGroup) {
         object.getObjects().forEach((child) => {
-          const id = objectToLayerId.get(child);
-          if (id) childIds.push(id);
+          const childId = objectToLayerId.get(child);
           objectToLayerId.delete(child);
+          if (childId && layerIdToObject.get(childId) === child) {
+            layerIdToObject.delete(childId);
+          }
         });
       }
+      const layerId = objectToLayerId.get(object);
       objectToLayerId.delete(object);
-      childIds.forEach((id) => layerIdToObject.delete(id));
+      if (layerId && layerIdToObject.get(layerId) === object) {
+        layerIdToObject.delete(layerId);
+      }
     };
     const removeAndForget = (object: FabricObject): void => {
       canvas.remove(object);
-      const id = objectToLayerId.get(object) ?? "";
-      if (id) layerIdToObject.delete(id);
       forgetObject(object);
     };
     isApplyingSelectionRef.current = true;
@@ -1519,20 +1486,76 @@ export function FabricSceneCanvas({
         activeObject instanceof FabricLayerTextbox && activeObject.isEditing
           ? activeObject
           : null;
+      const editingLayerId = editingObject
+        ? objectToLayerId.get(editingObject)
+        : undefined;
+      const editingSelection = editingObject
+        ? {
+            start: editingObject.selectionStart,
+            end: editingObject.selectionEnd,
+          }
+        : null;
       if (!editingObject) {
         canvas.discardActiveObject();
       }
       canvas.backgroundColor = scene.backgroundColor ?? "transparent";
+
+      const sortedLayers = [...scene.layers].sort(
+        (first, second) => first.zIndex - second.zIndex,
+      );
+      const topLevelIds = new Set(sortedLayers.map((layer) => layer.id));
+      const desiredLayerIds = new Set<string>();
+      for (const layer of sortedLayers) {
+        desiredLayerIds.add(layer.id);
+        if (layer.type === "group") {
+          layer.children.forEach((child) => desiredLayerIds.add(child.id));
+        }
+      }
+
+      const hasStructuralMismatch = canvas.getObjects().some((object) => {
+        const layerId = objectToLayerId.get(object);
+        return layerId === undefined || !topLevelIds.has(layerId);
+      });
+
+      if (hasStructuralMismatch) {
+        for (const object of [...canvas.getObjects()]) {
+          canvas.remove(object);
+        }
+        objectToLayerId.clear();
+        layerIdToObject.clear();
+
+        sortedLayers.forEach((layer) => {
+          addFabricObject(canvas, layer);
+        });
+
+        applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
+
+        if (editingLayerId) {
+          const editingTarget = layerIdToObject.get(editingLayerId);
+          if (
+            editingTarget instanceof FabricLayerTextbox &&
+            !editingTarget.isEditing &&
+            editingTarget.editable
+          ) {
+            canvas.setActiveObject(editingTarget);
+            editingTarget.enterEditing();
+            editingTarget.selectionStart = editingSelection?.start ?? 0;
+            editingTarget.selectionEnd = editingSelection?.end ?? 0;
+            if (editingTarget.hiddenTextarea) {
+              editingTarget._updateTextarea();
+            }
+          }
+        }
+
+        canvas.requestRenderAll();
+        return;
+      }
 
       for (const [layerId, object] of layerIdToObject) {
         if (!desiredLayerIds.has(layerId)) {
           removeAndForget(object);
         }
       }
-
-      const sortedLayers = [...scene.layers].sort(
-        (first, second) => first.zIndex - second.zIndex,
-      );
 
       sortedLayers.forEach((layer, index) => {
         let object = layerIdToObject.get(layer.id);

@@ -19,14 +19,12 @@ function round(value: number): number {
 
 export function getLayerBounds(layer: Layer): LayerBounds {
   const radians = (layer.rotation * Math.PI) / 180;
-  const scaledWidth = layer.width * layer.scaleX;
-  const scaledHeight = layer.height * layer.scaleY;
   const width =
-    Math.abs(scaledWidth * Math.cos(radians)) +
-    Math.abs(scaledHeight * Math.sin(radians));
+    Math.abs(layer.width * Math.cos(radians)) +
+    Math.abs(layer.height * Math.sin(radians));
   const height =
-    Math.abs(scaledWidth * Math.sin(radians)) +
-    Math.abs(scaledHeight * Math.cos(radians));
+    Math.abs(layer.width * Math.sin(radians)) +
+    Math.abs(layer.height * Math.cos(radians));
   const centerX = layer.x + layer.width / 2;
   const centerY = layer.y + layer.height / 2;
   const left = centerX - width / 2;
@@ -133,8 +131,6 @@ export function makeGroup(
     y: round(bounds.top),
     width: round(bounds.width),
     height: round(bounds.height),
-    scaleX: 1,
-    scaleY: 1,
     rotation: 0,
     opacity: 1,
     opacityEnabled: true,
@@ -154,31 +150,49 @@ export function makeGroup(
   };
 }
 
+export function scaleGroupChildren(
+  group: GroupLayer,
+  scaleX: number,
+  scaleY: number,
+): GroupLayer {
+  const newWidth = Math.max(1, round(group.width * scaleX));
+  const newHeight = Math.max(1, round(group.height * scaleY));
+  const children = group.children.map((child): AtomicLayer => {
+    const newChildWidth = Math.max(1, round(child.width * scaleX));
+    const newChildHeight = Math.max(1, round(child.height * scaleY));
+    return {
+      ...child,
+      x: round(child.x * scaleX),
+      y: round(child.y * scaleY),
+      width: newChildWidth,
+      height: newChildHeight,
+    } as AtomicLayer;
+  });
+  return { ...group, width: newWidth, height: newHeight, children };
+}
+
 export function transformGroupChildToScene(
   group: GroupLayer,
   child: AtomicLayer,
 ): AtomicLayer {
-  const scale = group.scaleX;
   const radians = (group.rotation * Math.PI) / 180;
   const localCenterX = child.x + child.width / 2 - group.width / 2;
   const localCenterY = child.y + child.height / 2 - group.height / 2;
-  const scaledX = localCenterX * scale;
-  const scaledY = localCenterY * scale;
   const worldCenterX =
-    group.x + group.width / 2 +
-    scaledX * Math.cos(radians) -
-    scaledY * Math.sin(radians);
+    group.x +
+    group.width / 2 +
+    localCenterX * Math.cos(radians) -
+    localCenterY * Math.sin(radians);
   const worldCenterY =
-    group.y + group.height / 2 +
-    scaledX * Math.sin(radians) +
-    scaledY * Math.cos(radians);
+    group.y +
+    group.height / 2 +
+    localCenterX * Math.sin(radians) +
+    localCenterY * Math.cos(radians);
 
   return {
     ...child,
     x: round(worldCenterX - child.width / 2),
     y: round(worldCenterY - child.height / 2),
-    scaleX: round(child.scaleX * scale),
-    scaleY: round(child.scaleY * scale),
     rotation: round(child.rotation + group.rotation),
     opacity: round(
       (child.opacityEnabled ? child.opacity : 1) *

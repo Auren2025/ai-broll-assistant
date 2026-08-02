@@ -13,7 +13,8 @@
     "render:project": "remotion render src/remotion/Studio.tsx Video001 projects/video001/renders/video001.mov --image-format=png --pixel-format=yuva444p10le --codec=prores --prores-profile=4444",
     "parse:srt": "tsx scripts/parseSrt.ts",
     "validate:srt": "tsx scripts/validateSrt.ts projects/video001/source.srt",
-    "validate:project": "tsx scripts/validateProject.ts projects/video001"
+    "validate:project": "tsx scripts/validateProject.ts projects/video001",
+    "migrate:scales": "tsx scripts/migrateScales.ts projects/video001"
   },
   "dependencies": {
     "@remotion/player": "^4.0.502",

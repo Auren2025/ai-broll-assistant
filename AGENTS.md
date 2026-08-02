@@ -111,21 +111,20 @@ Image 支持统一四角圆角与可选描边，其他视觉属性复用基础�
 
 ### 变换
 
-- `x`、`y` 是未缩放基础边界的左上角
-- `width`、`height` 是缩放前的基础尺寸
-- `scaleX`、`scaleY` 是围绕图层中心的缩放
+- `x`、`y` 是图层顶点的左上角
+- `width`、`height` 是图层在画布上的视觉尺寸，是尺寸的唯一来源
 - `rotation` 是围绕图层中心的旋转
-- 视觉边界是计算结果，不覆盖基础尺寸
+- 动画和适配器只能读取 `width`、`height`，不允许引入额外的缩放字段
 - Fabric.js 与 Remotion 必须使用相同的坐标和变换语义
 
-内容排版和明确的尺寸编辑可以修改基础尺寸；缩放操作修改缩放值。
+Inspector 直接编辑 `width`、`height`，Fabric.js 拖拽结束后把视觉尺寸写回 `width`、`height` 并把内部 transform 重置为单位缩放。任何操作都不会产生"基础尺寸 + 缩放比例"的二义性。
 
 ### Group
 
-- Group 子图层使用 Group 局部坐标
+- Group 子图层使用 Group 局部坐标，子图层的 `x`、`y` 是相对 Group 左上角的偏移
 - Group 子图层只能是普通图层
 - 不支持嵌套 Group
-- Group 只能等比缩放
+- Group 自由拉伸宽高时，子图层按各自比例同步缩放并保持相对位置（Figma 风格）
 - Group 不具有 Fill、Stroke、圆角或裁剪
 - Group 和子图层分别保留样式、变换与动画
 - Group 子图层必须能够选择、编辑、对齐和配置动画

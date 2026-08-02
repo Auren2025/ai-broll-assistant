@@ -29,6 +29,7 @@ import {
   getCombinedBounds,
   getLayerBounds,
   makeGroup,
+  scaleGroupChildren,
   ungroupLayer,
   updateLayerById,
 } from "./domain/groupOperations";
@@ -103,8 +104,6 @@ function buildImageLayer(
     y: (project.height - fitted.height) / 2,
     width: fitted.width,
     height: fitted.height,
-    scaleX: 1,
-    scaleY: 1,
     rotation: 0,
     opacity: 1,
     opacityEnabled: true,
@@ -1278,8 +1277,6 @@ function App() {
             y: (project.height - dims.height) / 2,
             width: dims.width,
             height: dims.height,
-            scaleX: 1,
-            scaleY: 1,
             rotation: 0,
             opacity: 1,
             opacityEnabled: true,
@@ -1317,8 +1314,6 @@ function App() {
             y: (project.height - 240) / 2,
             width: 400,
             height: 240,
-            scaleX: 1,
-            scaleY: 1,
             rotation: 0,
             opacity: 1,
             opacityEnabled: true,
@@ -1345,8 +1340,6 @@ function App() {
             y: (project.height - 240) / 2,
             width: 240,
             height: 240,
-            scaleX: 1,
-            scaleY: 1,
             rotation: 0,
             opacity: 1,
             opacityEnabled: true,
@@ -1373,8 +1366,6 @@ function App() {
             y: (project.height - 240) / 2,
             width: 280,
             height: 240,
-            scaleX: 1,
-            scaleY: 1,
             rotation: 0,
             opacity: 1,
             opacityEnabled: true,
@@ -1399,8 +1390,6 @@ function App() {
             y: (project.height - 24) / 2,
             width: 360,
             height: 24,
-            scaleX: 1,
-            scaleY: 1,
             rotation: 0,
             opacity: 1,
             opacityEnabled: true,
@@ -1514,18 +1503,21 @@ function App() {
         changed = true;
 
         if (layer.type === "group" && ("width" in patch || "height" in patch)) {
-          const requestedWidth = patch.width ?? layer.width * layer.scaleX;
-          const requestedHeight = patch.height ?? layer.height * layer.scaleY;
-          const scale = "width" in patch
-            ? requestedWidth / layer.width
-            : requestedHeight / layer.height;
+          const targetWidth = patch.width ?? layer.width;
+          const targetHeight = patch.height ?? layer.height;
+          const scaleX = layer.width > 0 ? targetWidth / layer.width : 1;
+          const scaleY = layer.height > 0 ? targetHeight / layer.height : 1;
+          const rescaled = scaleGroupChildren(
+            { ...layer, width: layer.width, height: layer.height },
+            scaleX,
+            scaleY,
+          );
+          const centerX = layer.x + layer.width / 2;
+          const centerY = layer.y + layer.height / 2;
           return {
-            ...layer,
-            ...patch,
-            width: layer.width,
-            height: layer.height,
-            scaleX: Math.max(0.01, scale),
-            scaleY: Math.max(0.01, scale),
+            ...rescaled,
+            x: roundCoordinate(centerX - rescaled.width / 2),
+            y: roundCoordinate(centerY - rescaled.height / 2),
           };
         }
 

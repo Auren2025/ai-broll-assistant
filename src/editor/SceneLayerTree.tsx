@@ -8,6 +8,8 @@ function getLayerIcon(type: Scene["layers"][number]["type"]): string {
   switch (type) {
     case "text":
       return "T";
+    case "image":
+      return "▣";
     case "circle":
       return "○";
     case "triangle":
@@ -26,6 +28,7 @@ interface SceneLayerTreeProps {
   scenesById: Readonly<Record<string, Scene>>;
   currentSceneId: string;
   selectedLayerIds: readonly string[];
+  hoveredLayerId: string | null;
   inspectorScope: InspectorScope;
   isSceneSwitchDisabled: boolean;
   onSceneSelect: (sceneId: string) => void;
@@ -42,6 +45,7 @@ export function SceneLayerTree({
   scenesById,
   currentSceneId,
   selectedLayerIds,
+  hoveredLayerId,
   inspectorScope,
   isSceneSwitchDisabled,
   onSceneSelect,
@@ -143,13 +147,14 @@ export function SceneLayerTree({
                   {sortedLayers.map((layer) => {
                     const isSelected =
                       isCurrent && selectedLayerIds.includes(layer.id);
+                    const isHovered = isCurrent && hoveredLayerId === layer.id;
                     const isGroupExpanded =
                       layer.type === "group" && expandedGroupIds.includes(layer.id);
 
                     return (
                       <div className="layer-tree-entry" key={layer.id}>
                         <div
-                          className={`layer-item${layer.type === "group" ? " is-group" : ""}${isSelected ? " is-selected" : ""}`}
+                          className={`layer-item${layer.type === "group" ? " is-group" : ""}${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}`}
                         >
                           {layer.type === "group" ? (
                             <button
@@ -200,8 +205,10 @@ export function SceneLayerTree({
                               .map((child) => {
                                 const isChildSelected =
                                   isCurrent && selectedLayerIds.includes(child.id);
+                                const isChildHovered =
+                                  isCurrent && hoveredLayerId === child.id;
                                 return (
-                                  <div className={`layer-item is-group-child${isChildSelected ? " is-selected" : ""}`} key={child.id}>
+                                  <div className={`layer-item is-group-child${isChildSelected ? " is-selected" : ""}${isChildHovered ? " is-hovered" : ""}`} key={child.id}>
                                     <button
                                       className="layer-item-main"
                                       type="button"
@@ -242,9 +249,6 @@ export function SceneLayerTree({
           );
         })}
       </div>
-      {isSceneSwitchDisabled ? (
-        <p className="sidebar-hint">Save before switching scenes.</p>
-      ) : null}
     </section>
   );
 }

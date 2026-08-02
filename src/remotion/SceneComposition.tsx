@@ -1,10 +1,16 @@
 import type { CSSProperties } from "react";
-import { AbsoluteFill, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Img, useCurrentFrame } from "remotion";
 import type { Layer, Scene } from "../domain/sceneSchema";
+import { applyTextCase } from "../domain/textCase";
 import { getLayerAnimationStyle } from "./layerAnimationStyle";
 
 export interface SceneCompositionProps {
   scene: Scene;
+  projectId: string;
+}
+
+function buildAssetUrl(projectId: string, src: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/${src}`;
 }
 
 function getLayerBaseStyle(layer: Layer): CSSProperties {
@@ -181,7 +187,7 @@ function ArrowHead({
   return <polygon points={points} fill={color} />;
 }
 
-function LayerView({ layer, frame }: { layer: Layer; frame: number }) {
+function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; projectId: string }) {
   if (!layer.visible) return null;
 
   const animationStyle = getLayerAnimationStyle(layer.animations, frame);
@@ -200,7 +206,9 @@ function LayerView({ layer, frame }: { layer: Layer; frame: number }) {
       <div style={{ ...style, isolation: "isolate", overflow: "visible" }}>
         {[...layer.children]
           .sort((first, second) => first.zIndex - second.zIndex)
-          .map((child) => <LayerView key={child.id} layer={child} frame={frame} />)}
+          .map((child) => (
+            <LayerView key={child.id} layer={child} frame={frame} projectId={projectId} />
+          ))}
       </div>
     );
   }
@@ -362,12 +370,31 @@ function LayerView({ layer, frame }: { layer: Layer; frame: number }) {
     );
   }
 
-  const displayText =
-          layer.textCase === "uppercase"
-            ? layer.text.toUpperCase()
-            : layer.textCase === "lowercase"
-              ? layer.text.toLowerCase()
-              : layer.text;
+  if (layer.type === "image") {
+    const imageUrl = buildAssetUrl(projectId, layer.src);
+    const maximum = Math.max(0, Math.min(layer.width, layer.height) / 2);
+    const cornerRadius = Math.max(0, Math.min(layer.cornerRadius, maximum));
+    return (
+      <div style={{ ...style, overflow: "hidden", borderRadius: cornerRadius }}>
+        <Img
+          src={imageUrl}
+          style={{
+            width: layer.width,
+            height: layer.height,
+            display: "block",
+            borderRadius: cornerRadius,
+            border:
+              layer.stroke && layer.strokeWidth > 0
+                ? `${layer.strokeWidth}px solid ${layer.stroke}`
+                : undefined,
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+    );
+  }
+
+  const displayText = applyTextCase(layer.text, layer.textCase);
 
   return (
           <div
@@ -405,7 +432,7 @@ function LayerView({ layer, frame }: { layer: Layer; frame: number }) {
   );
 }
 
-export function SceneComposition({ scene }: SceneCompositionProps) {
+export function SceneComposition({ scene, projectId }: SceneCompositionProps) {
   const frame = useCurrentFrame();
   const sortedLayers = [...scene.layers].sort(
     (first, second) => first.zIndex - second.zIndex,
@@ -420,7 +447,7 @@ export function SceneComposition({ scene }: SceneCompositionProps) {
       }}
     >
       {sortedLayers.map((layer) => (
-        <LayerView key={layer.id} layer={layer} frame={frame} />
+        <LayerView key={layer.id} layer={layer} frame={frame} projectId={projectId} />
       ))}
     </AbsoluteFill>
   );

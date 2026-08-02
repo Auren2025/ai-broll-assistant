@@ -30,7 +30,7 @@ export const TextLayerSchema = LayerBaseSchema.extend({
   letterSpacing: z.number().finite(),
   textAlign: TextAlignSchema,
   verticalAlign: TextVerticalAlignSchema.default('middle'),
-  autoResize: TextAutoResizeSchema.default('height'),
+  autoResize: TextAutoResizeSchema.default('both'),
   textCase: TextCaseSchema.default('normal'),
   kerningPairs: z.boolean().default(true),
   ligatures: z.boolean().default(true),

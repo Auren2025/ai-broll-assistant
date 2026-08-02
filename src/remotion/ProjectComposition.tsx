@@ -26,7 +26,7 @@ export function ProjectComposition({
           durationInFrames={scene.durationInFrames}
           name={`${project.name} · ${scene.id}`}
         >
-          <SceneComposition scene={scene} />
+          <SceneComposition scene={scene} projectId={project.id} />
         </Sequence>
       ))}
     </AbsoluteFill>

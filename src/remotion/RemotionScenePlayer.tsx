@@ -4,6 +4,7 @@ import { SceneComposition } from "./SceneComposition";
 
 interface RemotionScenePlayerProps {
   scene: Scene;
+  projectId: string;
   projectWidth: number;
   projectHeight: number;
   fps: number;
@@ -12,6 +13,7 @@ interface RemotionScenePlayerProps {
 
 export function RemotionScenePlayer({
   scene,
+  projectId,
   projectWidth,
   projectHeight,
   fps,
@@ -20,7 +22,7 @@ export function RemotionScenePlayer({
   return (
     <Player
       component={SceneComposition}
-      inputProps={{ scene }}
+      inputProps={{ scene, projectId }}
       durationInFrames={scene.durationInFrames}
       compositionWidth={projectWidth}
       compositionHeight={projectHeight}

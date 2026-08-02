@@ -6,85 +6,28 @@
   "durationInFrames": 150,
   "layers": [
     {
-      "id": "background-card",
-      "name": "Background Card",
-      "x": 160,
-      "y": 280,
-      "width": 1600,
-      "height": 520,
-      "scaleX": 1,
-      "scaleY": 1,
+      "id": "image-1",
+      "name": "Image",
+      "x": 952.4,
+      "y": -10.6,
+      "width": 90,
+      "height": 1030,
+      "scaleX": 7.7505,
+      "scaleY": 0.4152,
       "rotation": 0,
       "opacity": 1,
+      "opacityEnabled": true,
+      "blendMode": "normal",
       "zIndex": 0,
       "visible": true,
       "locked": false,
-      "animations": [
-        {
-          "id": "background-enter",
-          "phase": "enter",
-          "preset": "scale",
-          "startFrame": 0,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
-      ],
-      "type": "rectangle",
-      "fill": "#111827",
+      "animations": [],
+      "type": "image",
+      "src": "assets/image-f59b6fd361e4a621.png",
+      "cornerRadius": 0,
       "stroke": null,
       "strokeWidth": 0,
-      "cornerRadius": 32
-    },
-    {
-      "id": "title-text",
-      "name": "Title",
-      "x": 240,
-      "y": 420,
-      "width": 1440,
-      "height": 180,
-      "scaleX": 1,
-      "scaleY": 1,
-      "rotation": 0,
-      "opacity": 1,
-      "zIndex": 1,
-      "visible": true,
-      "locked": false,
-      "animations": [
-        {
-          "id": "title-enter",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 10,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        },
-        {
-          "id": "title-emphasis",
-          "phase": "emphasis",
-          "preset": "scale",
-          "startFrame": 65,
-          "durationInFrames": 24,
-          "easing": "ease-in-out"
-        },
-        {
-          "id": "title-exit",
-          "phase": "exit",
-          "preset": "slide-up",
-          "startFrame": 125,
-          "durationInFrames": 20,
-          "easing": "ease-in"
-        }
-      ],
-      "type": "text",
-      "text": "AI-Broll-Assistant",
-      "fontFamily": "Arial",
-      "fontSize": 96,
-      "fontWeight": 700,
-      "fontStyle": "normal",
-      "lineHeight": 1.2,
-      "letterSpacing": 0,
-      "textAlign": "center",
-      "fill": "#ffffff"
+      "strokePosition": "inside"
     }
   ]
 }

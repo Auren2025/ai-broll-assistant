@@ -9,7 +9,17 @@ import {
   Textbox,
   classRegistry,
 } from "fabric";
+import type { AtomicLayer } from "../domain/atomicLayerSchema";
+import type { GroupLayer } from "../domain/groupLayerSchema";
 import type { Layer, Scene } from "../domain/sceneSchema";
+import {
+  MIN_TEXT_WIDTH,
+  applyTextCase,
+  getCharSpacing,
+  getTextMeasurementOptions,
+  measureNaturalTextSize,
+  measureWrappedTextSize,
+} from "./textMetrics";
 
 type CornerRadii = {
   topLeft: number;
@@ -311,56 +321,260 @@ class FabricArrowObject extends FabricObject {
   }
 }
 
+class FabricImageLayerObject extends FabricObject {
+  static type = "FabricImageLayer";
+
+  declare imageSrc: string;
+  declare imageStrokeColor: string | null;
+  declare imageStrokeWidth: number;
+  declare imageCornerRadius: number;
+
+  private htmlImage: HTMLImageElement | null = null;
+  private imageLoadFailed = false;
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    this.imageSrc = (options.imageSrc as string | undefined) ?? "";
+    this.imageStrokeColor =
+      (options.imageStrokeColor as string | null | undefined) ?? null;
+    this.imageStrokeWidth =
+      (options.imageStrokeWidth as number | undefined) ?? 0;
+    this.imageCornerRadius =
+      (options.imageCornerRadius as number | undefined) ?? 0;
+    this.loadImage();
+  }
+
+  private loadImage(): void {
+    if (!this.imageSrc) {
+      this.imageLoadFailed = true;
+      return;
+    }
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      this.htmlImage = image;
+      this.imageLoadFailed = false;
+      this.dirty = true;
+      if (this.canvas) {
+        this.canvas.requestRenderAll();
+      }
+    };
+    image.onerror = () => {
+      this.htmlImage = null;
+      this.imageLoadFailed = true;
+      this.dirty = true;
+      if (this.canvas) {
+        this.canvas.requestRenderAll();
+      }
+    };
+    image.src = this.imageSrc;
+  }
+
+  private getEffectiveCornerRadii(): CornerRadii {
+    const maximum = Math.min(this.width, this.height) / 2;
+    const radius = Math.max(
+      0,
+      Math.min(this.imageCornerRadius, maximum),
+    );
+    return {
+      topLeft: radius,
+      topRight: radius,
+      bottomRight: radius,
+      bottomLeft: radius,
+    };
+  }
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    const w = this.width;
+    const h = this.height;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    const cornerRadii = this.getEffectiveCornerRadii();
+
+    ctx.save();
+    roundedRectanglePath(ctx, w, h, cornerRadii);
+    ctx.clip();
+
+    if (this.htmlImage) {
+      ctx.drawImage(this.htmlImage, -w / 2, -h / 2, w, h);
+    } else if (this.imageLoadFailed) {
+      ctx.fillStyle = "#d1d5db";
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    } else {
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+    ctx.restore();
+
+    if (this.imageStrokeColor && this.imageStrokeWidth > 0) {
+      ctx.save();
+      roundedRectanglePath(ctx, w, h, cornerRadii);
+      ctx.strokeStyle = this.imageStrokeColor;
+      ctx.lineWidth = this.imageStrokeWidth * 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+class FabricLayerTextbox extends Textbox {
+  static type = "FabricLayerTextbox";
+
+  declare editSourceText?: string;
+
+  constructor(text: string, options: Record<string, unknown> = {}) {
+    super(text, {
+      ...options,
+      dynamicMinWidth: 0,
+    });
+    this.editSourceText =
+      (options.editSourceText as string | undefined) ?? text;
+  }
+
+  override enterEditingImpl(): void {
+    if (this.editSourceText !== undefined && this.text !== this.editSourceText) {
+      this.set({ text: this.editSourceText });
+    }
+    super.enterEditingImpl();
+  }
+}
+
 classRegistry.setClass(FabricArrowObject);
 classRegistry.setClass(FabricRoundedRectangleObject);
 classRegistry.setClass(FabricEllipseObject);
 classRegistry.setClass(FabricRoundedTriangleObject);
+classRegistry.setClass(FabricLayerTextbox);
+classRegistry.setClass(FabricImageLayerObject);
 
 interface FabricSceneCanvasProps {
   scene: Scene;
+  projectId: string;
   projectWidth: number;
   projectHeight: number;
   displayScale?: number;
   onSceneChange: (scene: Scene) => void;
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
+  onHoveredLayerIdChange: (layerId: string | null) => void;
   onContextMenuRequest: (x: number, y: number) => void;
   selectedLayerIds: readonly string[];
+  pendingTextEditLayerId?: string | null;
+  onPendingTextEditConsumed?: () => void;
+  onTextLayerChange?: (
+    layerId: string,
+    text: string,
+    naturalWidth: number,
+    naturalHeight: number,
+  ) => void;
+}
+
+function buildAssetUrl(projectId: string, src: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/${src}`;
 }
 
 function roundNumber(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function readPositionFromObject(obj: FabricObject): {
+const SCALE_PRECISION = 10000;
+const MIN_SCALE = 1 / SCALE_PRECISION;
+
+function roundScale(value: number): number {
+  return Math.round(value * SCALE_PRECISION) / SCALE_PRECISION;
+}
+
+function clampScale(value: number): number {
+  return Math.max(MIN_SCALE, roundScale(value));
+}
+
+function findLayerByIdOrChild(scene: Scene, layerId: string): Layer | null {
+  for (const layer of scene.layers) {
+    if (layer.id === layerId) return layer;
+    if (layer.type === "group") {
+      const child = layer.children.find(
+        (candidate) => candidate.id === layerId,
+      );
+      if (child) return child;
+    }
+  }
+  return null;
+}
+
+function findParentGroupLayer(
+  scene: Scene,
+  layerId: string,
+): GroupLayer | null {
+  for (const layer of scene.layers) {
+    if (
+      layer.type === "group" &&
+      layer.children.some((candidate) => candidate.id === layerId)
+    ) {
+      return layer;
+    }
+  }
+  return null;
+}
+
+function sortChildrenByZIndex(
+  children: readonly AtomicLayer[],
+): AtomicLayer[] {
+  return [...children].sort(
+    (first, second) => first.zIndex - second.zIndex,
+  );
+}
+
+function getChildLayerPositionFromObject(
+  groupLayer: GroupLayer,
+  childWidth: number,
+  childHeight: number,
+  childObject: FabricObject,
+): { x: number; y: number } {
+  const centerX = childObject.left ?? 0;
+  const centerY = childObject.top ?? 0;
+  return {
+    x: roundNumber(centerX + groupLayer.width / 2 - childWidth / 2),
+    y: roundNumber(centerY + groupLayer.height / 2 - childHeight / 2),
+  };
+}
+
+function fabricChildrenMatch(
+  fabricChildren: readonly FabricObject[],
+  sceneChildren: readonly AtomicLayer[],
+  objectToLayerId: ReadonlyMap<FabricObject, string>,
+): boolean {
+  return (
+    fabricChildren.length === sceneChildren.length &&
+    fabricChildren.every(
+      (childObject, index) =>
+        objectToLayerId.get(childObject) === sceneChildren[index].id,
+    )
+  );
+}
+
+function readTransformFromObject(
+  obj: FabricObject,
+  baseWidth: number,
+  baseHeight: number,
+): {
   x: number;
   y: number;
-  width: number;
-  height: number;
   scaleX: number;
   scaleY: number;
   rotation: number;
 } {
-  const width = (obj.width ?? 0) * Math.abs(obj.scaleX ?? 1);
-  const height = (obj.height ?? 0) * Math.abs(obj.scaleY ?? 1);
-  const x = roundNumber((obj.left ?? 0) - width / 2);
-  const y = roundNumber((obj.top ?? 0) - height / 2);
-
-  obj.set({
-    width,
-    height,
-    scaleX: 1,
-    scaleY: 1,
-  });
-  obj.setCoords();
+  const centerX = obj.left ?? 0;
+  const centerY = obj.top ?? 0;
+  const scaleX = clampScale(Math.abs(obj.scaleX ?? 1));
+  const scaleY = clampScale(Math.abs(obj.scaleY ?? 1));
+  const rotation = obj.angle ?? 0;
 
   return {
-    x,
-    y,
-    width: roundNumber(width),
-    height: roundNumber(height),
-    scaleX: 1,
-    scaleY: 1,
-    rotation: roundNumber(obj.angle ?? 0),
+    x: roundNumber(centerX - baseWidth / 2),
+    y: roundNumber(centerY - baseHeight / 2),
+    scaleX,
+    scaleY,
+    rotation: roundNumber(rotation),
   };
 }
 
@@ -371,45 +585,106 @@ function updateLayerFromFabricObject(
   if (layer.type === "group" && object instanceof FabricGroup) {
     const objectScaleX = Math.abs(object.scaleX ?? 1);
     const objectScaleY = Math.abs(object.scaleY ?? 1);
-    const scale =
+    const rawScale =
       Math.abs(objectScaleX - layer.scaleX) >=
       Math.abs(objectScaleY - layer.scaleY)
         ? objectScaleX
         : objectScaleY;
+    const scale = clampScale(rawScale);
     object.set({ scaleX: scale, scaleY: scale });
     object.setCoords();
     return {
       ...layer,
       x: roundNumber((object.left ?? 0) - layer.width / 2),
       y: roundNumber((object.top ?? 0) - layer.height / 2),
-      scaleX: roundNumber(scale),
-      scaleY: roundNumber(scale),
+      scaleX: scale,
+      scaleY: scale,
       rotation: roundNumber(object.angle ?? 0),
     };
   }
 
-  const position = readPositionFromObject(object);
-
-  if (layer.type === "text" && object instanceof Textbox) {
+  if (layer.type === "text" && object instanceof FabricLayerTextbox) {
+    const textWidth = Math.max(
+      MIN_TEXT_WIDTH,
+      roundNumber(object.width ?? 0),
+    );
+    const textHeight = Math.max(1, roundNumber(object.height ?? 0));
+    const transform = readTransformFromObject(
+      object,
+      textWidth,
+      textHeight,
+    );
     return {
       ...layer,
-      ...position,
-      text: layer.textCase === "normal" ? (object.text ?? "") : layer.text,
-      width: roundNumber(object.width),
-      height: roundNumber(object.height),
+      width: textWidth,
+      height: textHeight,
+      ...transform,
     };
   }
 
+  const transform = readTransformFromObject(
+    object,
+    layer.width,
+    layer.height,
+  );
   return {
     ...layer,
-    ...position,
+    ...transform,
+  };
+}
+
+function updateChildLayerFromFabricObject(
+  groupLayer: GroupLayer,
+  childLayer: AtomicLayer,
+  childObject: FabricObject,
+): AtomicLayer {
+  const childWidth =
+    childLayer.type === "text"
+      ? Math.max(MIN_TEXT_WIDTH, roundNumber(childObject.width ?? 0))
+      : childLayer.width;
+  const childHeight =
+    childLayer.type === "text"
+      ? Math.max(1, roundNumber(childObject.height ?? 0))
+      : childLayer.height;
+  const position = getChildLayerPositionFromObject(
+    groupLayer,
+    childWidth,
+    childHeight,
+    childObject,
+  );
+  return {
+    ...childLayer,
+    ...(childLayer.type === "text"
+      ? { width: childWidth, height: childHeight }
+      : {}),
+    x: position.x,
+    y: position.y,
+    scaleX: clampScale(Math.abs(childObject.scaleX ?? 1)),
+    scaleY: clampScale(Math.abs(childObject.scaleY ?? 1)),
+    rotation: roundNumber(childObject.angle ?? 0),
   };
 }
 
 function applyLayerToFabricObject(
   object: FabricObject,
   layer: Layer,
+  groupLayer?: GroupLayer,
 ): void {
+  const isChild = groupLayer !== undefined;
+  const isLocked = layer.locked || (isChild ? groupLayer!.locked : false);
+
+  object.set({
+    borderColor: "#7147e8",
+    borderScaleFactor: 2,
+    cornerColor: "#ffffff",
+    cornerSize: 9,
+    cornerStrokeColor: "#7147e8",
+    cornerStyle: "rect",
+    transparentCorners: false,
+    hoverCursor: isLocked ? "default" : "pointer",
+    moveCursor: "move",
+  });
+
   if (layer.type === "group" && object instanceof FabricGroup) {
     object.set({
       left: layer.x + layer.width / 2,
@@ -419,10 +694,10 @@ function applyLayerToFabricObject(
       angle: layer.rotation,
       opacity: layer.opacityEnabled ? layer.opacity : 1,
       visible: layer.visible,
-      selectable: !layer.locked,
-      evented: !layer.locked,
+      selectable: !isLocked,
+      evented: !isLocked,
       subTargetCheck: true,
-      interactive: false,
+      interactive: true,
     });
     object.setControlsVisibility({ ml: false, mr: false, mt: false, mb: false });
     object.dirty = true;
@@ -430,11 +705,20 @@ function applyLayerToFabricObject(
     return;
   }
 
+  const left = isChild
+    ? (layer as AtomicLayer).x +
+      layer.width / 2 -
+      (groupLayer as GroupLayer).width / 2
+    : layer.x + layer.width / 2;
+  const top = isChild
+    ? (layer as AtomicLayer).y +
+      layer.height / 2 -
+      (groupLayer as GroupLayer).height / 2
+    : layer.y + layer.height / 2;
+
   object.set({
-    left: layer.x + layer.width / 2,
-    top: layer.y + layer.height / 2,
-    width: layer.width,
-    height: layer.height,
+    left,
+    top,
     scaleX: layer.scaleX,
     scaleY: layer.scaleY,
     angle: layer.rotation,
@@ -442,8 +726,9 @@ function applyLayerToFabricObject(
     globalCompositeOperation:
       layer.blendMode === "normal" ? "source-over" : layer.blendMode,
     visible: layer.visible,
-    selectable: !layer.locked,
-    evented: !layer.locked,
+    selectable: !isLocked,
+    evented: !isLocked,
+    activeOn: isChild ? "up" : "down",
   });
 
   if (
@@ -459,6 +744,8 @@ function applyLayerToFabricObject(
         })
       : { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 };
     object.set({
+      width: layer.width,
+      height: layer.height,
       fillColor: layer.fillEnabled ? layer.fill : null,
       strokeColor: layer.stroke,
       shapeStrokeWidth: layer.strokeWidth,
@@ -471,6 +758,8 @@ function applyLayerToFabricObject(
 
   if (layer.type === "circle" && object instanceof FabricEllipseObject) {
     object.set({
+      width: layer.width,
+      height: layer.height,
       fillColor: layer.fillEnabled ? layer.fill : null,
       strokeColor: layer.stroke,
       shapeStrokeWidth: layer.strokeWidth,
@@ -488,6 +777,8 @@ function applyLayerToFabricObject(
     object instanceof FabricRoundedTriangleObject
   ) {
     object.set({
+      width: layer.width,
+      height: layer.height,
       fillColor: layer.fillEnabled ? layer.fill : null,
       strokeColor: layer.stroke,
       shapeStrokeWidth: layer.strokeWidth,
@@ -500,6 +791,8 @@ function applyLayerToFabricObject(
 
   if (layer.type === "arrow" && object instanceof FabricArrowObject) {
     object.set({
+      width: layer.width,
+      height: layer.height,
       stroke: layer.stroke,
       strokeWidth: layer.strokeWidth,
       arrowHeadSize: layer.arrowHeadSize,
@@ -511,35 +804,61 @@ function applyLayerToFabricObject(
     return;
   }
 
-  if (layer.type === "text" && object instanceof Textbox) {
-    const characterSpacing = (layer.letterSpacing / layer.fontSize) * 1000;
+  if (layer.type === "text" && object instanceof FabricLayerTextbox) {
+    const displayText = object.isEditing
+      ? (object.text ?? layer.text)
+      : applyTextCase(layer.text, layer.textCase);
 
-    const displayText =
-      layer.textCase === "uppercase"
-        ? layer.text.toUpperCase()
-        : layer.textCase === "lowercase"
-          ? layer.text.toLowerCase()
-          : layer.text;
+    object.editSourceText = layer.text;
+
+    if (object.text !== displayText) {
+      object.set({ text: displayText });
+    }
 
     object.set({
-      text: displayText,
       fontFamily: layer.fontFamily,
       fontSize: layer.fontSize,
       fontWeight: layer.fontWeight,
       fontStyle: layer.fontStyle,
       lineHeight: layer.lineHeight,
-      charSpacing: characterSpacing,
+      charSpacing: getCharSpacing(layer.fontSize, layer.letterSpacing),
       textAlign: layer.textAlign,
       fill: layer.fillEnabled ? layer.fill : "transparent",
       stroke: layer.stroke,
       strokeWidth: layer.strokeWidth,
-      paintFirst: "fill",
+      paintFirst: layer.stroke && layer.strokeWidth > 0 ? "stroke" : "fill",
       editable: !layer.locked,
     });
+
+    object.set({
+      width: layer.width,
+      height: layer.height,
+    });
+
+    object.dirty = true;
+    object.setCoords();
+  }
+
+  if (layer.type === "image" && object instanceof FabricImageLayerObject) {
+    if (object.imageSrc !== layer.src) {
+      object.set({ imageSrc: layer.src });
+    }
+    object.set({
+      width: layer.width,
+      height: layer.height,
+      imageStrokeColor: layer.stroke,
+      imageStrokeWidth: layer.strokeWidth,
+      imageCornerRadius: layer.cornerRadius,
+    });
+    object.dirty = true;
+    object.setCoords();
   }
 }
 
-function createFabricObjectForLayer(layer: Layer): FabricObject {
+function createFabricObjectForLayer(
+  layer: Layer,
+  projectId: string,
+): FabricObject {
   let object: FabricObject;
 
   switch (layer.type) {
@@ -565,9 +884,10 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
       });
       break;
     case "text":
-      object = new Textbox(layer.text, {
+      object = new FabricLayerTextbox(layer.text, {
         originX: "center",
         originY: "center",
+        editSourceText: layer.text,
       });
       break;
     case "arrow":
@@ -577,11 +897,20 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
         objectCaching: false,
       });
       break;
+    case "image":
+      object = new FabricImageLayerObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+        imageSrc: buildAssetUrl(projectId, layer.src),
+      });
+      break;
     case "group": {
-      const children = [...layer.children]
-        .sort((first, second) => first.zIndex - second.zIndex)
-        .map((child) => createFabricObjectForLayer(child));
-      object = new FabricGroup(children, {
+      const sortedChildren = sortChildrenByZIndex(layer.children);
+      const childObjects = sortedChildren.map((child) =>
+        createFabricObjectForLayer(child, projectId),
+      );
+      const group = new FabricGroup(childObjects, {
         originX: "center",
         originY: "center",
         width: layer.width,
@@ -589,6 +918,11 @@ function createFabricObjectForLayer(layer: Layer): FabricObject {
         layoutManager: new LayoutManager(new FixedLayout()),
         objectCaching: false,
       });
+      group.getObjects().forEach((childObject, index) => {
+        const child = sortedChildren[index];
+        applyLayerToFabricObject(childObject, child, layer);
+      });
+      object = group;
       break;
     }
   }
@@ -609,9 +943,11 @@ function isFabricObjectForLayer(
     case "triangle":
       return object instanceof FabricRoundedTriangleObject;
     case "text":
-      return object instanceof Textbox;
+      return object instanceof FabricLayerTextbox;
     case "arrow":
       return object instanceof FabricArrowObject;
+    case "image":
+      return object instanceof FabricImageLayerObject;
     case "group":
       return object instanceof FabricGroup;
   }
@@ -646,29 +982,65 @@ function applySelectionToCanvas(
 
 export function FabricSceneCanvas({
   scene,
+  projectId,
   projectWidth,
   projectHeight,
   displayScale = 0.5,
   onSceneChange,
   onSelectedLayerIdsChange,
+  onHoveredLayerIdChange,
   onContextMenuRequest,
   selectedLayerIds,
+  pendingTextEditLayerId,
+  onPendingTextEditConsumed,
+  onTextLayerChange,
 }: FabricSceneCanvasProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
+  const hoveredObjectRef = useRef<FabricObject | null>(null);
   const sceneRef = useRef<Scene>(scene);
+  const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
   const isApplyingSelectionRef = useRef(false);
+  const pendingTextEditRef = useRef<string | null>(null);
+  const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
+  const onPendingTextEditConsumedRef = useRef<
+    (() => void) | undefined
+  >(undefined);
+  const onTextLayerChangeRef = useRef<
+    ((layerId: string, text: string, width: number, height: number) => void) |
+      undefined
+  >(undefined);
+
+  selectedLayerIdsRef.current = selectedLayerIds;
 
   useEffect(() => {
     sceneRef.current = scene;
   }, [scene]);
 
   useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
+  useEffect(() => {
     contextMenuRequestRef.current = onContextMenuRequest;
   }, [onContextMenuRequest]);
+
+  useEffect(() => {
+    pendingTextEditRef.current = pendingTextEditLayerId ?? null;
+  }, [pendingTextEditLayerId]);
+
+  useEffect(() => {
+    onPendingTextEditConsumedRef.current = () => {
+      onPendingTextEditConsumed?.();
+    };
+  }, [onPendingTextEditConsumed]);
+
+  useEffect(() => {
+    onTextLayerChangeRef.current = onTextLayerChange;
+  }, [onTextLayerChange]);
 
   const syncObjectsToScene = useCallback(
     (objects: readonly FabricObject[]): void => {
@@ -690,6 +1062,25 @@ export function FabricSceneCanvas({
       const updatedScene: Scene = {
         ...currentScene,
         layers: currentScene.layers.map((layer) => {
+          if (layer.type === "group") {
+            const groupObject = objectByLayerId.get(layer.id);
+            const nextGroup = groupObject
+              ? updateLayerFromFabricObject(layer, groupObject)
+              : layer;
+            if (nextGroup.type !== "group") return nextGroup;
+            let childChanged = false;
+            const children = nextGroup.children.map((child) => {
+              const childObject = objectByLayerId.get(child.id);
+              if (!childObject) return child;
+              childChanged = true;
+              return updateChildLayerFromFabricObject(
+                nextGroup,
+                child,
+                childObject,
+              );
+            });
+            return childChanged ? { ...nextGroup, children } : nextGroup;
+          }
           const object = objectByLayerId.get(layer.id);
           return object ? updateLayerFromFabricObject(layer, object) : layer;
         }),
@@ -701,31 +1092,77 @@ export function FabricSceneCanvas({
     [onSceneChange],
   );
 
+  const registerTextEvents = useCallback(
+    (canvas: Canvas, object: FabricObject): void => {
+      if (!(object instanceof FabricLayerTextbox)) return;
+
+      object.on("editing:exited", () => {
+        const layerId = objectToLayerIdRef.current.get(object);
+        if (!layerId) return;
+        const currentScene = sceneRef.current;
+        const layer = findLayerByIdOrChild(currentScene, layerId);
+        const parentGroup = findParentGroupLayer(currentScene, layerId);
+        if (layer) {
+          applyLayerToFabricObject(
+            object,
+            layer,
+            parentGroup ?? undefined,
+          );
+          object.setCoords();
+          canvas.requestRenderAll();
+        }
+      });
+
+      object.on("editing:entered", () => {
+        const layerId = objectToLayerIdRef.current.get(object);
+        if (!layerId) return;
+        const currentScene = sceneRef.current;
+        const layer = findLayerByIdOrChild(currentScene, layerId);
+        if (!layer || layer.type !== "text") return;
+
+        object.editSourceText = layer.text;
+        if (object.text !== layer.text) {
+          object.set({ text: layer.text });
+        }
+        if (object.hiddenTextarea && object.hiddenTextarea.value !== layer.text) {
+          object.hiddenTextarea.value = layer.text;
+          object.selectionStart = object.selectionEnd = layer.text.length;
+          object._updateTextarea();
+        }
+      });
+    },
+    [],
+  );
+
   const addFabricObject = useCallback(
     (canvas: Canvas, layer: Layer): FabricObject => {
-      const object = createFabricObjectForLayer(layer);
+      const object = createFabricObjectForLayer(layer, projectIdRef.current);
       layerIdToObjectRef.current.set(layer.id, object);
       objectToLayerIdRef.current.set(object, layer.id);
+
       if (layer.type === "group" && object instanceof FabricGroup) {
-        const children = [...layer.children].sort(
-          (first, second) => first.zIndex - second.zIndex,
-        );
+        const sortedChildren = sortChildrenByZIndex(layer.children);
         object.getObjects().forEach((childObject, index) => {
-          const child = children[index];
-          if (child) objectToLayerIdRef.current.set(childObject, child.id);
+          const child = sortedChildren[index];
+          if (child) {
+            layerIdToObjectRef.current.set(child.id, childObject);
+            objectToLayerIdRef.current.set(childObject, child.id);
+          }
         });
       }
+
       canvas.add(object);
 
-      if (object instanceof Textbox) {
-        object.on("editing:exited", () => {
-          syncObjectsToScene([object]);
+      registerTextEvents(canvas, object);
+      if (object instanceof FabricGroup) {
+        object.getObjects().forEach((childObject) => {
+          registerTextEvents(canvas, childObject);
         });
       }
 
       return object;
     },
-    [syncObjectsToScene],
+    [registerTextEvents],
   );
 
   useEffect(() => {
@@ -768,7 +1205,7 @@ export function FabricSceneCanvas({
     canvas.upperCanvasEl.addEventListener("contextmenu", handleContextMenu, true);
 
     const syncSelectedLayers = (): void => {
-      if (isApplyingSelectionRef.current) {
+      if (isApplyingSelectionRef.current || promoteGroupId !== null) {
         return;
       }
 
@@ -793,12 +1230,41 @@ export function FabricSceneCanvas({
           .map((object) => objectToLayerIdRef.current.get(object))
           .filter((layerId): layerId is string => layerId !== undefined);
 
+        const spaces = new Set(
+          selectedObjects.map((object) => {
+            const parent = object.parent;
+            if (parent instanceof FabricGroup) {
+              return objectToLayerIdRef.current.get(parent) ?? "scene";
+            }
+            return "scene";
+          }),
+        );
+
         queueMicrotask(() => {
           isApplyingSelectionRef.current = true;
 
           try {
             canvas.discardActiveObject();
-            syncObjectsToScene(selectedObjects);
+
+            if (spaces.size > 1) {
+              const currentScene = sceneRef.current;
+              for (const selectedObject of selectedObjects) {
+                const layerId = objectToLayerIdRef.current.get(selectedObject);
+                if (!layerId) continue;
+                const layer = findLayerByIdOrChild(currentScene, layerId);
+                const parentGroup = findParentGroupLayer(currentScene, layerId);
+                if (layer) {
+                  applyLayerToFabricObject(
+                    selectedObject,
+                    layer,
+                    parentGroup ?? undefined,
+                  );
+                }
+              }
+            } else {
+              syncObjectsToScene(selectedObjects);
+            }
+
             applySelectionToCanvas(
               canvas,
               selectedIds,
@@ -818,18 +1284,82 @@ export function FabricSceneCanvas({
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
+    canvas.on("mouse:over", (event) => {
+      const target = event.target;
+      if (!target || target === hoveredObjectRef.current) return;
+
+      hoveredObjectRef.current = target;
+      onHoveredLayerIdChange(objectToLayerIdRef.current.get(target) ?? null);
+      canvas.requestRenderAll();
+    });
+    canvas.on("mouse:out", (event) => {
+      if (event.target !== hoveredObjectRef.current) return;
+
+      hoveredObjectRef.current = null;
+      onHoveredLayerIdChange(null);
+      canvas.requestRenderAll();
+    });
+    canvas.on("after:render", ({ ctx }) => {
+      const hoveredObject = hoveredObjectRef.current;
+      if (
+        !hoveredObject ||
+        !hoveredObject.visible ||
+        canvas.getActiveObjects().includes(hoveredObject)
+      ) {
+        return;
+      }
+
+      hoveredObject._renderControls(ctx, {
+        borderColor: "#7147e8",
+        hasBorders: true,
+        hasControls: false,
+      });
+    });
     canvas.on("mouse:dblclick", (event) => {
-      const childObject = event.subTargets?.[0];
+      const selectedObject =
+        selectedLayerIdsRef.current.length === 1
+          ? layerIdToObjectRef.current.get(selectedLayerIdsRef.current[0])
+          : undefined;
+      const selectedChildWasHit =
+        selectedObject?.parent instanceof FabricGroup &&
+        selectedObject.containsPoint(event.scenePoint);
+      const childObject = selectedChildWasHit
+        ? selectedObject
+        : [...(event.subTargets ?? []), event.target]
+            .reverse()
+            .find((candidate) => candidate?.parent instanceof FabricGroup);
       if (!childObject) return;
       const childId = objectToLayerIdRef.current.get(childObject);
       const child = childId
-        ? sceneRef.current.layers
-            .flatMap((layer) =>
-              layer.type === "group" ? layer.children : [],
-            )
-            .find((candidate) => candidate.id === childId)
+        ? findLayerByIdOrChild(sceneRef.current, childId)
         : undefined;
-      if (child && !child.locked) onSelectedLayerIdsChange([child.id]);
+      if (!child || child.locked) return;
+      canvas.setActiveObject(childObject);
+      onSelectedLayerIdsChange([child.id]);
+      if (childObject instanceof FabricLayerTextbox) {
+        childObject.enterEditing();
+        childObject.selectAll();
+      }
+      canvas.requestRenderAll();
+    });
+
+    let promoteGroupId: string | null = null;
+    canvas.on("mouse:down:before", (event) => {
+      const target = event.target;
+      if (!target || target === canvas.getActiveObject()) {
+        promoteGroupId = null;
+        return;
+      }
+      const targetId = objectToLayerIdRef.current.get(target);
+      if (targetId && selectedLayerIdsRef.current.includes(targetId)) {
+        promoteGroupId = null;
+        return;
+      }
+      const parent = target.parent;
+      promoteGroupId =
+        parent instanceof FabricGroup
+          ? objectToLayerIdRef.current.get(parent) ?? null
+          : null;
     });
     canvas.on("mouse:down", (event) => {
       const pointerEvent = event.e as MouseEvent;
@@ -843,12 +1373,93 @@ export function FabricSceneCanvas({
       }
       if (!event.target) {
         onSelectedLayerIdsChange([]);
+        return;
       }
+      if (promoteGroupId) {
+        const groupObject = layerIdToObjectRef.current.get(promoteGroupId);
+        if (groupObject) {
+          canvas.setActiveObject(groupObject);
+          onSelectedLayerIdsChange([promoteGroupId]);
+          canvas._currentTransform = null;
+          canvas._setupCurrentTransform(pointerEvent, groupObject, false);
+          canvas.requestRenderAll();
+        }
+      }
+    });
+    canvas.on("mouse:up", () => {
+      if (!promoteGroupId) {
+        return;
+      }
+      const groupId = promoteGroupId;
+      const groupObject = layerIdToObjectRef.current.get(groupId);
+      const activeObject = canvas.getActiveObject();
+      if (
+        activeObject &&
+        activeObject.parent instanceof FabricGroup &&
+        groupObject
+      ) {
+        canvas.setActiveObject(groupObject);
+        onSelectedLayerIdsChange([groupId]);
+        canvas.requestRenderAll();
+      }
+      promoteGroupId = null;
+    });
+
+    canvas.on("text:changed", (event) => {
+      const target = event.target;
+      if (!(target instanceof FabricLayerTextbox)) return;
+      if (!target.isEditing) return;
+      const layerId = objectToLayerIdRef.current.get(target);
+      if (!layerId) return;
+
+      const textLayer = findLayerByIdOrChild(
+        sceneRef.current,
+        layerId,
+      );
+      if (!textLayer || textLayer.type !== "text") return;
+
+      const newText = target.text ?? textLayer.text;
+      target.editSourceText = newText;
+      const displayText = applyTextCase(newText, textLayer.textCase);
+      const opts = getTextMeasurementOptions(textLayer);
+      let nextWidth: number;
+      let nextHeight: number;
+
+      switch (textLayer.autoResize) {
+        case "both": {
+          const measured = measureNaturalTextSize(displayText, opts);
+          nextWidth = measured.width;
+          nextHeight = measured.height;
+          break;
+        }
+        case "height": {
+          nextWidth = textLayer.width;
+          const measured = measureNaturalTextSize(displayText, opts);
+          const wrapped = measureWrappedTextSize(displayText, opts, textLayer.width);
+          if (wrapped.height > measured.height) {
+            nextHeight = wrapped.height;
+          } else {
+            nextHeight = measured.height;
+          }
+          break;
+        }
+        case "fixed":
+          nextWidth = textLayer.width;
+          nextHeight = textLayer.height;
+          break;
+      }
+
+      target.set({ width: nextWidth, height: nextHeight });
+      target.setCoords();
+
+      onTextLayerChangeRef.current?.(layerId, newText, nextWidth, nextHeight);
     });
 
     canvas.requestRenderAll();
 
     return () => {
+      hoveredObjectRef.current = null;
+      onHoveredLayerIdChange(null);
       canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
       void canvas.dispose();
       fabricCanvasRef.current = null;
@@ -859,6 +1470,7 @@ export function FabricSceneCanvas({
     addFabricObject,
     displayScale,
     onSelectedLayerIdsChange,
+    onHoveredLayerIdChange,
     projectHeight,
     projectWidth,
     scene.id,
@@ -874,24 +1486,47 @@ export function FabricSceneCanvas({
 
     const layerIdToObject = layerIdToObjectRef.current;
     const objectToLayerId = objectToLayerIdRef.current;
-    const desiredLayerIds = new Set(scene.layers.map((layer) => layer.id));
-    const forgetObject = (object: FabricObject): void => {
-      objectToLayerId.delete(object);
-      if (object instanceof FabricGroup) {
-        object.getObjects().forEach((child) => objectToLayerId.delete(child));
+    const desiredLayerIds = new Set<string>();
+    for (const layer of scene.layers) {
+      desiredLayerIds.add(layer.id);
+      if (layer.type === "group") {
+        layer.children.forEach((child) => desiredLayerIds.add(child.id));
       }
+    }
+    const forgetObject = (object: FabricObject): void => {
+      const childIds: string[] = [];
+      if (object instanceof FabricGroup) {
+        object.getObjects().forEach((child) => {
+          const id = objectToLayerId.get(child);
+          if (id) childIds.push(id);
+          objectToLayerId.delete(child);
+        });
+      }
+      objectToLayerId.delete(object);
+      childIds.forEach((id) => layerIdToObject.delete(id));
+    };
+    const removeAndForget = (object: FabricObject): void => {
+      canvas.remove(object);
+      const id = objectToLayerId.get(object) ?? "";
+      if (id) layerIdToObject.delete(id);
+      forgetObject(object);
     };
     isApplyingSelectionRef.current = true;
 
     try {
-      canvas.discardActiveObject();
+      const activeObject = canvas.getActiveObject();
+      const editingObject =
+        activeObject instanceof FabricLayerTextbox && activeObject.isEditing
+          ? activeObject
+          : null;
+      if (!editingObject) {
+        canvas.discardActiveObject();
+      }
       canvas.backgroundColor = scene.backgroundColor ?? "transparent";
 
       for (const [layerId, object] of layerIdToObject) {
         if (!desiredLayerIds.has(layerId)) {
-          canvas.remove(object);
-          layerIdToObject.delete(layerId);
-          forgetObject(object);
+          removeAndForget(object);
         }
       }
 
@@ -902,22 +1537,62 @@ export function FabricSceneCanvas({
       sortedLayers.forEach((layer, index) => {
         let object = layerIdToObject.get(layer.id);
 
-        if (object && layer.type === "group") {
-          canvas.remove(object);
-          layerIdToObject.delete(layer.id);
-          forgetObject(object);
+        if (object && !isFabricObjectForLayer(object, layer)) {
+          removeAndForget(object);
           object = undefined;
         }
 
-        if (object && !isFabricObjectForLayer(object, layer)) {
-          canvas.remove(object);
-          layerIdToObject.delete(layer.id);
-          forgetObject(object);
-          object = undefined;
+        if (
+          object &&
+          layer.type === "group" &&
+          object instanceof FabricGroup
+        ) {
+          const sortedChildren = sortChildrenByZIndex(layer.children);
+          if (
+            !fabricChildrenMatch(
+              object.getObjects(),
+              sortedChildren,
+              objectToLayerId,
+            )
+          ) {
+            removeAndForget(object);
+            object = undefined;
+          }
         }
 
         if (!object) {
           object = addFabricObject(canvas, layer);
+        } else if (
+          layer.type === "group" &&
+          object instanceof FabricGroup
+        ) {
+          applyLayerToFabricObject(object, layer);
+          const sortedChildren = sortChildrenByZIndex(layer.children);
+          object.getObjects().forEach((childObject, childIndex) => {
+            const child = sortedChildren[childIndex];
+            if (childObject === editingObject) {
+              const selStart = editingObject.selectionStart;
+              const selEnd = editingObject.selectionEnd;
+              applyLayerToFabricObject(childObject, child, layer);
+              editingObject.selectionStart = selStart;
+              editingObject.selectionEnd = selEnd;
+              if (editingObject.hiddenTextarea) {
+                editingObject._updateTextarea();
+              }
+            } else {
+              applyLayerToFabricObject(childObject, child, layer);
+            }
+          });
+          object.setCoords();
+        } else if (object === editingObject) {
+          const selStart = editingObject.selectionStart;
+          const selEnd = editingObject.selectionEnd;
+          applyLayerToFabricObject(object, layer);
+          editingObject.selectionStart = selStart;
+          editingObject.selectionEnd = selEnd;
+          if (editingObject.hiddenTextarea) {
+            editingObject._updateTextarea();
+          }
         } else {
           applyLayerToFabricObject(object, layer);
         }
@@ -925,7 +1600,26 @@ export function FabricSceneCanvas({
         canvas.moveObjectTo(object, index);
       });
 
-      applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
+      if (!editingObject) {
+        applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
+      }
+
+      const pendingId = pendingTextEditRef.current;
+      if (pendingId) {
+        const target = layerIdToObject.get(pendingId);
+        if (
+          target instanceof FabricLayerTextbox &&
+          !target.isEditing &&
+          target.editable
+        ) {
+          canvas.setActiveObject(target);
+          target.enterEditing();
+          target.selectAll();
+        }
+        pendingTextEditRef.current = null;
+        onPendingTextEditConsumedRef.current?.();
+      }
+
       canvas.requestRenderAll();
     } finally {
       isApplyingSelectionRef.current = false;

@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent as ReactChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import "./App.css";
 import {
   createScene,
   deleteScene as deleteSceneRequest,
+  ExternalChangeConflictError,
   fetchProject,
   fetchScene,
   saveProject,
   saveScene,
+  uploadImageAsset,
 } from "./api/projectApi";
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
@@ -22,12 +32,14 @@ import {
   ungroupLayer,
   updateLayerById,
 } from "./domain/groupOperations";
-import { AlignmentToolbar, type AlignmentAction } from "./editor/AlignmentToolbar";
+import type { AlignmentAction } from "./editor/alignment";
 import { EditorToolbar } from "./editor/EditorToolbar";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
 import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
+import { SceneAnimationTimeline } from "./editor/SceneAnimationTimeline";
 import {
   LayerPropertiesPanel,
+  MultiLayerPropertiesPanel,
   type EditableLayerPatch,
 } from "./editor/LayerPropertiesPanel";
 import { SceneLayerTree } from "./editor/SceneLayerTree";
@@ -37,12 +49,24 @@ import {
   type PreviewStateMessage,
   type PreviewSyncMessage,
 } from "./preview/previewChannel";
+import {
+  measureNaturalTextSize,
+  measureWrappedTextSize,
+} from "./editor/textMetrics";
+import { applyTextCase } from "./domain/textCase";
 
 const PROJECT_ID = "video001";
+const DEFAULT_TIMELINE_HEIGHT = 224;
+const MIN_TIMELINE_HEIGHT = 120;
+const MIN_CANVAS_HEIGHT = 240;
+const AUTO_SAVE_DELAY_MS = 600;
+const EXTERNAL_REFRESH_INTERVAL_MS = 3000;
 
 type InspectorTab = "design" | "animate";
 type InspectorScope = "scene" | "layer";
 type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "arrow";
+
+const MAX_IMAGE_DIMENSION = 1280;
 
 interface EditorSnapshot {
   project: Project;
@@ -61,6 +85,62 @@ function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
+function buildImageLayer(
+  project: Project,
+  scene: Scene,
+  src: string,
+  naturalWidth: number,
+  naturalHeight: number,
+  id: string,
+): Layer {
+  const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
+  const fitted = scaleToFit(naturalWidth, naturalHeight, MAX_IMAGE_DIMENSION);
+  return {
+    id,
+    name: "Image",
+    type: "image",
+    x: (project.width - fitted.width) / 2,
+    y: (project.height - fitted.height) / 2,
+    width: fitted.width,
+    height: fitted.height,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex,
+    visible: true,
+    locked: false,
+    animations: [],
+    src,
+    cornerRadius: 0,
+    stroke: null,
+    strokeWidth: 0,
+    strokePosition: "inside",
+  };
+}
+
+function measureTextBounds(
+  text: string,
+  fontFamily: string,
+  fontSize: number,
+  fontWeight: number,
+  fontStyle: "normal" | "italic",
+  lineHeight: number,
+  letterSpacing: number,
+): { width: number; height: number } {
+  return measureNaturalTextSize(text, {
+    fontFamily,
+    fontSize,
+    fontWeight,
+    fontStyle,
+    lineHeight,
+    letterSpacing,
+  });
+}
+
+
 function alignSceneLayers(
   scene: Scene,
   selectedLayerIds: readonly string[],
@@ -69,9 +149,48 @@ function alignSceneLayers(
   projectHeight: number,
 ): Scene {
   const selectedLayerIdSet = new Set(selectedLayerIds);
-  const selectedLayers = scene.layers.filter((layer) =>
-    selectedLayerIdSet.has(layer.id),
-  );
+
+  if (selectedLayerIdSet.size === 0) {
+    return scene;
+  }
+
+  interface AlignSpace {
+    spaceId: string;
+    width: number;
+    height: number;
+    layers: Layer[];
+  }
+
+  const spaces = new Map<string, AlignSpace>();
+  const getSpace = (spaceId: string, width: number, height: number): AlignSpace => {
+    let space = spaces.get(spaceId);
+    if (!space) {
+      space = { spaceId, width, height, layers: [] };
+      spaces.set(spaceId, space);
+    }
+    return space;
+  };
+
+  for (const layer of scene.layers) {
+    if (layer.type === "group") {
+      const childLayers = layer.children.filter((child) =>
+        selectedLayerIdSet.has(child.id),
+      );
+      if (childLayers.length > 0) {
+        getSpace(layer.id, layer.width, layer.height).layers.push(...childLayers);
+      }
+    } else if (selectedLayerIdSet.has(layer.id)) {
+      getSpace("scene", projectWidth, projectHeight).layers.push(layer);
+    }
+  }
+
+  // Mixed coordinate spaces must not produce wrong coordinates: safe no-op.
+  if (spaces.size !== 1) {
+    return scene;
+  }
+
+  const space = [...spaces.values()][0];
+  const selectedLayers = space.layers;
 
   if (selectedLayers.length === 0) {
     return scene;
@@ -143,12 +262,12 @@ function alignSceneLayers(
         ? {
             left: 0,
             top: 0,
-            right: projectWidth,
-            bottom: projectHeight,
-            width: projectWidth,
-            height: projectHeight,
-            centerX: projectWidth / 2,
-            centerY: projectHeight / 2,
+            right: space.width,
+            bottom: space.height,
+            width: space.width,
+            height: space.height,
+            centerX: space.width / 2,
+            centerY: space.height / 2,
           }
         : getCombinedBounds(selectedBounds);
 
@@ -177,6 +296,38 @@ function alignSceneLayers(
 
   let changed = false;
   const layers = scene.layers.map((layer) => {
+    if (layer.type === "group") {
+      if (!layer.children.some((child) => nextCenters.has(child.id))) {
+        return layer;
+      }
+      const children = layer.children.map((child) => {
+        const nextCenter = nextCenters.get(child.id);
+
+        if (!nextCenter) {
+          return child;
+        }
+
+        const nextX = roundCoordinate(
+          (nextCenter.x ?? child.x + child.width / 2) - child.width / 2,
+        );
+        const nextY = roundCoordinate(
+          (nextCenter.y ?? child.y + child.height / 2) - child.height / 2,
+        );
+
+        if (nextX === child.x && nextY === child.y) {
+          return child;
+        }
+
+        changed = true;
+        return {
+          ...child,
+          x: nextX,
+          y: nextY,
+        };
+      });
+      return { ...layer, children };
+    }
+
     const nextCenter = nextCenters.get(layer.id);
 
     if (!nextCenter) {
@@ -225,7 +376,7 @@ function findParentGroup(layers: readonly Layer[], layerId: string) {
 
 function getNextLayerId(
   layers: readonly Layer[],
-  type: AddableLayerType | "group",
+  type: AddableLayerType | "image" | "group",
 ): string {
   const pattern = new RegExp(`^${type}-(\\d+)$`);
   const allLayers = getAllLayers(layers);
@@ -244,6 +395,37 @@ function getNextLayerId(
   return candidate;
 }
 
+function readImageDimensions(
+  src: string,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height,
+      });
+    };
+    image.onerror = () => reject(new Error("Failed to read image dimensions"));
+    image.src = src;
+  });
+}
+
+function scaleToFit(
+  width: number,
+  height: number,
+  maximum: number,
+): { width: number; height: number } {
+  if (width <= 0 || height <= 0) {
+    return { width: maximum, height: maximum };
+  }
+  const ratio = Math.min(maximum / width, maximum / height, 1);
+  return {
+    width: Math.max(1, Math.round(width * ratio)),
+    height: Math.max(1, Math.round(height * ratio)),
+  };
+}
+
 function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -251,15 +433,30 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sceneError, setSceneError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [hasSaveConflict, setHasSaveConflict] = useState(false);
   const [createSceneError, setCreateSceneError] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
   const [isCreatingScene, setIsCreatingScene] = useState(false);
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
+  const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
+  const [selectedAnimationId, setSelectedAnimationId] = useState<string | null>(
+    null,
+  );
+  const [timelineHeight, setTimelineHeight] = useState(
+    DEFAULT_TIMELINE_HEIGHT,
+  );
+  const [isTimelineResizing, setIsTimelineResizing] = useState(false);
   const [inspectorScope, setInspectorScope] = useState<InspectorScope>("scene");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pendingTextEditLayerId, setPendingTextEditLayerId] = useState<
+    string | null
+  >(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const previewStateRef = useRef<PreviewStateMessage | null>(null);
@@ -267,8 +464,125 @@ function App() {
   const undoStackRef = useRef<EditorSnapshot[]>([]);
   const redoStackRef = useRef<EditorSnapshot[]>([]);
   const isApplyingHistoryRef = useRef(false);
+  const projectRef = useRef<Project | null>(null);
+  const sceneRef = useRef<Scene | null>(null);
+  const projectChangeVersionRef = useRef(0);
+  const sceneChangeVersionRef = useRef(0);
+  const savedProjectVersionRef = useRef(0);
+  const savedSceneVersionRef = useRef(0);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const activeSaveCountRef = useRef(0);
+  const externalRefreshRunningRef = useRef(false);
+  const timelineResizeRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startHeight: number;
+    maximumHeight: number;
+  } | null>(null);
   const selectedLayerId =
     selectedLayerIds.length === 1 ? (selectedLayerIds[0] ?? null) : null;
+
+  projectRef.current = project;
+  sceneRef.current = scene;
+
+  const updateDirtyState = useCallback(() => {
+    setIsDirty(
+      projectChangeVersionRef.current > savedProjectVersionRef.current ||
+        sceneChangeVersionRef.current > savedSceneVersionRef.current,
+    );
+  }, []);
+
+  const markProjectChanged = useCallback(() => {
+    projectChangeVersionRef.current += 1;
+    setIsDirty(true);
+    setSaveError(null);
+  }, []);
+
+  const markSceneChanged = useCallback(() => {
+    sceneChangeVersionRef.current += 1;
+    setIsDirty(true);
+    setSaveError(null);
+  }, []);
+
+  const markCurrentStateSaved = useCallback(() => {
+    savedProjectVersionRef.current = projectChangeVersionRef.current;
+    savedSceneVersionRef.current = sceneChangeVersionRef.current;
+    setIsDirty(false);
+    setSaveError(null);
+    setHasSaveConflict(false);
+  }, []);
+
+  function clampTimelineHeight(value: number, maximumHeight: number): number {
+    return Math.min(Math.max(value, MIN_TIMELINE_HEIGHT), maximumHeight);
+  }
+
+  function handleTimelineResizeStart(
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
+    const workspace = event.currentTarget.closest<HTMLElement>(
+      ".canvas-workspace",
+    );
+    if (!workspace) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    timelineResizeRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: timelineHeight,
+      maximumHeight: Math.max(
+        MIN_TIMELINE_HEIGHT,
+        workspace.clientHeight - MIN_CANVAS_HEIGHT - 7,
+      ),
+    };
+    setIsTimelineResizing(true);
+  }
+
+  function handleTimelineResizeMove(
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
+    const resize = timelineResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+
+    setTimelineHeight(
+      clampTimelineHeight(
+        resize.startHeight - (event.clientY - resize.startY),
+        resize.maximumHeight,
+      ),
+    );
+  }
+
+  function handleTimelineResizeEnd(
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
+    if (timelineResizeRef.current?.pointerId !== event.pointerId) return;
+    timelineResizeRef.current = null;
+    setIsTimelineResizing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleTimelineResizeKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ): void {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const workspace = event.currentTarget.closest<HTMLElement>(
+      ".canvas-workspace",
+    );
+    if (!workspace) return;
+
+    event.preventDefault();
+    const step = event.shiftKey ? 40 : 10;
+    const direction = event.key === "ArrowUp" ? 1 : -1;
+    const maximumHeight = Math.max(
+      MIN_TIMELINE_HEIGHT,
+      workspace.clientHeight - MIN_CANVAS_HEIGHT - 7,
+    );
+    setTimelineHeight((current) =>
+      clampTimelineHeight(current + direction * step, maximumHeight),
+    );
+  }
 
   previewStateRef.current =
     project && scene
@@ -317,8 +631,13 @@ function App() {
               loadedScenes.map((candidate) => [candidate.id, candidate]),
             ),
           );
+          projectChangeVersionRef.current = 0;
+          sceneChangeVersionRef.current = 0;
+          savedProjectVersionRef.current = 0;
+          savedSceneVersionRef.current = 0;
           setSelectedLayerIds([]);
           setIsDirty(false);
+          setHasSaveConflict(false);
         }
       } catch (error: unknown) {
         if (!cancelled) {
@@ -378,24 +697,242 @@ function App() {
     redoStackRef.current = [];
   }, []);
 
+  const queueCurrentSave = useCallback(
+    (force = false): Promise<void> => {
+      const projectSnapshot = projectRef.current;
+      const sceneSnapshot = sceneRef.current;
+      if (!projectSnapshot || !sceneSnapshot) return saveQueueRef.current;
+
+      const projectVersion = projectChangeVersionRef.current;
+      const sceneVersion = sceneChangeVersionRef.current;
+      const needsProjectSave =
+        projectVersion > savedProjectVersionRef.current;
+      const needsSceneSave = sceneVersion > savedSceneVersionRef.current;
+
+      if (!needsProjectSave && !needsSceneSave) {
+        return saveQueueRef.current;
+      }
+
+      const run = saveQueueRef.current.then(async () => {
+        activeSaveCountRef.current += 1;
+        setIsSaving(true);
+        setSaveError(null);
+
+        try {
+          if (
+            needsProjectSave &&
+            projectVersion > savedProjectVersionRef.current
+          ) {
+            await saveProject(projectSnapshot, { force });
+            savedProjectVersionRef.current = Math.max(
+              savedProjectVersionRef.current,
+              projectVersion,
+            );
+          }
+
+          if (needsSceneSave && sceneVersion > savedSceneVersionRef.current) {
+            await saveScene(projectSnapshot.id, sceneSnapshot, { force });
+            savedSceneVersionRef.current = Math.max(
+              savedSceneVersionRef.current,
+              sceneVersion,
+            );
+            setScenesById((current) => ({
+              ...current,
+              [sceneSnapshot.id]: sceneSnapshot,
+            }));
+          }
+
+          setHasSaveConflict(false);
+          updateDirtyState();
+        } catch (error: unknown) {
+          setSaveError(getErrorMessage(error));
+          setHasSaveConflict(error instanceof ExternalChangeConflictError);
+          updateDirtyState();
+          throw error;
+        } finally {
+          activeSaveCountRef.current -= 1;
+          if (activeSaveCountRef.current === 0) setIsSaving(false);
+        }
+      });
+
+      saveQueueRef.current = run.catch(() => undefined);
+      return run;
+    },
+    [updateDirtyState],
+  );
+
   const handleSceneChange = useCallback((updatedScene: Scene) => {
     recordHistory();
     setScene(updatedScene);
-    setIsDirty(true);
-    setSaveError(null);
-  }, [recordHistory]);
+    markSceneChanged();
+  }, [markSceneChanged, recordHistory]);
 
   const handleProjectChange = useCallback((updatedProject: Project) => {
     recordHistory();
     setProject(updatedProject);
-    setIsDirty(true);
-    setSaveError(null);
-  }, [recordHistory]);
+    markProjectChanged();
+  }, [markProjectChanged, recordHistory]);
+
+  useEffect(() => {
+    if (!isDirty || hasSaveConflict || isSceneLoading || isCreatingScene) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void queueCurrentSave().catch(() => undefined);
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    hasSaveConflict,
+    isCreatingScene,
+    isDirty,
+    isSceneLoading,
+    project,
+    queueCurrentSave,
+    scene,
+  ]);
+
+  useEffect(() => {
+    const warnBeforeClosing = (event: BeforeUnloadEvent): void => {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", warnBeforeClosing);
+    return () => window.removeEventListener("beforeunload", warnBeforeClosing);
+  }, [isDirty]);
+
+  const loadAllFromDisk = useCallback(async (): Promise<void> => {
+    const currentProject = projectRef.current;
+    if (!currentProject) return;
+
+    const loadedProject = await fetchProject(currentProject.id);
+    const loadedScenes = await Promise.all(
+      loadedProject.scenes.map((reference) =>
+        fetchScene(loadedProject.id, reference.id),
+      ),
+    );
+    const nextScenesById = Object.fromEntries(
+      loadedScenes.map((candidate) => [candidate.id, candidate]),
+    );
+    const currentSceneId = sceneRef.current?.id;
+    const loadedScene =
+      (currentSceneId ? nextScenesById[currentSceneId] : undefined) ??
+      loadedScenes[0];
+    if (!loadedScene) throw new Error("Project contains no scenes");
+
+    setProject(loadedProject);
+    setScene(loadedScene);
+    setScenesById(nextScenesById);
+    setSelectedLayerIds([]);
+    setSelectedAnimationId(null);
+    setInspectorScope("scene");
+    projectChangeVersionRef.current += 1;
+    sceneChangeVersionRef.current += 1;
+    markCurrentStateSaved();
+    clearHistory();
+  }, [clearHistory, markCurrentStateSaved]);
+
+  useEffect(() => {
+    if (
+      isDirty ||
+      isSaving ||
+      isSceneLoading ||
+      isCreatingScene ||
+      hasSaveConflict
+    ) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      if (externalRefreshRunningRef.current) return;
+      externalRefreshRunningRef.current = true;
+
+      const beforeProject = projectRef.current;
+      const beforeScenes = beforeProject
+        ? beforeProject.scenes.map((reference) => scenesById[reference.id])
+        : [];
+
+      void (async () => {
+        try {
+          if (!beforeProject) return;
+          const loadedProject = await fetchProject(beforeProject.id);
+          const loadedScenes = await Promise.all(
+            loadedProject.scenes.map((reference) =>
+              fetchScene(loadedProject.id, reference.id),
+            ),
+          );
+          const projectChanged =
+            JSON.stringify(loadedProject) !== JSON.stringify(beforeProject);
+          const scenesChanged =
+            JSON.stringify(loadedScenes) !== JSON.stringify(beforeScenes);
+
+          if (projectChanged || scenesChanged) {
+            const nextScenesById = Object.fromEntries(
+              loadedScenes.map((candidate) => [candidate.id, candidate]),
+            );
+            const currentSceneId = sceneRef.current?.id;
+            const loadedScene =
+              (currentSceneId ? nextScenesById[currentSceneId] : undefined) ??
+              loadedScenes[0];
+            if (!loadedScene) return;
+            setProject(loadedProject);
+            setScene(loadedScene);
+            setScenesById(nextScenesById);
+            setSelectedLayerIds([]);
+            setSelectedAnimationId(null);
+            setInspectorScope("scene");
+            projectChangeVersionRef.current += 1;
+            sceneChangeVersionRef.current += 1;
+            markCurrentStateSaved();
+            clearHistory();
+          }
+        } catch (error: unknown) {
+          setSceneError(getErrorMessage(error));
+        } finally {
+          externalRefreshRunningRef.current = false;
+        }
+      })();
+    }, EXTERNAL_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, [
+    clearHistory,
+    hasSaveConflict,
+    isCreatingScene,
+    isDirty,
+    isSaving,
+    isSceneLoading,
+    markCurrentStateSaved,
+    project,
+    scenesById,
+  ]);
+
+  const handleReloadExternalChanges = useCallback(async () => {
+    setIsSceneLoading(true);
+    setSceneError(null);
+    try {
+      await saveQueueRef.current;
+      await loadAllFromDisk();
+    } catch (error: unknown) {
+      setSceneError(getErrorMessage(error));
+    } finally {
+      setIsSceneLoading(false);
+    }
+  }, [loadAllFromDisk]);
+
+  const handleOverwriteExternalChanges = useCallback(() => {
+    setHasSaveConflict(false);
+    void queueCurrentSave(true).catch(() => undefined);
+  }, [queueCurrentSave]);
 
   const handleSelectedLayerIdsChange = useCallback((layerIds: string[]) => {
     setSelectedLayerIds((currentLayerIds) =>
       hasSameLayerIds(currentLayerIds, layerIds) ? currentLayerIds : layerIds,
     );
+    setSelectedAnimationId(null);
     setInspectorScope(layerIds.length > 0 ? "layer" : "scene");
   }, []);
 
@@ -425,6 +962,10 @@ function App() {
   const applyHistorySnapshot = useCallback(async (snapshot: EditorSnapshot) => {
     const current = editorSnapshotRef.current;
     if (!current) return;
+    const projectChanged =
+      JSON.stringify(current.project) !== JSON.stringify(snapshot.project);
+    const sceneChanged =
+      JSON.stringify(current.scene) !== JSON.stringify(snapshot.scene);
 
     const currentSceneIds = new Set(
       current.project.scenes.map((reference) => reference.id),
@@ -458,13 +999,16 @@ function App() {
     setScenesById(snapshot.scenesById);
     setSelectedLayerIds(snapshot.selectedLayerIds);
     setInspectorScope(snapshot.inspectorScope);
-    setIsDirty(snapshot.isDirty);
+    if (projectChanged) projectChangeVersionRef.current += 1;
+    if (sceneChanged) sceneChangeVersionRef.current += 1;
+    updateDirtyState();
     setSaveError(null);
+    setHasSaveConflict(false);
     setSceneError(null);
-  }, []);
+  }, [updateDirtyState]);
 
   const handleUndo = useCallback(async () => {
-    if (isApplyingHistoryRef.current || isSaving || isSceneLoading) return;
+    if (isApplyingHistoryRef.current || isSceneLoading) return;
     const current = editorSnapshotRef.current;
     const previous = undoStackRef.current.pop();
     if (!current || !previous) return;
@@ -480,10 +1024,10 @@ function App() {
     } finally {
       isApplyingHistoryRef.current = false;
     }
-  }, [applyHistorySnapshot, isSaving, isSceneLoading]);
+  }, [applyHistorySnapshot, isSceneLoading]);
 
   const handleRedo = useCallback(async () => {
-    if (isApplyingHistoryRef.current || isSaving || isSceneLoading) return;
+    if (isApplyingHistoryRef.current || isSceneLoading) return;
     const current = editorSnapshotRef.current;
     const next = redoStackRef.current.pop();
     if (!current || !next) return;
@@ -499,10 +1043,10 @@ function App() {
     } finally {
       isApplyingHistoryRef.current = false;
     }
-  }, [applyHistorySnapshot, isSaving, isSceneLoading]);
+  }, [applyHistorySnapshot, isSceneLoading]);
 
   const handleDeleteSelection = useCallback(async () => {
-    if (!project || !scene || isSaving || isSceneLoading) {
+    if (!project || !scene || isSceneLoading) {
       return;
     }
 
@@ -526,6 +1070,7 @@ function App() {
       }
       handleSceneChange(deleteLayers(scene, selectedLayerIds));
       setSelectedLayerIds([]);
+      setSelectedAnimationId(null);
       setInspectorScope("scene");
       return;
     }
@@ -540,6 +1085,7 @@ function App() {
     setSceneError(null);
 
     try {
+      await queueCurrentSave();
       const deletedIndex = project.scenes.findIndex(
         (reference) => reference.id === scene.id,
       );
@@ -563,9 +1109,11 @@ function App() {
         return next;
       });
       setSelectedLayerIds([]);
+      setSelectedAnimationId(null);
       setInspectorScope("scene");
-      setIsDirty(false);
-      setSaveError(null);
+      projectChangeVersionRef.current += 1;
+      sceneChangeVersionRef.current += 1;
+      markCurrentStateSaved();
     } catch (error: unknown) {
       undoStackRef.current.pop();
       setSceneError(getErrorMessage(error));
@@ -575,9 +1123,10 @@ function App() {
   }, [
     handleSceneChange,
     inspectorScope,
-    isSaving,
     isSceneLoading,
+    markCurrentStateSaved,
     project,
+    queueCurrentSave,
     recordHistory,
     scene,
     scenesById,
@@ -597,6 +1146,7 @@ function App() {
     if (!updatedScene) return;
     handleSceneChange(updatedScene);
     setSelectedLayerIds([groupId]);
+    setSelectedAnimationId(null);
     setInspectorScope("layer");
     setContextMenu(null);
   }, [handleSceneChange, scene, selectedLayerIds]);
@@ -618,6 +1168,7 @@ function App() {
     if (!updatedScene) return;
     handleSceneChange(updatedScene);
     setSelectedLayerIds(group.children.map((child) => child.id));
+    setSelectedAnimationId(null);
     setInspectorScope("layer");
     setContextMenu(null);
   }, [handleSceneChange, scene, selectedLayerIds]);
@@ -700,15 +1251,33 @@ function App() {
     const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
     const layer: Layer = (() => {
       switch (type) {
-        case "text":
+        case "text": {
+          const textDefaults = {
+            text: "Text",
+            fontFamily: "Arial",
+            fontSize: 72,
+            fontWeight: 400,
+            fontStyle: "normal",
+            lineHeight: 1.2,
+            letterSpacing: 0,
+          } as const;
+          const dims = measureTextBounds(
+            textDefaults.text,
+            textDefaults.fontFamily,
+            textDefaults.fontSize,
+            textDefaults.fontWeight,
+            textDefaults.fontStyle,
+            textDefaults.lineHeight,
+            textDefaults.letterSpacing,
+          );
           return {
             id,
             name: "Text",
             type: "text",
-            x: (project.width - 600) / 2,
-            y: (project.height - 120) / 2,
-            width: 600,
-            height: 120,
+            x: (project.width - dims.width) / 2,
+            y: (project.height - dims.height) / 2,
+            width: dims.width,
+            height: dims.height,
             scaleX: 1,
             scaleY: 1,
             rotation: 0,
@@ -719,16 +1288,16 @@ function App() {
             visible: true,
             locked: false,
             animations: [],
-            text: "Text",
-            fontFamily: "Arial",
-            fontSize: 72,
-            fontWeight: 400,
-            fontStyle: "normal",
-            lineHeight: 1.2,
-            letterSpacing: 0,
+            text: textDefaults.text,
+            fontFamily: textDefaults.fontFamily,
+            fontSize: textDefaults.fontSize,
+            fontWeight: textDefaults.fontWeight,
+            fontStyle: textDefaults.fontStyle,
+            lineHeight: textDefaults.lineHeight,
+            letterSpacing: textDefaults.letterSpacing,
             textAlign: "center",
             verticalAlign: "middle",
-            autoResize: "height",
+            autoResize: "both",
             textCase: "normal",
             kerningPairs: true,
             ligatures: true,
@@ -738,6 +1307,7 @@ function App() {
             strokeWidth: 0,
             strokePosition: "inside",
           };
+        }
         case "rectangle":
           return {
             id,
@@ -849,12 +1419,70 @@ function App() {
     })();
 
     setSelectedLayerIds([layer.id]);
+    setSelectedAnimationId(null);
     setInspectorScope("layer");
+    if (type === "text") {
+      setPendingTextEditLayerId(layer.id);
+    }
     handleSceneChange({
       ...scene,
       layers: [...scene.layers, layer],
     });
   }
+
+  const handleAddImage = useCallback(() => {
+    if (!project || !scene || isUploadingImage) {
+      return;
+    }
+    imageFileInputRef.current?.click();
+  }, [isUploadingImage, project, scene]);
+
+  const handleImageFileChange = useCallback(
+    async (event: ReactChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file || !project || !scene) {
+        return;
+      }
+
+      setIsUploadingImage(true);
+      setImageUploadError(null);
+      setSceneError(null);
+      try {
+        const asset = await uploadImageAsset(project.id, file, file.name);
+        const id = getNextLayerId(scene.layers, "image");
+        const dataUrl = URL.createObjectURL(file);
+        let dimensions: { width: number; height: number };
+        try {
+          dimensions = await readImageDimensions(dataUrl);
+        } finally {
+          URL.revokeObjectURL(dataUrl);
+        }
+        const layer = buildImageLayer(
+          project,
+          scene,
+          asset.src,
+          dimensions.width,
+          dimensions.height,
+          id,
+        );
+        setSelectedLayerIds([layer.id]);
+        setSelectedAnimationId(null);
+        setInspectorScope("layer");
+        handleSceneChange({
+          ...scene,
+          layers: [...scene.layers, layer],
+        });
+      } catch (error: unknown) {
+        setImageUploadError(getErrorMessage(error));
+        setSceneError(getErrorMessage(error));
+      } finally {
+        setIsUploadingImage(false);
+      }
+    },
+    [handleSceneChange, project, scene],
+  );
 
   const handleSelectedLayerPatch = useCallback(
     (patch: EditableLayerPatch) => {
@@ -901,6 +1529,91 @@ function App() {
           };
         }
 
+        if (layer.type === "text") {
+          const merged: Layer = { ...layer, ...patch } as Layer;
+          if (merged.type !== "text") return merged;
+          const typographyChanged = patchKeys.some((key) =>
+            [
+              "text",
+              "fontFamily",
+              "fontSize",
+              "fontWeight",
+              "fontStyle",
+              "lineHeight",
+              "letterSpacing",
+              "textCase",
+              "autoResize",
+            ].includes(key),
+          );
+
+          let nextWidth = merged.width;
+          let nextHeight = merged.height;
+
+          if (typographyChanged) {
+            const displayText = applyTextCase(merged.text, merged.textCase);
+            switch (merged.autoResize) {
+              case "both": {
+                const measured = measureNaturalTextSize(
+                  displayText,
+                  {
+                    fontFamily: merged.fontFamily,
+                    fontSize: merged.fontSize,
+                    fontWeight: merged.fontWeight,
+                    fontStyle: merged.fontStyle,
+                    lineHeight: merged.lineHeight,
+                    letterSpacing: merged.letterSpacing,
+                  },
+                );
+                nextWidth = measured.width;
+                nextHeight = measured.height;
+                break;
+              }
+              case "height": {
+                nextWidth = merged.width;
+                const measured = measureNaturalTextSize(
+                  displayText,
+                  {
+                    fontFamily: merged.fontFamily,
+                    fontSize: merged.fontSize,
+                    fontWeight: merged.fontWeight,
+                    fontStyle: merged.fontStyle,
+                    lineHeight: merged.lineHeight,
+                    letterSpacing: merged.letterSpacing,
+                  },
+                );
+                const wrapped = measureWrappedTextSize(
+                  displayText,
+                  {
+                    fontFamily: merged.fontFamily,
+                    fontSize: merged.fontSize,
+                    fontWeight: merged.fontWeight,
+                    fontStyle: merged.fontStyle,
+                    lineHeight: merged.lineHeight,
+                    letterSpacing: merged.letterSpacing,
+                  },
+                  nextWidth,
+                );
+                nextHeight = Math.max(measured.height, wrapped.height);
+                break;
+              }
+              case "fixed":
+                nextWidth = merged.width;
+                nextHeight = merged.height;
+                break;
+            }
+          }
+
+          const widthDelta = nextWidth - layer.width;
+          const heightDelta = nextHeight - layer.height;
+          return {
+            ...merged,
+            width: nextWidth,
+            height: nextHeight,
+            x: layer.x - widthDelta / 2,
+            y: layer.y - heightDelta / 2,
+          } as Layer;
+        }
+
         return {
           ...layer,
           ...patch,
@@ -919,17 +1632,17 @@ function App() {
     [handleSceneChange, scene, selectedLayerId],
   );
 
-  const handleSelectedLayerAnimationsChange = useCallback(
-    (animations: LayerAnimation[]) => {
-      if (!scene || !selectedLayerId) {
+  const handleLayerAnimationsChange = useCallback(
+    (layerId: string, animations: LayerAnimation[]) => {
+      if (!scene) {
         return;
       }
-      const selected = findLayerById(scene.layers, selectedLayerId);
-      const parentGroup = findParentGroup(scene.layers, selectedLayerId);
+      const selected = findLayerById(scene.layers, layerId);
+      const parentGroup = findParentGroup(scene.layers, layerId);
       if (!selected || selected.locked || parentGroup?.locked) return;
 
       let changed = false;
-      const updatedLayers = updateLayerById(scene.layers, selectedLayerId, (layer) => {
+      const updatedLayers = updateLayerById(scene.layers, layerId, (layer) => {
         const isSame =
           layer.animations.length === animations.length &&
           layer.animations.every((animation, index) => {
@@ -967,7 +1680,91 @@ function App() {
         layers: updatedLayers,
       });
     },
-    [handleSceneChange, scene, selectedLayerId],
+    [handleSceneChange, scene],
+  );
+
+  const handleSelectedLayerAnimationsChange = useCallback(
+    (animations: LayerAnimation[]) => {
+      if (selectedLayerId) {
+        handleLayerAnimationsChange(selectedLayerId, animations);
+      }
+    },
+    [handleLayerAnimationsChange, selectedLayerId],
+  );
+
+  const handleTextLayerChange = useCallback(
+    (
+      layerId: string,
+      text: string,
+      width: number,
+      height: number,
+    ): void => {
+      if (!scene) {
+        return;
+      }
+      const target = findLayerById(scene.layers, layerId);
+      if (!target || target.type !== "text" || target.locked) {
+        return;
+      }
+      const nextWidth = Math.max(1, Math.ceil(width));
+      const nextHeight = Math.max(1, Math.ceil(height));
+      if (
+        target.text === text &&
+        Math.abs(target.width - nextWidth) < 0.5 &&
+        Math.abs(target.height - nextHeight) < 0.5
+      ) {
+        return;
+      }
+      const updatedLayers = updateLayerById(scene.layers, layerId, (layer) => {
+        if (layer.type !== "text") {
+          return layer;
+        }
+        const widthDelta = nextWidth - layer.width;
+        const heightDelta = nextHeight - layer.height;
+        return {
+          ...layer,
+          text,
+          width: nextWidth,
+          height: nextHeight,
+          x: layer.x - widthDelta / 2,
+          y: layer.y - heightDelta / 2,
+        };
+      });
+      handleSceneChange({
+        ...scene,
+        layers: updatedLayers,
+      });
+    },
+    [handleSceneChange, scene],
+  );
+
+  const handleAnimationTimingChange = useCallback(
+    (
+      layerId: string,
+      animationId: string,
+      patch: Pick<LayerAnimation, "startFrame" | "durationInFrames">,
+    ) => {
+      const layer = scene ? findLayerById(scene.layers, layerId) : null;
+      if (!layer) return;
+
+      handleLayerAnimationsChange(
+        layerId,
+        layer.animations.map((animation) =>
+          animation.id === animationId ? { ...animation, ...patch } : animation,
+        ),
+      );
+    },
+    [handleLayerAnimationsChange, scene],
+  );
+
+  const handleAnimationSelect = useCallback(
+    (layerId: string, animationId: string) => {
+      setSelectedLayerIds([layerId]);
+      setSelectedAnimationId(animationId);
+      setInspectorScope("layer");
+      setInspectorTab("animate");
+    },
+    [],
   );
 
   async function handleSceneSelect(
@@ -981,11 +1778,12 @@ function App() {
 
     if (sceneId === scene?.id) {
       setSelectedLayerIds(nextSelectedLayerIds);
+      setSelectedAnimationId(null);
       setInspectorScope(nextScope);
       return;
     }
 
-    if (isDirty || isSceneLoading || isSaving) {
+    if (isSceneLoading || hasSaveConflict) {
       return;
     }
 
@@ -993,6 +1791,7 @@ function App() {
     setSceneError(null);
 
     try {
+      await queueCurrentSave();
       const loadedScene = await fetchScene(project.id, sceneId);
 
       setScene(loadedScene);
@@ -1001,10 +1800,11 @@ function App() {
         [loadedScene.id]: loadedScene,
       }));
       setSelectedLayerIds(nextSelectedLayerIds);
+      setSelectedAnimationId(null);
       setInspectorScope(nextScope);
-      setIsDirty(false);
+      sceneChangeVersionRef.current += 1;
+      markCurrentStateSaved();
       clearHistory();
-      setSaveError(null);
     } catch (error: unknown) {
       setSceneError(getErrorMessage(error));
     } finally {
@@ -1025,6 +1825,8 @@ function App() {
     const clickedLayer = findLayerById(scene.layers, layerId);
     const parentGroup = findParentGroup(scene.layers, layerId);
     if (!clickedLayer || clickedLayer.locked || parentGroup?.locked) return;
+
+    setSelectedAnimationId(null);
 
     setSelectedLayerIds((currentLayerIds) => {
       if (!additive) {
@@ -1047,42 +1849,8 @@ function App() {
     setInspectorScope("layer");
   }
 
-  async function handleSave(): Promise<void> {
-    if (!project || !scene || isSaving) {
-      return;
-    }
-
-    setIsSaving(true);
-    setSaveError(null);
-
-    try {
-      const [savedProject, savedScene] = await Promise.all([
-        saveProject(project),
-        saveScene(project.id, scene),
-      ]);
-
-      setProject(savedProject);
-      setScene(savedScene);
-      setScenesById((current) => ({
-        ...current,
-        [savedScene.id]: savedScene,
-      }));
-      setIsDirty(false);
-      clearHistory();
-    } catch (error: unknown) {
-      setSaveError(getErrorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   async function handleAddScene(): Promise<void> {
     if (!project || isCreatingScene) {
-      return;
-    }
-
-    if (isDirty) {
-      setCreateSceneError("Save the current scene before adding a new scene");
       return;
     }
 
@@ -1092,6 +1860,7 @@ function App() {
 
     recordHistory();
     try {
+      await queueCurrentSave();
       const { project: nextProject, scene: newScene } = await createScene(
         project.id,
       );
@@ -1104,8 +1873,9 @@ function App() {
       }));
       setSelectedLayerIds([]);
       setInspectorScope("scene");
-      setIsDirty(false);
-      setSaveError(null);
+      projectChangeVersionRef.current += 1;
+      sceneChangeVersionRef.current += 1;
+      markCurrentStateSaved();
     } catch (error: unknown) {
       undoStackRef.current.pop();
       setCreateSceneError(getErrorMessage(error));
@@ -1183,9 +1953,13 @@ function App() {
   const sceneNumber =
     project.scenes.findIndex((reference) => reference.id === scene.id) + 1;
   const saveStatus = isSaving
-    ? "Saving changes…"
+    ? "Saving automatically…"
+    : hasSaveConflict
+      ? "Save conflict"
+      : saveError
+        ? "Save failed"
     : isDirty
-      ? "Unsaved changes"
+      ? "Waiting to save…"
       : "All changes saved";
 
   return (
@@ -1218,31 +1992,71 @@ function App() {
           {sceneError ? (
             <span className="toolbar-error">Scene error: {sceneError}</span>
           ) : null}
-          {saveError ? (
-            <span className="toolbar-error">Save failed: {saveError}</span>
+          {saveError && !hasSaveConflict ? (
+            <span className="save-conflict-actions">
+              <span className="toolbar-error">Save failed: {saveError}</span>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => void queueCurrentSave().catch(() => undefined)}
+              >
+                Retry
+              </button>
+            </span>
+          ) : null}
+          {hasSaveConflict ? (
+            <span className="save-conflict-actions">
+              <span className="toolbar-error">File changed outside the editor.</span>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={() => void handleReloadExternalChanges()}
+              >
+                Use disk
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={handleOverwriteExternalChanges}
+              >
+                Keep mine
+              </button>
+            </span>
           ) : null}
           {createSceneError ? (
             <span className="toolbar-error">{createSceneError}</span>
+          ) : null}
+          {imageUploadError ? (
+            <span className="toolbar-error">
+              Image upload failed: {imageUploadError}
+            </span>
           ) : null}
           <span className={`save-status${isDirty ? " is-dirty" : ""}`}>
             <span className="status-dot" />
             {saveStatus}
           </span>
           <EditorToolbar
-            isSaving={isSaving}
-            isSaveDisabled={!isDirty || isSaving}
-            isAddSceneDisabled={!project || isDirty || isSaving || isCreatingScene}
+            isAddSceneDisabled={
+              !project || isSceneLoading || isCreatingScene || hasSaveConflict
+            }
             isCreatingScene={isCreatingScene}
             onAddText={() => handleAddLayer("text")}
+            onAddImage={handleAddImage}
             onAddRectangle={() => handleAddLayer("rectangle")}
             onAddCircle={() => handleAddLayer("circle")}
             onAddTriangle={() => handleAddLayer("triangle")}
             onAddArrow={() => handleAddLayer("arrow")}
             onAddScene={() => void handleAddScene()}
             onOpenPreview={handleOpenPreview}
-            onSave={() => void handleSave()}
           />
         </div>
+        <input
+          ref={imageFileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+          className="hidden-image-input"
+          onChange={(event) => void handleImageFileChange(event)}
+        />
       </header>
 
       <div className="editor-workspace">
@@ -1252,33 +2066,71 @@ function App() {
             scenesById={scenesForTree}
             currentSceneId={scene.id}
             selectedLayerIds={selectedLayerIds}
+            hoveredLayerId={hoveredLayerId}
             inspectorScope={inspectorScope}
-            isSceneSwitchDisabled={isDirty || isSceneLoading || isSaving}
+            isSceneSwitchDisabled={
+              isSceneLoading || isCreatingScene || hasSaveConflict
+            }
             onSceneSelect={(sceneId) => void handleSceneSelect(sceneId)}
             onLayerSelect={handleTreeLayerSelect}
             onLayerStateChange={handleLayerStateChange}
           />
         </aside>
 
-        <section className="canvas-workspace" aria-label="Fabric editor">
-          <AlignmentToolbar
-            selectionCount={selectedLayerIds.length}
-            onAlign={handleAlign}
-          />
-          <div className="canvas-stage">
-            <div className="canvas-frame">
-              <FabricSceneCanvas
-                scene={scene}
-                projectWidth={project.width}
-                projectHeight={project.height}
-                displayScale={0.5}
-                onSceneChange={handleSceneChange}
-                onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
-                onContextMenuRequest={openLayerContextMenu}
-                selectedLayerIds={selectedLayerIds}
-              />
+        <section
+          className={`canvas-workspace${isTimelineResizing ? " is-resizing" : ""}`}
+          aria-label="Fabric editor"
+          style={{
+            gridTemplateRows: `minmax(0, 1fr) 7px ${timelineHeight}px`,
+          }}
+        >
+          <div className="canvas-editor-area">
+            <div className="canvas-stage">
+              <div className="canvas-frame">
+                <FabricSceneCanvas
+                  scene={scene}
+                  projectId={project.id}
+                  projectWidth={project.width}
+                  projectHeight={project.height}
+                  displayScale={0.5}
+                  onSceneChange={handleSceneChange}
+                  onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
+                  onHoveredLayerIdChange={setHoveredLayerId}
+                  onContextMenuRequest={openLayerContextMenu}
+                  selectedLayerIds={selectedLayerIds}
+                  pendingTextEditLayerId={pendingTextEditLayerId}
+                  onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
+                  onTextLayerChange={handleTextLayerChange}
+                />
+              </div>
             </div>
           </div>
+          <button
+            type="button"
+            role="separator"
+            aria-label="Resize scene timing"
+            aria-orientation="horizontal"
+            aria-valuemin={MIN_TIMELINE_HEIGHT}
+            aria-valuemax={1000}
+            aria-valuenow={Math.round(timelineHeight)}
+            className="timeline-resize-handle"
+            onDoubleClick={() => setTimelineHeight(DEFAULT_TIMELINE_HEIGHT)}
+            onKeyDown={handleTimelineResizeKeyDown}
+            onPointerDown={handleTimelineResizeStart}
+            onPointerMove={handleTimelineResizeMove}
+            onPointerUp={handleTimelineResizeEnd}
+            onPointerCancel={handleTimelineResizeEnd}
+          >
+            <span />
+          </button>
+          <SceneAnimationTimeline
+            scene={scene}
+            fps={project.fps}
+            selectedLayerId={selectedLayerId}
+            selectedAnimationId={selectedAnimationId}
+            onAnimationSelect={handleAnimationSelect}
+            onAnimationTimingChange={handleAnimationTimingChange}
+          />
         </section>
 
         <aside className="sidebar sidebar-right">
@@ -1315,38 +2167,26 @@ function App() {
                   onSceneChange={handleSceneChange}
                 />
               ) : selectedLayerIds.length > 1 ? (
-                <div className="app-stage multiple-selection-message">
-                  <p>Multiple layers selected: {selectedLayerIds.length}</p>
-                  <button
-                    type="button"
-                    className="button-primary selection-group-button"
-                    disabled={!canGroup}
-                    onClick={handleGroupSelection}
-                  >
-                    Group
-                    <span>⌘G</span>
-                  </button>
-                </div>
+                <MultiLayerPropertiesPanel
+                  selectionCount={selectedLayerIds.length}
+                  canGroup={canGroup}
+                  onAlign={handleAlign}
+                  onGroup={handleGroupSelection}
+                />
               ) : (
                 <LayerPropertiesPanel
                   layer={selectedLayer}
-                  selectionCount={selectedLayerIds.length}
                   onPatch={handleSelectedLayerPatch}
                   onAlign={handleAlign}
                 />
               )
-            ) : inspectorScope === "scene" ? (
-              <p className="app-stage scene-animations-message">
-                Scene animations are not supported yet.
-              </p>
-            ) : selectedLayerIds.length > 1 ? (
-              <p className="app-stage multiple-selection-message">
-                Select one layer to edit animations.
-              </p>
             ) : (
               <LayerAnimationPanel
-                layer={selectedLayer}
+                layer={selectedLayerIds.length === 1 ? selectedLayer : null}
+                fps={project.fps}
                 sceneDurationInFrames={scene.durationInFrames}
+                selectedAnimationId={selectedAnimationId}
+                onAnimationSelect={setSelectedAnimationId}
                 onAnimationsChange={handleSelectedLayerAnimationsChange}
               />
             )}

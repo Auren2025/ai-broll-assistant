@@ -1,6 +1,7 @@
 import http from 'node:http'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { parseProject } from '../src/domain/projectSchema.ts'
 import { parseScene } from '../src/domain/sceneSchema.ts'
@@ -15,8 +16,23 @@ const CONTENT_TYPE = 'application/json; charset=utf-8'
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/
 const PROJECTS_PREFIX = '/api/projects/'
 const SCENES_PREFIX = 'scenes/'
+const ASSETS_PREFIX = 'assets/'
 
-const MAX_BODY_SIZE = 1 * 1024 * 1024
+const MAX_BODY_SIZE = 10 * 1024 * 1024
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
+const ALLOWED_IMAGE_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+])
+const FILENAME_PATTERN = /^[A-Za-z0-9_.-]+$/
+const ALLOWED_BROWSER_ORIGINS = new Set([
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+])
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -28,10 +44,37 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   }
   res.statusCode = status
   res.setHeader('Content-Type', CONTENT_TYPE)
-  res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, DELETE, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, If-Match')
+  res.setHeader('Access-Control-Expose-Headers', 'ETag')
   res.end(JSON.stringify(body))
+}
+
+function buildEntityTag(content: string | Buffer): string {
+  return `"${createHash('sha256').update(content).digest('hex')}"`
+}
+
+async function rejectStaleWrite(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath: string,
+): Promise<boolean> {
+  const expected = req.headers['if-match']
+  if (typeof expected !== 'string' || expected.length === 0) return false
+
+  try {
+    const current = await fs.readFile(targetPath)
+    if (buildEntityTag(current) === expected) return false
+    sendJson(res, 412, { error: 'File changed on disk' })
+    return true
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 412, { error: 'File changed on disk' })
+      return true
+    }
+    throw err
+  }
 }
 
 async function readAndParseProject(
@@ -78,6 +121,9 @@ async function handleGetProject(
 ): Promise<void> {
   const project = await readAndParseProject(res, projectId)
   if (project !== null) {
+    const projectPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
+    const raw = await fs.readFile(projectPath)
+    res.setHeader('ETag', buildEntityTag(raw))
     sendJson(res, 200, project)
   }
 }
@@ -108,8 +154,11 @@ async function handlePutProject(
   const tempPath = buildSceneTempPath(projectPath)
 
   try {
-    await fs.writeFile(tempPath, JSON.stringify(project, null, 2) + '\n', 'utf-8')
+    if (await rejectStaleWrite(req, res, projectPath)) return
+    const content = JSON.stringify(project, null, 2) + '\n'
+    await fs.writeFile(tempPath, content, 'utf-8')
     await fs.rename(tempPath, projectPath)
+    res.setHeader('ETag', buildEntityTag(content))
     sendJson(res, 200, project)
   } catch (err) {
     console.error(err)
@@ -166,6 +215,7 @@ async function handleGetScene(
       sendJson(res, 500, { error: 'Invalid scene data' })
       return
     }
+    res.setHeader('ETag', buildEntityTag(raw))
     sendJson(res, 200, scene)
   } catch (err) {
     console.error(err)
@@ -271,8 +321,10 @@ async function handlePutScene(
   const content = JSON.stringify(scene, null, 2) + '\n'
 
   try {
+    if (await rejectStaleWrite(req, res, scenePath)) return
     await fs.writeFile(tempPath, content, 'utf-8')
     await fs.rename(tempPath, scenePath)
+    res.setHeader('ETag', buildEntityTag(content))
   } catch (err) {
     console.error(err)
     await fs.unlink(tempPath).catch(() => {})
@@ -344,6 +396,192 @@ async function handleDeleteScene(
 
 const SCENE_ID_PATTERN = /^scene-(\d+)$/
 const NEW_SCENE_DURATION_IN_FRAMES = 150
+
+function extensionFromMime(mime: string): string | null {
+  switch (mime.toLowerCase()) {
+    case 'image/png':
+      return 'png'
+    case 'image/jpeg':
+      return 'jpg'
+    case 'image/gif':
+      return 'gif'
+    case 'image/webp':
+      return 'webp'
+    case 'image/svg+xml':
+      return 'svg'
+    default:
+      return null
+  }
+}
+
+function extensionFromFilename(filename: string): string | null {
+  const dotIndex = filename.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex === filename.length - 1) return null
+  const ext = filename.slice(dotIndex + 1).toLowerCase()
+  return ALLOWED_IMAGE_EXTENSIONS.has(ext) ? ext : null
+}
+
+function buildAssetFilename(extension: string): string {
+  const id = randomBytes(8).toString('hex')
+  return `image-${id}.${extension}`
+}
+
+async function readAssetBytes(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<Buffer | null> {
+  const chunks: Buffer[] = []
+  let totalLength = 0
+  let aborted = false
+
+  return new Promise<Buffer | null>((resolve) => {
+    const finish = (value: Buffer | null): void => {
+      if (aborted) return
+      aborted = true
+      resolve(value)
+    }
+
+    const onChunk = (chunk: Buffer): void => {
+      if (aborted) return
+      totalLength += chunk.length
+      if (totalLength > MAX_IMAGE_BYTES) {
+        sendJson(res, 413, { error: 'Image too large' })
+        aborted = true
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    }
+
+    req.on('data', onChunk)
+    req.on('end', () => {
+      if (aborted) return
+      if (totalLength === 0) {
+        sendJson(res, 400, { error: 'Empty payload' })
+        finish(null)
+        return
+      }
+      finish(Buffer.concat(chunks))
+    })
+    req.on('error', (err) => {
+      console.error('Asset upload error:', err.message)
+      finish(null)
+    })
+  })
+}
+
+async function handlePostAsset(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  projectId: string,
+): Promise<void> {
+  const project = await readAndParseProject(res, projectId)
+  if (project === null) return
+
+  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const assetsDir = path.join(projectDir, 'assets')
+
+  const contentLengthHeader = req.headers['content-length']
+  if (typeof contentLengthHeader === 'string') {
+    const contentLength = Number(contentLengthHeader)
+    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
+      sendJson(res, 413, { error: 'Image too large' })
+      return
+    }
+  }
+
+  const contentType = (req.headers['content-type'] ?? '').toLowerCase()
+  if (!ALLOWED_IMAGE_MIME.has(contentType)) {
+    sendJson(res, 415, { error: 'Unsupported image type' })
+    return
+  }
+
+  const bytes = await readAssetBytes(req, res)
+  if (bytes === null) return
+
+  const extension = extensionFromMime(contentType)
+  if (extension === null) {
+    sendJson(res, 415, { error: 'Unsupported image type' })
+    return
+  }
+
+  await fs.mkdir(assetsDir, { recursive: true })
+
+  const filename = buildAssetFilename(extension)
+  const relativePath = `${ASSETS_PREFIX}${filename}`
+  const absolutePath = path.join(assetsDir, filename)
+
+  try {
+    await fs.writeFile(absolutePath, bytes)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 500, { error: 'Failed to save asset' })
+    return
+  }
+
+  sendJson(res, 201, {
+    filename,
+    src: relativePath,
+    contentType,
+    bytes: bytes.length,
+  })
+}
+
+async function handleGetAsset(
+  res: http.ServerResponse,
+  projectId: string,
+  filename: string,
+): Promise<void> {
+  if (!FILENAME_PATTERN.test(filename)) {
+    sendJson(res, 400, { error: 'Invalid asset filename' })
+    return
+  }
+
+  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const absolutePath = path.join(projectDir, 'assets', filename)
+
+  const resolved = path.resolve(absolutePath)
+  const allowedRoot = path.resolve(projectDir, 'assets') + path.sep
+  if (!resolved.startsWith(allowedRoot)) {
+    sendJson(res, 400, { error: 'Invalid asset path' })
+    return
+  }
+
+  let bytes: Buffer
+  try {
+    bytes = await fs.readFile(absolutePath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Asset not found' })
+    } else {
+      console.error(err)
+      sendJson(res, 500, { error: 'Failed to read asset' })
+    }
+    return
+  }
+
+  const ext = extensionFromFilename(filename)
+  const mime =
+    ext === 'png'
+      ? 'image/png'
+      : ext === 'jpg' || ext === 'jpeg'
+        ? 'image/jpeg'
+        : ext === 'gif'
+          ? 'image/gif'
+          : ext === 'webp'
+            ? 'image/webp'
+            : ext === 'svg'
+              ? 'image/svg+xml'
+              : 'application/octet-stream'
+
+  if (res.headersSent || res.writableEnded) return
+  res.statusCode = 200
+  res.setHeader('Content-Type', mime)
+  res.setHeader('Content-Length', String(bytes.length))
+  res.setHeader('Cache-Control', 'no-cache')
+  res.end(bytes)
+}
 
 function buildSceneTempPath(target: string): string {
   const random = Math.random().toString(36).slice(2, 10)
@@ -524,6 +762,12 @@ async function handlePostScene(
 const server = http.createServer((req, res) => {
   const method = req.method ?? 'GET'
   const url = req.url ?? ''
+  const origin = req.headers.origin
+
+  if (typeof origin === 'string' && ALLOWED_BROWSER_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+  }
 
   if (method === 'OPTIONS') {
     sendJson(res, 204, {})
@@ -572,6 +816,29 @@ const server = http.createServer((req, res) => {
     if (restAfterProject === 'scenes') {
       if (method === 'POST') {
         void handlePostScene(req, res, projectIdPart)
+        return
+      }
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return
+    }
+
+    if (restAfterProject === 'assets') {
+      if (method === 'POST') {
+        void handlePostAsset(req, res, projectIdPart)
+        return
+      }
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return
+    }
+
+    if (restAfterProject.startsWith(ASSETS_PREFIX)) {
+      const filename = restAfterProject.slice(ASSETS_PREFIX.length)
+      if (!FILENAME_PATTERN.test(filename)) {
+        sendJson(res, 400, { error: 'Invalid asset filename' })
+        return
+      }
+      if (method === 'GET') {
+        void handleGetAsset(res, projectIdPart, filename)
         return
       }
       sendJson(res, 405, { error: 'Method not allowed' })

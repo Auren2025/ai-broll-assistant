@@ -4,5 +4,33 @@
   "topic": "Untitled scene 3",
   "startFrame": 300,
   "durationInFrames": 150,
-  "layers": []
+  "layers": [
+    {
+      "id": "rectangle-1",
+      "name": "Rectangle",
+      "x": 653.8,
+      "y": 409.3,
+      "width": 400,
+      "height": 240,
+      "scaleX": 1.0884,
+      "scaleY": 1.9232,
+      "rotation": 0,
+      "opacity": 1,
+      "opacityEnabled": true,
+      "blendMode": "normal",
+      "zIndex": 0,
+      "visible": true,
+      "locked": false,
+      "animations": [],
+      "type": "rectangle",
+      "fill": "#6b7280",
+      "fillEnabled": true,
+      "stroke": null,
+      "strokeWidth": 0,
+      "strokePosition": "inside",
+      "cornerEnabled": true,
+      "cornerRadius": 0,
+      "cornerRadii": null
+    }
+  ]
 }

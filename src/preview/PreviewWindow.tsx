@@ -89,6 +89,7 @@ export function PreviewWindow() {
           <RemotionScenePlayer
             key={scene.id}
             scene={scene}
+            projectId={project.id}
             projectWidth={project.width}
             projectHeight={project.height}
             fps={project.fps}

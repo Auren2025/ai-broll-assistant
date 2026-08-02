@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
-import type { AlignmentAction } from "./AlignmentToolbar";
+import {
+  ALIGNMENT_BUTTONS,
+  DISTRIBUTION_BUTTONS,
+  type AlignmentAction,
+} from "./alignment";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 
 export type EditableLayerPatch = Partial<{
@@ -39,23 +43,97 @@ export type EditableLayerPatch = Partial<{
   arrowHeadSize: number;
   arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
   arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+  src: string;
 }>;
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
-  selectionCount: number;
   onPatch: (patch: EditableLayerPatch) => void;
   onAlign: (action: AlignmentAction) => void;
 }
 
-const ALIGN_BUTTONS: readonly { action: AlignmentAction; label: string; icon: string }[] = [
-  { action: "left", label: "Align left", icon: "⊢" },
-  { action: "horizontal-center", label: "Align horizontal center", icon: "↔" },
-  { action: "right", label: "Align right", icon: "⊣" },
-  { action: "top", label: "Align top", icon: "⊤" },
-  { action: "vertical-center", label: "Align vertical center", icon: "↕" },
-  { action: "bottom", label: "Align bottom", icon: "⊥" },
-];
+function LayerAlignmentControls({
+  selectionCount,
+  onAlign,
+}: {
+  selectionCount: number;
+  onAlign: (action: AlignmentAction) => void;
+}) {
+  const target = selectionCount === 1 ? "canvas" : "selected layers";
+
+  return (
+    <div className="layer-align-row" aria-label="Layer alignment controls">
+      {ALIGNMENT_BUTTONS.map((button) => {
+        const label = `${button.label} to ${target}`;
+        return (
+          <button
+            key={button.action}
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={() => onAlign(button.action)}
+          >
+            {button.icon}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function MultiLayerPropertiesPanel({
+  selectionCount,
+  canGroup,
+  onAlign,
+  onGroup,
+}: {
+  selectionCount: number;
+  canGroup: boolean;
+  onAlign: (action: AlignmentAction) => void;
+  onGroup: () => void;
+}) {
+  return (
+    <section className="layer-design-panel" aria-label="Multiple layer properties">
+      <header className="layer-design-header multi-layer-design-header">
+        <span className="layer-design-type-icon" aria-hidden="true">◇</span>
+        <h3>{selectionCount} layers selected</h3>
+        <details className="selection-actions-menu">
+          <summary aria-label="More selection actions">…</summary>
+          <div>
+            {DISTRIBUTION_BUTTONS.map((button) => (
+              <button
+                key={button.action}
+                type="button"
+                disabled={selectionCount < 3}
+                onClick={() => onAlign(button.action)}
+              >
+                {button.label}
+              </button>
+            ))}
+          </div>
+        </details>
+      </header>
+
+      <LayerAlignmentControls
+        selectionCount={selectionCount}
+        onAlign={onAlign}
+      />
+
+      <section className="layer-design-section selection-actions-section">
+        <h4>Selection</h4>
+        <button
+          type="button"
+          className="selection-group-button"
+          disabled={!canGroup}
+          onClick={onGroup}
+        >
+          Group
+          <span>⌘G</span>
+        </button>
+      </section>
+    </section>
+  );
+}
 
 function ColorControl({
   value,
@@ -130,50 +208,34 @@ function SegmentedControl<T extends string>({
 
 export function LayerPropertiesPanel({
   layer,
-  selectionCount,
   onPatch,
   onAlign,
 }: LayerPropertiesPanelProps) {
-  if (selectionCount > 1) {
-    return <p className="app-stage multiple-selection-message">Multiple layers selected: {selectionCount}</p>;
-  }
-
   if (!layer) return <p className="app-stage">Select a layer to view its properties.</p>;
 
   const isText = layer.type === "text";
   const isRectangle = layer.type === "rectangle";
   const isCircle = layer.type === "circle";
   const isTriangle = layer.type === "triangle";
+  const isImage = layer.type === "image";
   const isGroup = layer.type === "group";
   const hasFill = isText || isRectangle || isCircle || layer.type === "triangle";
   const hasStroke = !isGroup;
   const stroke = isGroup ? null : layer.stroke;
   const strokeWidth = isGroup ? 0 : layer.strokeWidth;
-  const fill = isGroup || layer.type === "arrow" ? "#000000" : layer.fill;
-  const fillEnabled = isGroup || layer.type === "arrow" ? false : layer.fillEnabled;
+  const fill = isGroup || layer.type === "arrow" || isImage ? "#000000" : layer.fill;
+  const fillEnabled = isGroup || layer.type === "arrow" || isImage ? false : layer.fillEnabled;
 
   return (
     <section className="layer-design-panel" aria-label="Layer properties">
       <header className="layer-design-header">
         <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
-          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "group" ? "◇" : "□"}
+          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "group" ? "◇" : layer.type === "image" ? "▣" : "□"}
         </span>
         <h3>{layer.type.charAt(0).toUpperCase() + layer.type.slice(1)}</h3>
       </header>
 
-      <div className="layer-align-row" aria-label="Layer alignment controls">
-        {ALIGN_BUTTONS.map((button) => (
-          <button
-            key={button.action}
-            type="button"
-            title={button.label}
-            aria-label={button.label}
-            onClick={() => onAlign(button.action)}
-          >
-            {button.icon}
-          </button>
-        ))}
-      </div>
+      <LayerAlignmentControls selectionCount={1} onAlign={onAlign} />
 
       <section className="layer-design-section layer-layout-section">
         <h4>Layout</h4>
@@ -257,6 +319,23 @@ export function LayerPropertiesPanel({
               {(["topLeft", "topRight", "bottomLeft", "bottomRight"] as const).map((corner) => <BufferedNumberInput key={corner} value={layer.cornerRadii?.[corner] ?? 0} min={0} disabled={!layer.cornerEnabled} aria-label={`${corner} corner radius`} onValueChange={(value) => { if (layer.cornerRadii) onPatch({ cornerRadii: { ...layer.cornerRadii, [corner]: Math.max(0, value) } }); }} />)}
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {isImage ? (
+        <section className="layer-design-section layer-corner-section">
+          <div className="layer-toggle-value-row layer-corner-row">
+            <strong>Corner radius</strong>
+            <div className="layer-corner-main is-single">
+              <BufferedNumberInput
+                value={layer.cornerRadius}
+                min={0}
+                aria-label="Image corner radius"
+                onValueChange={(value) => onPatch({ cornerRadius: Math.max(0, value) })}
+              />
+            </div>
+          </div>
+          <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src}</strong></div>
         </section>
       ) : null}
 

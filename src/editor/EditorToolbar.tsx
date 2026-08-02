@@ -1,31 +1,27 @@
 interface EditorToolbarProps {
-  isSaving: boolean;
-  isSaveDisabled: boolean;
   isAddSceneDisabled: boolean;
   isCreatingScene: boolean;
   onAddText: () => void;
+  onAddImage: () => void;
   onAddRectangle: () => void;
   onAddCircle: () => void;
   onAddTriangle: () => void;
   onAddArrow: () => void;
   onAddScene: () => void;
   onOpenPreview: () => void;
-  onSave: () => void;
 }
 
 export function EditorToolbar({
-  isSaving,
-  isSaveDisabled,
   isAddSceneDisabled,
   isCreatingScene,
   onAddText,
+  onAddImage,
   onAddRectangle,
   onAddCircle,
   onAddTriangle,
   onAddArrow,
   onAddScene,
   onOpenPreview,
-  onSave,
 }: EditorToolbarProps) {
   return (
     <div className="editor-toolbar" aria-label="Editor toolbar">
@@ -47,6 +43,15 @@ export function EditorToolbar({
         >
           <span className="tool-symbol">T</span>
           Text
+        </button>
+        <button
+          className="editor-tool"
+          type="button"
+          title="Add image"
+          onClick={onAddImage}
+        >
+          <span className="tool-symbol">▣</span>
+          Image
         </button>
         <button
           className="editor-tool"
@@ -92,7 +97,7 @@ export function EditorToolbar({
           disabled={isAddSceneDisabled}
           title={
             isAddSceneDisabled
-              ? "Save current scene first before adding a new scene"
+              ? "Please wait for the current operation"
               : "Add a new scene"
           }
           aria-label="Add scene"
@@ -106,14 +111,6 @@ export function EditorToolbar({
           onClick={onOpenPreview}
         >
           Open Preview
-        </button>
-        <button
-          className="button-primary"
-          type="button"
-          disabled={isSaveDisabled}
-          onClick={onSave}
-        >
-          {isSaving ? "Saving…" : "Save"}
         </button>
       </div>
     </div>

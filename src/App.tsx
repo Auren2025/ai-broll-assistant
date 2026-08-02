@@ -476,6 +476,27 @@ function App() {
   );
   const [isTimelineResizing, setIsTimelineResizing] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [canvasZoom, setCanvasZoom] = useState(1);
+  const BASE_CANVAS_SCALE = 0.5;
+  const MIN_CANVAS_ZOOM = 0.5;
+  const MAX_CANVAS_ZOOM = 6;
+  const ZOOM_STEP = 0.25;
+
+  function clampCanvasZoom(value: number): number {
+    return Math.min(Math.max(value, MIN_CANVAS_ZOOM), MAX_CANVAS_ZOOM);
+  }
+
+  const canvasCursorRef = useRef<{ x: number; y: number } | null>(null);
+
+  function zoomCanvasBy(delta: number): void {
+    canvasCursorRef.current = null;
+    setCanvasZoom((current) => clampCanvasZoom(current + delta));
+  }
+
+  function resetCanvasZoom(): void {
+    canvasCursorRef.current = null;
+    setCanvasZoom(1);
+  }
   const [inspectorScope, setInspectorScope] = useState<InspectorScope>("scene");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -487,6 +508,7 @@ function App() {
   const [historyCanUndo, setHistoryCanUndo] = useState(false);
   const [historyCanRedo, setHistoryCanRedo] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const canvasAreaRef = useRef<HTMLDivElement | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);
   const replaceImageTargetIdRef = useRef<string | null>(null);
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
@@ -2096,6 +2118,36 @@ function App() {
     previewWindow?.focus();
   }, []);
 
+  const isPreviewModeRef = useRef(false);
+  isPreviewModeRef.current = isPreviewMode;
+
+  useEffect(() => {
+    const area = canvasAreaRef.current;
+    if (!area) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent): void => {
+      if (!event.ctrlKey || isPreviewModeRef.current) {
+        return;
+      }
+      event.preventDefault();
+      const delta =
+        event.deltaMode === 1
+          ? event.deltaY * 16
+          : event.deltaMode === 2
+            ? event.deltaY * 100
+            : event.deltaY;
+      canvasCursorRef.current = { x: event.clientX, y: event.clientY };
+      setCanvasZoom((current) =>
+        clampCanvasZoom(current * Math.exp(-delta / 150)),
+      );
+    };
+
+    area.addEventListener("wheel", handleWheel, { passive: false });
+    return () => area.removeEventListener("wheel", handleWheel);
+  }, [project, scene]);
+
   const selectedLayer: Layer | null = scene && selectedLayerId
     ? findLayerById(scene.layers, selectedLayerId)
     : null;
@@ -2288,7 +2340,7 @@ function App() {
             gridTemplateRows: `minmax(0, 1fr) 7px ${timelineHeight}px`,
           }}
         >
-          <div className="canvas-editor-area">
+          <div className="canvas-editor-area" ref={canvasAreaRef}>
             <div className="canvas-stage">
               <div className={`canvas-frame${isPreviewMode ? " is-preview" : ""}`}>
                 {isPreviewMode ? (
@@ -2307,7 +2359,9 @@ function App() {
                     projectId={project.id}
                     projectWidth={project.width}
                     projectHeight={project.height}
-                    displayScale={0.5}
+                    displayScale={BASE_CANVAS_SCALE}
+                    zoom={canvasZoom}
+                    zoomCursorRef={canvasCursorRef}
                     onSceneChange={handleSceneChange}
                     onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
                     onHoveredLayerIdChange={setHoveredLayerId}
@@ -2323,6 +2377,38 @@ function App() {
                 ) : null}
               </div>
             </div>
+            {!isPreviewMode ? (
+              <div className="canvas-zoom-controls" role="group" aria-label="Canvas zoom">
+                <button
+                  type="button"
+                  title="Zoom out"
+                  aria-label="Zoom out"
+                  onClick={() => zoomCanvasBy(-ZOOM_STEP)}
+                >
+                  −
+                </button>
+                <span>{Math.round(BASE_CANVAS_SCALE * canvasZoom * 100)}%</span>
+                <button
+                  type="button"
+                  title="Zoom in"
+                  aria-label="Zoom in"
+                  onClick={() => zoomCanvasBy(ZOOM_STEP)}
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  className="canvas-zoom-fit"
+                  title="Reset zoom to fit"
+                  onClick={resetCanvasZoom}
+                >
+                  Fit
+                </button>
+                <span className="canvas-snap-hint" title="Hold ⌥ while dragging to move freely without snapping">
+                  ⌥ drag = no snap
+                </span>
+              </div>
+            ) : null}
           </div>
           <button
             type="button"

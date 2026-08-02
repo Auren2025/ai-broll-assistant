@@ -19,6 +19,7 @@ import {
   computeTextBoxSize,
   getCharSpacing,
 } from "./textMetrics";
+import { computeSnapGuides } from "./snapGuides";
 
 type CornerRadii = {
   topLeft: number;
@@ -26,6 +27,51 @@ type CornerRadii = {
   bottomRight: number;
   bottomLeft: number;
 };
+
+// Snap-to-alignment guides while dragging. The distances are defined in screen
+// pixels and divided by the current viewport scale so the snap feels identical
+// at every zoom level (the mature Fabric guideline approach).
+const SNAP_MARGIN_SCREEN = 5;
+const SNAP_HYSTERESIS_SCREEN = 2;
+const SNAP_GUIDE_COLOR = "#ff4d5e";
+const SPACING_GUIDE_COLOR = "#2b9bff";
+
+interface SnapGuides {
+  vertical: number | null;
+  horizontal: number | null;
+  spacing: {
+    axis: "x" | "y";
+    from: number;
+    to: number;
+    gap: number;
+    anchor: number;
+  } | null;
+}
+
+interface HeldSnap {
+  vertical: number | null;
+  horizontal: number | null;
+}
+
+function drawGuideLabel(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  text: string,
+  color: string,
+  fontSize: number,
+): void {
+  ctx.font = `${fontSize}px system-ui, -apple-system, sans-serif`;
+  const width = ctx.measureText(text).width;
+  const padX = fontSize * 0.25;
+  const height = fontSize * 1.2;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.fillRect(x - width / 2 - padX, y - height / 2, width + padX * 2, height);
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
 
 function roundedRectanglePath(
   ctx: CanvasRenderingContext2D,
@@ -463,6 +509,8 @@ interface FabricSceneCanvasProps {
   projectWidth: number;
   projectHeight: number;
   displayScale?: number;
+  zoom?: number;
+  zoomCursorRef?: { current: { x: number; y: number } | null };
   onSceneChange: (scene: Scene) => void;
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
   onHoveredLayerIdChange: (layerId: string | null) => void;
@@ -953,6 +1001,8 @@ export function FabricSceneCanvas({
   projectWidth,
   projectHeight,
   displayScale = 0.5,
+  zoom = 1,
+  zoomCursorRef,
   onSceneChange,
   onSelectedLayerIdsChange,
   onHoveredLayerIdChange,
@@ -967,6 +1017,8 @@ export function FabricSceneCanvas({
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   const hoveredObjectRef = useRef<FabricObject | null>(null);
+  const snapGuidesRef = useRef<SnapGuides | null>(null);
+  const heldSnapRef = useRef<HeldSnap>({ vertical: null, horizontal: null });
   const sceneRef = useRef<Scene>(scene);
   const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
@@ -1186,6 +1238,7 @@ export function FabricSceneCanvas({
     };
 
     canvas.on("object:modified", (event) => {
+      heldSnapRef.current = { vertical: null, horizontal: null };
       const target = event.target;
 
       if (!target) {
@@ -1250,6 +1303,98 @@ export function FabricSceneCanvas({
       syncObjectsToScene([target]);
     });
 
+    canvas.on("object:moving", (event) => {
+      const target = event.target;
+      if (!target || target.parent instanceof FabricGroup) {
+        snapGuidesRef.current = null;
+        heldSnapRef.current = { vertical: null, horizontal: null };
+        return;
+      }
+      if (target instanceof FabricLayerTextbox && target.isEditing) {
+        snapGuidesRef.current = null;
+        heldSnapRef.current = { vertical: null, horizontal: null };
+        return;
+      }
+      // Hold Option/Alt while dragging to move freely without snapping.
+      if (event.e.altKey) {
+        snapGuidesRef.current = null;
+        heldSnapRef.current = { vertical: null, horizontal: null };
+        return;
+      }
+
+      const activeObjects = canvas.getActiveObjects();
+      const activeSet = new Set<FabricObject>(activeObjects);
+      const draggedRect = target.getBoundingRect();
+
+      const candidateX = [projectWidth / 2, 0, projectWidth];
+      const candidateY = [projectHeight / 2, 0, projectHeight];
+      const otherBoundsX: { start: number; end: number }[] = [];
+      const otherBoundsY: { start: number; end: number }[] = [];
+
+      for (const object of canvas.getObjects()) {
+        if (object === target || activeSet.has(object)) continue;
+        if (!object.visible) continue;
+        const rect = object.getBoundingRect();
+        candidateX.push(
+          rect.left,
+          rect.left + rect.width / 2,
+          rect.left + rect.width,
+        );
+        candidateY.push(
+          rect.top,
+          rect.top + rect.height / 2,
+          rect.top + rect.height,
+        );
+        otherBoundsX.push({ start: rect.left, end: rect.left + rect.width });
+        otherBoundsY.push({ start: rect.top, end: rect.top + rect.height });
+      }
+
+      const viewScale = canvas.viewportTransform[0];
+      const held = heldSnapRef.current;
+      const snap = computeSnapGuides(
+        draggedRect,
+        candidateX,
+        candidateY,
+        otherBoundsX,
+        otherBoundsY,
+        {
+          threshold: SNAP_MARGIN_SCREEN / viewScale,
+          hysteresis: SNAP_HYSTERESIS_SCREEN / viewScale,
+          heldVertical: held.vertical,
+          heldHorizontal: held.horizontal,
+        },
+      );
+
+      if (snap.x.delta !== 0) target.set({ left: target.left + snap.x.delta });
+      if (snap.y.delta !== 0) target.set({ top: target.top + snap.y.delta });
+      target.setCoords();
+
+      // Lock / rebase the drag offsets so snapped axes hold the guide and
+      // released axes continue following the pointer without a jump.
+      const transform = canvas._currentTransform;
+      if (transform) {
+        const pointer = canvas.getScenePoint(event.e);
+        transform.offsetX = pointer.x - target.left;
+        transform.offsetY = pointer.y - target.top;
+      }
+
+      heldSnapRef.current = {
+        vertical: snap.x.alignGuide,
+        horizontal: snap.y.alignGuide,
+      };
+
+      snapGuidesRef.current = {
+        vertical: snap.x.alignGuide,
+        horizontal: snap.y.alignGuide,
+        spacing: snap.x.spacing
+          ? { axis: "x", ...snap.x.spacing }
+          : snap.y.spacing
+            ? { axis: "y", ...snap.y.spacing }
+            : null,
+      };
+      canvas.requestRenderAll();
+    });
+
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
@@ -1281,6 +1426,77 @@ export function FabricSceneCanvas({
       canvas.requestRenderAll();
     });
     canvas.on("after:render", ({ ctx }) => {
+      const guides = snapGuidesRef.current;
+      if (guides) {
+        ctx.save();
+        ctx.transform(
+          canvas.viewportTransform[0],
+          canvas.viewportTransform[1],
+          canvas.viewportTransform[2],
+          canvas.viewportTransform[3],
+          canvas.viewportTransform[4],
+          canvas.viewportTransform[5],
+        );
+        const hairline = 1 / displayScale;
+
+        if (guides.vertical !== null) {
+          ctx.strokeStyle = SNAP_GUIDE_COLOR;
+          ctx.lineWidth = hairline;
+          ctx.setLineDash([4 / displayScale, 4 / displayScale]);
+          ctx.beginPath();
+          ctx.moveTo(guides.vertical, 0);
+          ctx.lineTo(guides.vertical, projectHeight);
+          ctx.stroke();
+        }
+
+        if (guides.horizontal !== null) {
+          ctx.strokeStyle = SNAP_GUIDE_COLOR;
+          ctx.lineWidth = hairline;
+          ctx.setLineDash([4 / displayScale, 4 / displayScale]);
+          ctx.beginPath();
+          ctx.moveTo(0, guides.horizontal);
+          ctx.lineTo(projectWidth, guides.horizontal);
+          ctx.stroke();
+        }
+
+        if (guides.spacing) {
+          const spacing = guides.spacing;
+          const labelFont = 12 / canvas.viewportTransform[0];
+          ctx.strokeStyle = SPACING_GUIDE_COLOR;
+          ctx.lineWidth = hairline;
+          ctx.setLineDash([4 / displayScale, 4 / displayScale]);
+          if (spacing.axis === "x") {
+            ctx.beginPath();
+            ctx.moveTo(spacing.from, spacing.anchor);
+            ctx.lineTo(spacing.to, spacing.anchor);
+            ctx.stroke();
+            drawGuideLabel(
+              ctx,
+              (spacing.from + spacing.to) / 2,
+              spacing.anchor,
+              String(Math.round(spacing.gap)),
+              SPACING_GUIDE_COLOR,
+              labelFont,
+            );
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(spacing.anchor, spacing.from);
+            ctx.lineTo(spacing.anchor, spacing.to);
+            ctx.stroke();
+            drawGuideLabel(
+              ctx,
+              spacing.anchor,
+              (spacing.from + spacing.to) / 2,
+              String(Math.round(spacing.gap)),
+              SPACING_GUIDE_COLOR,
+              labelFont,
+            );
+          }
+        }
+
+        ctx.restore();
+      }
+
       const hoveredObject = hoveredObjectRef.current;
       if (
         !hoveredObject ||
@@ -1296,6 +1512,13 @@ export function FabricSceneCanvas({
         hasBorders: true,
         hasControls: false,
       });
+    });
+    canvas.on("mouse:up", () => {
+      heldSnapRef.current = { vertical: null, horizontal: null };
+      if (snapGuidesRef.current) {
+        snapGuidesRef.current = null;
+        canvas.requestRenderAll();
+      }
     });
     canvas.on("mouse:dblclick", (event) => {
       const selectedObject =
@@ -1434,6 +1657,50 @@ export function FabricSceneCanvas({
     projectWidth,
     scene.id,
     syncObjectsToScene,
+  ]);
+
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const scale = displayScale * zoom;
+    const cursor = zoomCursorRef?.current;
+    const canvasElement = canvasElementRef.current;
+    const rectBefore =
+      cursor && canvasElement ? canvasElement.getBoundingClientRect() : null;
+
+    canvas.setDimensions({
+      width: projectWidth * scale,
+      height: projectHeight * scale,
+    });
+
+    let panX = 0;
+    let panY = 0;
+
+    // Zoom toward the cursor: keep the scene point under the pointer fixed.
+    if (cursor && canvasElement && rectBefore) {
+      const currentScale = canvas.viewportTransform[0];
+      const currentPanX = canvas.viewportTransform[4];
+      const currentPanY = canvas.viewportTransform[5];
+      const sceneX = (cursor.x - rectBefore.left - currentPanX) / currentScale;
+      const sceneY = (cursor.y - rectBefore.top - currentPanY) / currentScale;
+      const rectAfter = canvasElement.getBoundingClientRect();
+      panX = cursor.x - rectAfter.left - sceneX * scale;
+      panY = cursor.y - rectAfter.top - sceneY * scale;
+    }
+
+    canvas.setViewportTransform([scale, 0, 0, scale, panX, panY]);
+    canvas.requestRenderAll();
+  }, [
+    displayScale,
+    projectHeight,
+    projectWidth,
+    scene.id,
+    zoom,
+    zoomCursorRef,
   ]);
 
   useEffect(() => {
@@ -1645,8 +1912,7 @@ export function FabricSceneCanvas({
   return (
     <div
       style={{
-        width: projectWidth * displayScale,
-        height: projectHeight * displayScale,
+        width: "max-content",
         overflow: "hidden",
         background: scene.backgroundColor ?? "transparent",
       }}

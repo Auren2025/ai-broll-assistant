@@ -40,14 +40,17 @@ export const DISTRIBUTION_BUTTONS = [
   {
     action: "distribute-horizontal",
     label: "Distribute horizontally",
+    icon: "⇋",
   },
   {
     action: "distribute-vertical",
     label: "Distribute vertically",
+    icon: "⇵",
   },
 ] as const satisfies readonly {
   action: AlignmentAction;
   label: string;
+  icon: string;
 }[];
 
 /**

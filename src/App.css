@@ -1162,34 +1162,32 @@ button {
 
 .layer-distribute-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 10px 8px;
+  grid-template-columns: repeat(2, 1fr);
+  height: 40px;
+  align-items: center;
+  padding: 8px 8px;
   border-bottom: 1px solid var(--divider);
 }
 
 .layer-distribute-row button {
-  height: 30px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0;
   border: 0;
-  border-radius: 5px;
-  color: #38343c;
-  background: #f6f4f8;
-  font-size: 11px;
-  font-weight: 500;
+  color: #97979b;
+  background: transparent;
+  font-size: 14px;
   cursor: pointer;
-  white-space: nowrap;
 }
 
 .layer-distribute-row button:hover:not(:disabled) {
-  color: #5845c9;
-  background: #efedff;
+  color: #7a40ed;
+  background: #f2ecfd;
 }
 
 .layer-distribute-row button:disabled {
-  color: #b3afb7;
-  background: #f6f4f8;
+  color: #cfcbd3;
   cursor: default;
+  background: transparent;
 }
 
 .multi-layer-design-header {

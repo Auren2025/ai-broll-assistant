@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
-import type { Layer, Scene } from "../domain/sceneSchema";
+import type { Scene } from "../domain/sceneSchema";
+import { getTimelineEvents, type TimelineEvent } from "./timelineEvents";
 
 type TimingPatch = Pick<LayerAnimation, "startFrame" | "durationInFrames">;
 
@@ -17,13 +18,6 @@ interface SceneAnimationTimelineProps {
   ) => void;
 }
 
-interface TimelineEvent {
-  layer: Layer;
-  animation: LayerAnimation;
-  depth: number;
-  locked: boolean;
-}
-
 interface DragPreview extends TimingPatch {
   layerId: string;
   animationId: string;
@@ -33,42 +27,6 @@ type DragMode = "move" | "resize-start" | "resize-end";
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
-}
-
-function getTimelineEvents(layers: readonly Layer[]): TimelineEvent[] {
-  const events = [...layers]
-    .sort((first, second) => second.zIndex - first.zIndex)
-    .flatMap((layer) => {
-      const groupEvents = [...layer.animations]
-        .sort((first, second) => first.startFrame - second.startFrame)
-        .map((animation) => ({ layer, animation, depth: 0, locked: layer.locked }));
-
-      if (layer.type !== "group") {
-        return groupEvents;
-      }
-
-      const childEvents = [...layer.children]
-        .sort((first, second) => second.zIndex - first.zIndex)
-        .flatMap((child) =>
-          [...child.animations]
-            .sort((first, second) => first.startFrame - second.startFrame)
-            .map((animation) => ({
-              layer: child,
-              animation,
-              depth: 1,
-              locked: layer.locked || child.locked,
-            })),
-        );
-
-      return [...groupEvents, ...childEvents];
-    });
-
-  return events.sort(
-    (first, second) =>
-      first.animation.startFrame - second.animation.startFrame ||
-      first.animation.durationInFrames - second.animation.durationInFrames ||
-      first.depth - second.depth,
-  );
 }
 
 function getTickFrames(durationInFrames: number, fps: number): number[] {

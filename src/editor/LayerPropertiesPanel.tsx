@@ -161,7 +161,7 @@ function LayerDistributionControls({
             disabled={disabled}
             onClick={() => onAlign(button.action)}
           >
-            {button.label}
+            {button.icon}
           </button>
         );
       })}

@@ -31,15 +31,17 @@ type CornerRadii = {
 // Snap-to-alignment guides while dragging. The distances are defined in screen
 // pixels and divided by the current viewport scale so the snap feels identical
 // at every zoom level (the mature Fabric guideline approach).
-const SNAP_MARGIN_SCREEN = 3;
-const SNAP_HYSTERESIS_SCREEN = 1;
+const SNAP_MARGIN_SCREEN = 4;
+const SNAP_HYSTERESIS_SCREEN = 1.5;
 const SNAP_GUIDE_COLOR = "#ff4d5e";
 const SPACING_GUIDE_COLOR = "#2b9bff";
 // Drag motion below this many scene units per frame is treated as
 // "intentional alignment" — snap engages freely. Above it, snap is held at
 // arm's length so fast sweeps don't get yanked into candidates they pass
-// through.
-const DRAG_MOTION_AXIS_FLOOR = 1.5;
+// through. A small but non-zero floor keeps both axes responsive during
+// natural two-axis drags while still suppressing "the object moved 0.2px
+// and now also snapped vertically" noise.
+const DRAG_MOTION_AXIS_FLOOR = 0.75;
 
 interface SnapGuides {
   vertical: number | null;
@@ -166,15 +168,15 @@ function emptyHeldSnap(): HeldSnap {
 function updateHeldSnap(
   heldRef: { current: HeldSnap },
   snap: SnapResult,
+  previous: HeldSnap,
 ): void {
-  // Reset held state on any axis where no snap engaged this frame. Snap is
-  // intentionally non-sticky: once the dragged object leaves the snap range,
-  // we don't carry over the previous guide. The engine's own hysteresis (via
-  // threshold + hysteresis distance) still bridges the small jitter window
-  // when a snap IS engaging — we only drop the lock when nothing is engaging.
+  // Alignment guides carry their held value across frames so the engine's
+  // hysteresis can bridge the small jitter window at the snap boundary.
+  // Spacing and gap snaps release cleanly each frame — they are heavier
+  // "second-tier" guides and look better without a sticky lock.
   heldRef.current = {
-    vertical: snap.x.alignGuide,
-    horizontal: snap.y.alignGuide,
+    vertical: snap.x.alignGuide ?? previous.vertical,
+    horizontal: snap.y.alignGuide ?? previous.horizontal,
     spacingX: snap.x.spacing
       ? { from: snap.x.spacing.from, to: snap.x.spacing.to }
       : null,
@@ -1529,7 +1531,7 @@ export function FabricSceneCanvas({
         if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
         if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
         target.setCoords();
-        updateHeldSnap(heldSnapRef, snap);
+        updateHeldSnap(heldSnapRef, snap, held);
         snapGuidesRef.current = guidesFromSnap(snap);
         canvas.requestRenderAll();
         return;
@@ -1620,7 +1622,7 @@ export function FabricSceneCanvas({
         transform.offsetY = pointer.y - (target.top ?? 0);
       }
 
-      updateHeldSnap(heldSnapRef, snap);
+      updateHeldSnap(heldSnapRef, snap, held);
       snapGuidesRef.current = guidesFromSnap(snap);
       canvas.requestRenderAll();
     });
@@ -1738,7 +1740,7 @@ export function FabricSceneCanvas({
         target.setCoords();
       }
 
-      updateHeldSnap(heldSnapRef, snap);
+      updateHeldSnap(heldSnapRef, snap, held);
       snapGuidesRef.current = guidesFromSnap(snap);
       canvas.requestRenderAll();
     });

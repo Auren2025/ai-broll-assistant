@@ -83,6 +83,39 @@ test("the held guide releases once the object moves beyond threshold + hysteresi
   assert.equal(result.x.spacing, null);
 });
 
+test("ambiguous candidates (equidistant within range) do not snap", () => {
+  // Two candidates 100 and 102 are 2 apart, threshold 5. Without the
+  // ambiguity check the closer one (100) would win and the snap line would
+  // flip back and forth as the dragged crosses the halfway point.
+  const result = computeSnapGuides(
+    { left: 145, top: 0, width: 100, height: 10 },
+    [100, 102],
+    [],
+    [],
+    [],
+    options(),
+  );
+  assert.equal(result.x.alignGuide, null);
+  assert.equal(result.x.delta, 0);
+});
+
+test("clearly-distinguished candidates still snap", () => {
+  // Candidates 100 and 110 are 10 apart. Draggd center is 155 — closest
+  // edge to 100 is right (155-100=55), to 110 is right (155-110=45). Both
+  // outside threshold 5. Move dragged to center 110: only 110 is within
+  // range, so it wins unambiguously.
+  const result = computeSnapGuides(
+    { left: 60, top: 0, width: 100, height: 10 },
+    [100, 110],
+    [],
+    [],
+    [],
+    options(),
+  );
+  assert.equal(result.x.alignGuide, 110);
+  assert.equal(result.x.delta, 0);
+});
+
 test("equal-spacing snaps a dragged object between two neighbors", () => {
   const result = computeSnapGuides(
     { left: 147, top: 0, width: 100, height: 10 },

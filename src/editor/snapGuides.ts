@@ -86,6 +86,7 @@ function resolveAlignmentAxis(
   threshold: number,
   hysteresis: number,
   held: number | null,
+  ambiguityRatio = 0.5,
 ): { delta: number; guide: number } | null {
   // Keep the held guide while the object stays within threshold + hysteresis.
   if (held !== null) {
@@ -95,15 +96,29 @@ function resolveAlignmentAxis(
     }
   }
 
-  // Otherwise snap to the closest candidate within the (smaller) threshold.
+  // Otherwise snap to the closest candidate within the (smaller) threshold,
+  // but only when it is meaningfully closer than the runner-up. Without
+  // this, jitter appears when two candidates sit equidistantly inside the
+  // snap range — the closest flips each frame as the dragged moves by
+  // sub-pixel amounts.
   let best: { delta: number; guide: number } | null = null;
+  let second: number = Number.POSITIVE_INFINITY;
   for (const value of candidates) {
-    const delta = closestEdgeDelta(edges, value);
-    if (
-      Math.abs(delta) <= threshold &&
-      (!best || Math.abs(delta) < Math.abs(best.delta))
-    ) {
-      best = { delta, guide: value };
+    const distance = Math.abs(closestEdgeDelta(edges, value));
+    if (distance > threshold) continue;
+    if (!best || distance < Math.abs(best.delta)) {
+      second = best ? Math.abs(best.delta) : Number.POSITIVE_INFINITY;
+      best = { delta: closestEdgeDelta(edges, value), guide: value };
+    } else if (distance < second) {
+      second = distance;
+    }
+  }
+  if (best && second !== Number.POSITIVE_INFINITY) {
+    const bestDistance = Math.abs(best.delta);
+    if (second - bestDistance < threshold * ambiguityRatio) {
+      // Ambiguous — the closest and runner-up are too close together. Skip
+      // the snap rather than oscillating between two candidates.
+      return null;
     }
   }
   return best;

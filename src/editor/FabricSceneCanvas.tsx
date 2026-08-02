@@ -31,10 +31,15 @@ type CornerRadii = {
 // Snap-to-alignment guides while dragging. The distances are defined in screen
 // pixels and divided by the current viewport scale so the snap feels identical
 // at every zoom level (the mature Fabric guideline approach).
-const SNAP_MARGIN_SCREEN = 5;
-const SNAP_HYSTERESIS_SCREEN = 2;
+const SNAP_MARGIN_SCREEN = 3;
+const SNAP_HYSTERESIS_SCREEN = 1;
 const SNAP_GUIDE_COLOR = "#ff4d5e";
 const SPACING_GUIDE_COLOR = "#2b9bff";
+// Drag motion below this many scene units per frame is treated as
+// "intentional alignment" — snap engages freely. Above it, snap is held at
+// arm's length so fast sweeps don't get yanked into candidates they pass
+// through.
+const DRAG_MOTION_AXIS_FLOOR = 1.5;
 
 interface SnapGuides {
   vertical: number | null;
@@ -124,6 +129,29 @@ function nearestObjectRects(
   return out;
 }
 
+/**
+ * Zero out snap deltas/guides on axes where the dragged object isn't
+ * actually moving this frame. This stops the dragged from getting yanked
+ * sideways (or vertically) when the user is mid-sweep on the other axis,
+ * which is the dominant source of "snap feels like it grabs me" feedback.
+ */
+function applyAxisPreference(
+  snap: SnapResult,
+  dragDelta: { x: number; y: number },
+  floor: number,
+): SnapResult {
+  const suppressX = Math.abs(dragDelta.x) < floor;
+  const suppressY = Math.abs(dragDelta.y) < floor;
+  return {
+    x: suppressX
+      ? { delta: 0, alignGuide: null, spacing: null, gap: null }
+      : snap.x,
+    y: suppressY
+      ? { delta: 0, alignGuide: null, spacing: null, gap: null }
+      : snap.y,
+  };
+}
+
 function emptyHeldSnap(): HeldSnap {
   return {
     vertical: null,
@@ -138,23 +166,27 @@ function emptyHeldSnap(): HeldSnap {
 function updateHeldSnap(
   heldRef: { current: HeldSnap },
   snap: SnapResult,
-  previous: HeldSnap,
 ): void {
+  // Reset held state on any axis where no snap engaged this frame. Snap is
+  // intentionally non-sticky: once the dragged object leaves the snap range,
+  // we don't carry over the previous guide. The engine's own hysteresis (via
+  // threshold + hysteresis distance) still bridges the small jitter window
+  // when a snap IS engaging — we only drop the lock when nothing is engaging.
   heldRef.current = {
-    vertical: snap.x.alignGuide ?? previous.vertical,
-    horizontal: snap.y.alignGuide ?? previous.horizontal,
+    vertical: snap.x.alignGuide,
+    horizontal: snap.y.alignGuide,
     spacingX: snap.x.spacing
       ? { from: snap.x.spacing.from, to: snap.x.spacing.to }
-      : previous.spacingX,
+      : null,
     spacingY: snap.y.spacing
       ? { from: snap.y.spacing.from, to: snap.y.spacing.to }
-      : previous.spacingY,
+      : null,
     gapX: snap.x.gap
       ? { value: snap.x.gap.value, side: snap.x.gap.side as "left" | "right" }
-      : previous.gapX,
+      : null,
     gapY: snap.y.gap
       ? { value: snap.y.gap.value, side: snap.y.gap.side as "top" | "bottom" }
-      : previous.gapY,
+      : null,
   };
 }
 
@@ -1115,6 +1147,11 @@ export function FabricSceneCanvas({
   const hoveredObjectRef = useRef<FabricObject | null>(null);
   const snapGuidesRef = useRef<SnapGuides | null>(null);
   const heldSnapRef = useRef<HeldSnap>(emptyHeldSnap());
+  // Last dragged bounding rect used to measure per-frame motion for axis
+  // preference (only snap the axes the user is actually moving). We store
+  // both position (left/top) for move drags and size (width/height) for
+  // resize drags as separate axis signals on {x, y}.
+  const lastDragRectRef = useRef<{ x: number; y: number } | null>(null);
   const sceneRef = useRef<Scene>(scene);
   const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
@@ -1335,6 +1372,7 @@ export function FabricSceneCanvas({
 
     canvas.on("object:modified", (event) => {
       heldSnapRef.current = emptyHeldSnap();
+      lastDragRectRef.current = null;
       const target = event.target;
 
       if (!target) {
@@ -1440,9 +1478,11 @@ export function FabricSceneCanvas({
         const halfH = (group.height ?? 0) / 2;
         const childHalfW = (target.width ?? 0) / 2;
         const childHalfH = (target.height ?? 0) / 2;
+        const localLeft = (target.left ?? 0) - childHalfW;
+        const localTop = (target.top ?? 0) - childHalfH;
         const draggedLocal = {
-          left: (target.left ?? 0) - childHalfW,
-          top: (target.top ?? 0) - childHalfH,
+          left: localLeft,
+          top: localTop,
           width: target.width ?? 0,
           height: target.height ?? 0,
         };
@@ -1463,7 +1503,7 @@ export function FabricSceneCanvas({
           otherBoundsY.push({ start: st, end: st + sh });
         }
         const held = heldSnapRef.current;
-        const snap = computeSnapGuides(
+        const rawSnap = computeSnapGuides(
           draggedLocal,
           candidateX,
           candidateY,
@@ -1480,10 +1520,16 @@ export function FabricSceneCanvas({
             heldGapY: held.gapY,
           },
         );
+        const lastDrag = lastDragRectRef.current;
+        const dragDelta = lastDrag
+          ? { x: localLeft - lastDrag.x, y: localTop - lastDrag.y }
+          : { x: 0, y: 0 };
+        lastDragRectRef.current = { x: localLeft, y: localTop };
+        const snap = applyAxisPreference(rawSnap, dragDelta, DRAG_MOTION_AXIS_FLOOR / viewScale);
         if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
         if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
         target.setCoords();
-        updateHeldSnap(heldSnapRef, snap, held);
+        updateHeldSnap(heldSnapRef, snap);
         snapGuidesRef.current = guidesFromSnap(snap);
         canvas.requestRenderAll();
         return;
@@ -1525,7 +1571,7 @@ export function FabricSceneCanvas({
       }
 
       const held = heldSnapRef.current;
-      const snap = computeSnapGuides(
+      const rawSnap = computeSnapGuides(
         draggedRect,
         candidateX,
         candidateY,
@@ -1543,6 +1589,24 @@ export function FabricSceneCanvas({
         },
       );
 
+      // Axis preference: ignore snap on axes the user isn't actively moving.
+      const lastDrag = lastDragRectRef.current;
+      const dragDelta = lastDrag
+        ? {
+            x: draggedRect.left - lastDrag.x,
+            y: draggedRect.top - lastDrag.y,
+          }
+        : { x: 0, y: 0 };
+      lastDragRectRef.current = {
+        x: draggedRect.left,
+        y: draggedRect.top,
+      };
+      const snap = applyAxisPreference(
+        rawSnap,
+        dragDelta,
+        DRAG_MOTION_AXIS_FLOOR / viewScale,
+      );
+
       if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
       if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
       target.setCoords();
@@ -1556,7 +1620,7 @@ export function FabricSceneCanvas({
         transform.offsetY = pointer.y - (target.top ?? 0);
       }
 
-      updateHeldSnap(heldSnapRef, snap, held);
+      updateHeldSnap(heldSnapRef, snap);
       snapGuidesRef.current = guidesFromSnap(snap);
       canvas.requestRenderAll();
     });
@@ -1610,7 +1674,7 @@ export function FabricSceneCanvas({
       }
 
       const held = heldSnapRef.current;
-      const snap = computeSnapGuides(
+      const rawSnap = computeSnapGuides(
         draggedRect,
         candidateX,
         candidateY,
@@ -1626,6 +1690,24 @@ export function FabricSceneCanvas({
           heldGapX: held.gapX,
           heldGapY: held.gapY,
         },
+      );
+      // Axis preference for resize: only snap on axes that are actually
+      // changing size this frame.
+      const lastDrag = lastDragRectRef.current;
+      const dragDelta = lastDrag
+        ? {
+            x: draggedRect.width - lastDrag.x,
+            y: draggedRect.height - lastDrag.y,
+          }
+        : { x: 0, y: 0 };
+      lastDragRectRef.current = {
+        x: draggedRect.width,
+        y: draggedRect.height,
+      };
+      const snap = applyAxisPreference(
+        rawSnap,
+        dragDelta,
+        DRAG_MOTION_AXIS_FLOOR / viewScale,
       );
 
       const intrinsicWidth = target.width ?? 0;
@@ -1656,7 +1738,7 @@ export function FabricSceneCanvas({
         target.setCoords();
       }
 
-      updateHeldSnap(heldSnapRef, snap, held);
+      updateHeldSnap(heldSnapRef, snap);
       snapGuidesRef.current = guidesFromSnap(snap);
       canvas.requestRenderAll();
     });
@@ -1822,6 +1904,7 @@ export function FabricSceneCanvas({
     });
     canvas.on("mouse:up", () => {
       heldSnapRef.current = emptyHeldSnap();
+      lastDragRectRef.current = null;
       if (snapGuidesRef.current) {
         snapGuidesRef.current = null;
         canvas.requestRenderAll();

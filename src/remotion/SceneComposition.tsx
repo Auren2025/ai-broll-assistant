@@ -4,6 +4,7 @@ import type { Layer, Scene } from "../domain/sceneSchema";
 import { buildAssetUrl } from "../api/localService";
 import { applyTextCase } from "../domain/textCase";
 import { getLayerAnimationStyle } from "./layerAnimationStyle";
+import { getTextRenderLayout } from "./textRenderLayout";
 
 export interface SceneCompositionProps {
   scene: Scene;
@@ -393,10 +394,19 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
 
   const displayText = applyTextCase(layer.text, layer.textCase);
 
+  // Text sizing follows the autoResize mode so Remotion matches the Fabric
+  // adapter measurement (see getTextRenderLayout + textMetrics).
+  const textLayout = getTextRenderLayout(layer.autoResize);
+
   return (
           <div
             style={{
               ...style,
+              width:
+                textLayout.widthMode === "max-content"
+                  ? "max-content"
+                  : layer.width,
+              height: textLayout.fixedHeight ? layer.height : "auto",
               display: "flex",
               flexDirection: "column",
               justifyContent:
@@ -419,8 +429,8 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
                 layer.stroke && layer.strokeWidth > 0
                   ? `${layer.strokeWidth}px ${layer.stroke}`
                   : undefined,
-              whiteSpace: "pre-wrap",
-              overflow: "hidden",
+              whiteSpace: textLayout.wraps ? "pre-wrap" : "pre",
+              overflow: "visible",
               boxSizing: "border-box",
             }}
           >

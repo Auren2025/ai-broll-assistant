@@ -131,6 +131,39 @@ function nearestObjectRects(
   return out;
 }
 
+/**
+ * Decide which axis a Shift-held drag is locked to. Called once per drag
+ * (when shift first engages with non-trivial motion). Returns the axis the
+ * dragged has been moving *more* along, or null if there's no motion yet
+ * (in which case we wait for the next frame).
+ */
+function resolveShiftLockAxis(
+  dragStart: { x: number; y: number },
+  current: { x: number; y: number },
+  motionFloor: number,
+): "x" | "y" | null {
+  const dx = Math.abs(current.x - dragStart.x);
+  const dy = Math.abs(current.y - dragStart.y);
+  if (dx < motionFloor && dy < motionFloor) return null;
+  return dx >= dy ? "x" : "y";
+}
+
+/**
+ * Zero out snap deltas/guides on the axis that Shift is locking against.
+ * Visual snap lines for the unlocked axis still show; we just don't act on
+ * the locked one.
+ */
+function applyShiftLock(
+  snap: SnapResult,
+  lockedAxis: "x" | "y" | null,
+): SnapResult {
+  if (lockedAxis === null) return snap;
+  const zero = { delta: 0, alignGuide: null, spacing: null, gap: null };
+  return lockedAxis === "x"
+    ? { x: snap.x, y: zero as typeof snap.y }
+    : { x: zero as typeof snap.x, y: snap.y };
+}
+
 function emptyHeldSnap(): HeldSnap {
   return {
     vertical: null,
@@ -1124,6 +1157,11 @@ export function FabricSceneCanvas({
   const hoveredObjectRef = useRef<FabricObject | null>(null);
   const snapGuidesRef = useRef<SnapGuides | null>(null);
   const heldSnapRef = useRef<HeldSnap>(emptyHeldSnap());
+  // Shift-drag axis lock: the target's position when Shift is first detected
+  // mid-drag, and the locked axis once the initial direction is clear.
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lockOriginRef = useRef<{ left: number; top: number } | null>(null);
+  const lockedAxisRef = useRef<"x" | "y" | null>(null);
   const sceneRef = useRef<Scene>(scene);
   const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
@@ -1344,6 +1382,8 @@ export function FabricSceneCanvas({
 
     canvas.on("object:modified", (event) => {
       heldSnapRef.current = emptyHeldSnap();
+      lockedAxisRef.current = null;
+      lockOriginRef.current = null;
       const target = event.target;
 
       if (!target) {
@@ -1427,6 +1467,42 @@ export function FabricSceneCanvas({
         return;
       }
 
+      // Shift-drag axis lock: lock movement to whichever axis the user is
+      // moving more on. We commit to the axis once motion clears the floor
+      // (1 scene unit) so a perfectly diagonal micro-jitter at the start
+      // doesn't pick the wrong axis.
+      if (event.e.shiftKey) {
+        if (lockedAxisRef.current === null) {
+          const start = dragStartRef.current;
+          if (start) {
+            const rect = target.getBoundingRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const axis = resolveShiftLockAxis(start, { x: cx, y: cy }, 1);
+            if (axis) {
+              lockedAxisRef.current = axis;
+              lockOriginRef.current = {
+                left: target.left ?? 0,
+                top: target.top ?? 0,
+              };
+            }
+          }
+        }
+        const axis = lockedAxisRef.current;
+        const origin = lockOriginRef.current;
+        if (axis && origin) {
+          // Re-pin the locked-out axis to where it was when Shift engaged,
+          // overriding any Fabric-driven pointer translation. The dragged
+          // visually only moves along the locked axis.
+          if (axis === "x") {
+            target.set({ top: origin.top });
+          } else {
+            target.set({ left: origin.left });
+          }
+          target.setCoords();
+        }
+      }
+
       const activeObjects = canvas.getActiveObjects();
       const activeSet = new Set<FabricObject>(activeObjects);
       const viewScale = canvas.viewportTransform[0];
@@ -1491,7 +1567,7 @@ export function FabricSceneCanvas({
             heldGapY: held.gapY,
           },
         );
-        const snap = rawSnap;
+        const snap = applyShiftLock(rawSnap, lockedAxisRef.current);
         if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
         if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
         target.setCoords();
@@ -1555,7 +1631,7 @@ export function FabricSceneCanvas({
         },
       );
 
-      const snap = rawSnap;
+      const snap = applyShiftLock(rawSnap, lockedAxisRef.current);
 
       if (snap.x.delta !== 0) target.set({ left: (target.left ?? 0) + snap.x.delta });
       if (snap.y.delta !== 0) target.set({ top: (target.top ?? 0) + snap.y.delta });
@@ -1838,6 +1914,8 @@ export function FabricSceneCanvas({
     });
     canvas.on("mouse:up", () => {
       heldSnapRef.current = emptyHeldSnap();
+      lockedAxisRef.current = null;
+      lockOriginRef.current = null;
       if (snapGuidesRef.current) {
         snapGuidesRef.current = null;
         canvas.requestRenderAll();
@@ -1912,6 +1990,21 @@ export function FabricSceneCanvas({
           canvas._setupCurrentTransform(pointerEvent, groupObject, false);
           canvas.requestRenderAll();
         }
+      }
+      // Record the drag start so Shift-lock can detect the initial drag
+      // direction (whichever axis the user moves more on first).
+      const active = canvas.getActiveObject();
+      if (active) {
+        const rect = active.getBoundingRect();
+        dragStartRef.current = {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+        lockOriginRef.current = {
+          left: active.left ?? 0,
+          top: active.top ?? 0,
+        };
+        lockedAxisRef.current = null;
       }
     });
     canvas.on("mouse:up", () => {

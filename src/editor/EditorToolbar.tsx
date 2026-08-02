@@ -3,8 +3,11 @@ interface EditorToolbarProps {
   isCreatingScene: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  isPreviewActive: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  onTogglePreview: () => void;
+  onOpenPreviewWindow: () => void;
   onAddText: () => void;
   onAddImage: () => void;
   onAddRectangle: () => void;
@@ -12,7 +15,6 @@ interface EditorToolbarProps {
   onAddTriangle: () => void;
   onAddArrow: () => void;
   onAddScene: () => void;
-  onOpenPreview: () => void;
 }
 
 export function EditorToolbar({
@@ -20,8 +22,11 @@ export function EditorToolbar({
   isCreatingScene,
   canUndo,
   canRedo,
+  isPreviewActive,
   onUndo,
   onRedo,
+  onTogglePreview,
+  onOpenPreviewWindow,
   onAddText,
   onAddImage,
   onAddRectangle,
@@ -29,7 +34,6 @@ export function EditorToolbar({
   onAddTriangle,
   onAddArrow,
   onAddScene,
-  onOpenPreview,
 }: EditorToolbarProps) {
   return (
     <div className="editor-toolbar" aria-label="Editor toolbar">
@@ -124,6 +128,7 @@ export function EditorToolbar({
         <button
           className="button-secondary"
           type="button"
+          onClick={onAddScene}
           disabled={isAddSceneDisabled}
           title={
             isAddSceneDisabled
@@ -131,16 +136,27 @@ export function EditorToolbar({
               : "Add a new scene"
           }
           aria-label="Add scene"
-          onClick={onAddScene}
         >
           {isCreatingScene ? "Adding…" : "Add Scene"}
         </button>
         <button
-          className="button-secondary"
+          className={`editor-tool${isPreviewActive ? " is-active" : ""}`}
           type="button"
-          onClick={onOpenPreview}
+          aria-pressed={isPreviewActive}
+          title="Toggle preview in the canvas"
+          onClick={onTogglePreview}
         >
-          Open Preview
+          <span className="tool-symbol">▶</span>
+          Preview
+        </button>
+        <button
+          className="editor-tool editor-tool-icon"
+          type="button"
+          title="Open preview in a separate window"
+          aria-label="Open preview in a separate window"
+          onClick={onOpenPreviewWindow}
+        >
+          <span className="tool-symbol">↗</span>
         </button>
       </div>
     </div>

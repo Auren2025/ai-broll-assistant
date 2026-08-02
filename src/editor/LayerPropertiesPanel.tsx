@@ -282,7 +282,7 @@ export function LayerPropertiesPanel({
     <section className="layer-design-panel" aria-label="Layer properties">
       <header className="layer-design-header">
         <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
-          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "group" ? "◇" : layer.type === "image" ? "▣" : "□"}
+          {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "triangle" ? "△" : layer.type === "group" ? "◇" : layer.type === "image" ? "▣" : layer.type === "arrow" ? "→" : "□"}
         </span>
         <h3>{layer.type.charAt(0).toUpperCase() + layer.type.slice(1)}</h3>
       </header>

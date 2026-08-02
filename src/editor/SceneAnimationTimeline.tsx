@@ -243,18 +243,6 @@ export function SceneAnimationTimeline({
 
   return (
     <section className="scene-animation-timeline" aria-label="Scene animation timing">
-      <header className="animation-timeline-header">
-        <div>
-          <h3>Scene timing</h3>
-          <p>
-            {scene.durationInFrames} frames · {Number(
-              (scene.durationInFrames / fps).toFixed(2),
-            )}s
-          </p>
-        </div>
-        <span>{events.length} animations</span>
-      </header>
-
       {events.length === 0 ? (
         <p className="animation-timeline-empty">
           Select a layer below and add an animation to build the scene timing.
@@ -300,13 +288,15 @@ export function SceneAnimationTimeline({
                   <small>{phaseLabel(animation.phase)} · {animation.preset}</small>
                 </button>
                 <div className="animation-timeline-track">
-                  {ticks.map((frame) => (
-                    <i
-                      aria-hidden="true"
-                      key={frame}
-                      style={{ left: `${(frame / scene.durationInFrames) * 100}%` }}
-                    />
-                  ))}
+                  {ticks
+                    .filter((frame) => frame !== 0)
+                    .map((frame) => (
+                      <i
+                        aria-hidden="true"
+                        key={frame}
+                        style={{ left: `${(frame / scene.durationInFrames) * 100}%` }}
+                      />
+                    ))}
                   <button
                     type="button"
                     className={`animation-event-bar phase-${animation.phase}${isSelected ? " is-selected" : ""}`}

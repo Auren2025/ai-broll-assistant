@@ -41,6 +41,7 @@ import type { AlignmentAction } from "./editor/alignment";
 import { EditorToolbar } from "./editor/EditorToolbar";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
 import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
+import { RemotionScenePlayer } from "./remotion/RemotionScenePlayer";
 import { SceneAnimationTimeline } from "./editor/SceneAnimationTimeline";
 import {
   LayerPropertiesPanel,
@@ -474,6 +475,7 @@ function App() {
     DEFAULT_TIMELINE_HEIGHT,
   );
   const [isTimelineResizing, setIsTimelineResizing] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [inspectorScope, setInspectorScope] = useState<InspectorScope>("scene");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -2067,7 +2069,11 @@ function App() {
     }
   }
 
-  const handleOpenPreview = useCallback(() => {
+  const handleTogglePreview = useCallback(() => {
+    setIsPreviewMode((current) => !current);
+  }, []);
+
+  const handleOpenPreviewWindow = useCallback(() => {
     const existingPreview = previewWindowRef.current;
 
     if (existingPreview && !existingPreview.closed) {
@@ -2234,8 +2240,11 @@ function App() {
             isCreatingScene={isCreatingScene}
             canUndo={historyCanUndo}
             canRedo={historyCanRedo}
+            isPreviewActive={isPreviewMode}
             onUndo={() => void handleUndo()}
             onRedo={() => void handleRedo()}
+            onTogglePreview={handleTogglePreview}
+            onOpenPreviewWindow={handleOpenPreviewWindow}
             onAddText={() => handleAddLayer("text")}
             onAddImage={handleAddImage}
             onAddRectangle={() => handleAddLayer("rectangle")}
@@ -2243,7 +2252,6 @@ function App() {
             onAddTriangle={() => handleAddLayer("triangle")}
             onAddArrow={() => handleAddLayer("arrow")}
             onAddScene={() => void handleAddScene()}
-            onOpenPreview={handleOpenPreview}
           />
         </div>
         <input
@@ -2282,22 +2290,37 @@ function App() {
         >
           <div className="canvas-editor-area">
             <div className="canvas-stage">
-              <div className="canvas-frame">
-                <FabricSceneCanvas
-                  scene={scene}
-                  projectId={project.id}
-                  projectWidth={project.width}
-                  projectHeight={project.height}
-                  displayScale={0.5}
-                  onSceneChange={handleSceneChange}
-                  onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
-                  onHoveredLayerIdChange={setHoveredLayerId}
-                  onContextMenuRequest={openLayerContextMenu}
-                  selectedLayerIds={selectedLayerIds}
-                  pendingTextEditLayerId={pendingTextEditLayerId}
-                  onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
-                  onTextLayerChange={handleTextLayerChange}
-                />
+              <div className={`canvas-frame${isPreviewMode ? " is-preview" : ""}`}>
+                {isPreviewMode ? (
+                  <RemotionScenePlayer
+                    key={scene.id}
+                    scene={scene}
+                    projectId={project.id}
+                    projectWidth={project.width}
+                    projectHeight={project.height}
+                    fps={project.fps}
+                    displayScale={0.5}
+                  />
+                ) : (
+                  <FabricSceneCanvas
+                    scene={scene}
+                    projectId={project.id}
+                    projectWidth={project.width}
+                    projectHeight={project.height}
+                    displayScale={0.5}
+                    onSceneChange={handleSceneChange}
+                    onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
+                    onHoveredLayerIdChange={setHoveredLayerId}
+                    onContextMenuRequest={openLayerContextMenu}
+                    selectedLayerIds={selectedLayerIds}
+                    pendingTextEditLayerId={pendingTextEditLayerId}
+                    onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
+                    onTextLayerChange={handleTextLayerChange}
+                  />
+                )}
+                {isPreviewMode ? (
+                  <span className="preview-mode-badge">Preview</span>
+                ) : null}
               </div>
             </div>
           </div>

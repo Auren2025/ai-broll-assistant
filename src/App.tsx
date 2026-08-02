@@ -23,15 +23,19 @@ import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
 import {
   canFlattenGroup,
+  cloneLayersToTop,
   deleteLayers,
+  duplicateSelectedLayers,
   findLayerById,
   getAllLayers,
   getCombinedBounds,
   getLayerBounds,
   makeGroup,
+  reorderSelectedLayersZIndex,
   scaleGroupChildren,
   ungroupLayer,
   updateLayerById,
+  type ZOrderAction,
 } from "./domain/groupOperations";
 import type { AlignmentAction } from "./editor/alignment";
 import { EditorToolbar } from "./editor/EditorToolbar";
@@ -50,11 +54,7 @@ import {
   type PreviewStateMessage,
   type PreviewSyncMessage,
 } from "./preview/previewChannel";
-import {
-  measureNaturalTextSize,
-  measureWrappedTextSize,
-} from "./editor/textMetrics";
-import { applyTextCase } from "./domain/textCase";
+import { computeTextBoxSize, measureNaturalTextSize } from "./editor/textMetrics";
 
 const PROJECT_ID = "video001";
 const DEFAULT_TIMELINE_HEIGHT = 224;
@@ -373,25 +373,44 @@ function findParentGroup(layers: readonly Layer[], layerId: string) {
   );
 }
 
+function nextIdForType(usedIds: ReadonlySet<string>, type: string): string {
+  const pattern = new RegExp(`^${type}-(\\d+)$`);
+  let sequence = 0;
+
+  for (const id of usedIds) {
+    const match = pattern.exec(id);
+    if (match) sequence = Math.max(sequence, Number(match[1]));
+  }
+
+  let candidate = `${type}-${sequence + 1}`;
+
+  while (usedIds.has(candidate)) {
+    sequence += 1;
+    candidate = `${type}-${sequence + 1}`;
+  }
+
+  return candidate;
+}
+
 function getNextLayerId(
   layers: readonly Layer[],
   type: AddableLayerType | "image" | "group",
 ): string {
-  const pattern = new RegExp(`^${type}-(\\d+)$`);
-  const allLayers = getAllLayers(layers);
-  const usedIds = new Set(allLayers.map((layer) => layer.id));
-  let nextSequence = allLayers.reduce((highest, layer) => {
-    const match = pattern.exec(layer.id);
-    return match ? Math.max(highest, Number(match[1])) : highest;
-  }, 0) + 1;
-  let candidate = `${type}-${nextSequence}`;
+  const usedIds = new Set(getAllLayers(layers).map((layer) => layer.id));
+  return nextIdForType(usedIds, type);
+}
 
-  while (usedIds.has(candidate)) {
-    nextSequence += 1;
-    candidate = `${type}-${nextSequence}`;
-  }
+function makeLayerIdGenerator(
+  layers: readonly Layer[],
+): (original: Layer) => string {
+  const usedIds = new Set(getAllLayers(layers).map((layer) => layer.id));
 
-  return candidate;
+  return (original: Layer): string => {
+    const type = original.type === "group" ? "group" : original.type;
+    const id = nextIdForType(usedIds, type);
+    usedIds.add(id);
+    return id;
+  };
 }
 
 function readImageDimensions(
@@ -455,7 +474,11 @@ function App() {
   >(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [historyCanUndo, setHistoryCanUndo] = useState(false);
+  const [historyCanRedo, setHistoryCanRedo] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const clipboardLayersRef = useRef<Layer[] | null>(null);
+  const replaceImageTargetIdRef = useRef<string | null>(null);
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const previewStateRef = useRef<PreviewStateMessage | null>(null);
@@ -689,11 +712,20 @@ function App() {
     undoStackRef.current.push(editorSnapshotRef.current);
     if (undoStackRef.current.length > 100) undoStackRef.current.shift();
     redoStackRef.current = [];
+    setHistoryCanUndo(true);
+    setHistoryCanRedo(false);
   }, []);
 
   const clearHistory = useCallback(() => {
     undoStackRef.current = [];
     redoStackRef.current = [];
+    setHistoryCanUndo(false);
+    setHistoryCanRedo(false);
+  }, []);
+
+  const refreshHistoryAvailability = useCallback(() => {
+    setHistoryCanUndo(undoStackRef.current.length > 0);
+    setHistoryCanRedo(redoStackRef.current.length > 0);
   }, []);
 
   const queueCurrentSave = useCallback(
@@ -1022,8 +1054,9 @@ function App() {
       setSceneError(getErrorMessage(error));
     } finally {
       isApplyingHistoryRef.current = false;
+      refreshHistoryAvailability();
     }
-  }, [applyHistorySnapshot, isSceneLoading]);
+  }, [applyHistorySnapshot, isSceneLoading, refreshHistoryAvailability]);
 
   const handleRedo = useCallback(async () => {
     if (isApplyingHistoryRef.current || isSceneLoading) return;
@@ -1041,8 +1074,9 @@ function App() {
       setSceneError(getErrorMessage(error));
     } finally {
       isApplyingHistoryRef.current = false;
+      refreshHistoryAvailability();
     }
-  }, [applyHistorySnapshot, isSceneLoading]);
+  }, [applyHistorySnapshot, isSceneLoading, refreshHistoryAvailability]);
 
   const handleDeleteSelection = useCallback(async () => {
     if (!project || !scene || isSceneLoading) {
@@ -1172,6 +1206,122 @@ function App() {
     setContextMenu(null);
   }, [handleSceneChange, scene, selectedLayerIds]);
 
+  const handleDuplicateSelection = useCallback(() => {
+    if (!scene || selectedLayerIds.length === 0) {
+      return;
+    }
+
+    const selectedIdSet = new Set(selectedLayerIds);
+    const targets: Layer[] = [];
+
+    for (const layer of scene.layers) {
+      if (selectedIdSet.has(layer.id)) targets.push(layer);
+      if (layer.type === "group") {
+        for (const child of layer.children) {
+          if (selectedIdSet.has(child.id)) targets.push(child);
+        }
+      }
+    }
+
+    if (targets.length !== selectedLayerIds.length) {
+      return;
+    }
+
+    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
+    const idByOriginal = new Map<Layer, string>();
+
+    for (const target of targets) {
+      idByOriginal.set(target, generator(target));
+    }
+
+    const newIdFor = (original: Layer): string =>
+      idByOriginal.get(original) ?? generator(original);
+    const updatedScene = duplicateSelectedLayers(
+      scene,
+      selectedLayerIds,
+      newIdFor,
+    );
+    if (updatedScene === scene) {
+      return;
+    }
+
+    handleSceneChange(updatedScene);
+    const newIds = targets
+      .map((target) => idByOriginal.get(target))
+      .filter((id): id is string => Boolean(id));
+    setSelectedLayerIds(newIds);
+    setSelectedAnimationId(null);
+    setInspectorScope("layer");
+    setContextMenu(null);
+  }, [handleSceneChange, scene, selectedLayerIds]);
+
+  const handleCopySelection = useCallback(() => {
+    if (!scene || selectedLayerIds.length === 0) {
+      return;
+    }
+
+    const selectedIdSet = new Set(selectedLayerIds);
+    const topLevel = scene.layers.filter((layer) =>
+      selectedIdSet.has(layer.id),
+    );
+    if (topLevel.length === 0) {
+      return;
+    }
+
+    clipboardLayersRef.current = JSON.parse(
+      JSON.stringify(topLevel),
+    ) as Layer[];
+    setContextMenu(null);
+  }, [scene, selectedLayerIds]);
+
+  const handlePasteSelection = useCallback(() => {
+    const clipboard = clipboardLayersRef.current;
+    if (!scene || !clipboard || clipboard.length === 0) {
+      return;
+    }
+
+    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
+    const idByOriginal = new Map<Layer, string>();
+
+    for (const layer of clipboard) {
+      idByOriginal.set(layer, generator(layer));
+    }
+
+    const newIdFor = (original: Layer): string =>
+      idByOriginal.get(original) ?? generator(original);
+    const updatedScene = cloneLayersToTop(scene, clipboard, newIdFor, 24, 24);
+    if (updatedScene === scene) {
+      return;
+    }
+
+    handleSceneChange(updatedScene);
+    const newIds = clipboard
+      .map((layer) => idByOriginal.get(layer))
+      .filter((id): id is string => Boolean(id));
+    setSelectedLayerIds(newIds);
+    setSelectedAnimationId(null);
+    setInspectorScope("layer");
+    setContextMenu(null);
+  }, [handleSceneChange, scene]);
+
+  const handleReorderSelection = useCallback(
+    (action: ZOrderAction) => {
+      if (!scene || selectedLayerIds.length === 0) {
+        return;
+      }
+      const updatedScene = reorderSelectedLayersZIndex(
+        scene,
+        selectedLayerIds,
+        action,
+      );
+      if (updatedScene === scene) {
+        return;
+      }
+      handleSceneChange(updatedScene);
+    },
+    [handleSceneChange, scene, selectedLayerIds],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target;
@@ -1204,6 +1354,40 @@ function App() {
         return;
       }
 
+      if (modifier && key === "d") {
+        event.preventDefault();
+        handleDuplicateSelection();
+        return;
+      }
+
+      if (modifier && key === "c") {
+        if (inspectorScope === "layer") {
+          event.preventDefault();
+          handleCopySelection();
+        }
+        return;
+      }
+
+      if (modifier && key === "v") {
+        event.preventDefault();
+        handlePasteSelection();
+        return;
+      }
+
+      if (modifier && (key === "[" || key === "]")) {
+        event.preventDefault();
+        const action: ZOrderAction =
+          key === "]"
+            ? event.shiftKey
+              ? "front"
+              : "forward"
+            : event.shiftKey
+              ? "back"
+              : "backward";
+        handleReorderSelection(action);
+        return;
+      }
+
       if (event.key !== "Delete" && event.key !== "Backspace") return;
 
       event.preventDefault();
@@ -1213,11 +1397,16 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    handleCopySelection,
     handleDeleteSelection,
+    handleDuplicateSelection,
     handleGroupSelection,
+    handlePasteSelection,
     handleRedo,
+    handleReorderSelection,
     handleUndo,
     handleUngroupSelection,
+    inspectorScope,
   ]);
 
   const handleAlign = useCallback(
@@ -1423,6 +1612,7 @@ function App() {
     if (!project || !scene || isUploadingImage) {
       return;
     }
+    replaceImageTargetIdRef.current = null;
     imageFileInputRef.current?.click();
   }, [isUploadingImage, project, scene]);
 
@@ -1438,9 +1628,10 @@ function App() {
       setIsUploadingImage(true);
       setImageUploadError(null);
       setSceneError(null);
+      const replaceTargetId = replaceImageTargetIdRef.current;
+      replaceImageTargetIdRef.current = null;
       try {
         const asset = await uploadImageAsset(project.id, file, file.name);
-        const id = getNextLayerId(scene.layers, "image");
         const dataUrl = URL.createObjectURL(file);
         let dimensions: { width: number; height: number };
         try {
@@ -1448,6 +1639,38 @@ function App() {
         } finally {
           URL.revokeObjectURL(dataUrl);
         }
+        const fitted = scaleToFit(
+          dimensions.width,
+          dimensions.height,
+          MAX_IMAGE_DIMENSION,
+        );
+
+        if (replaceTargetId) {
+          const target = findLayerById(scene.layers, replaceTargetId);
+          if (!target || target.type !== "image") {
+            setImageUploadError("The selected layer is no longer an image");
+            return;
+          }
+          const updatedLayers = updateLayerById(
+            scene.layers,
+            replaceTargetId,
+            (layer) => {
+              if (layer.type !== "image") {
+                return layer;
+              }
+              return {
+                ...layer,
+                src: asset.src,
+                width: fitted.width,
+                height: fitted.height,
+              };
+            },
+          );
+          handleSceneChange({ ...scene, layers: updatedLayers });
+          return;
+        }
+
+        const id = getNextLayerId(scene.layers, "image");
         const layer = buildImageLayer(
           project,
           scene,
@@ -1472,6 +1695,14 @@ function App() {
     },
     [handleSceneChange, project, scene],
   );
+
+  const handleReplaceImage = useCallback(() => {
+    if (!project || !scene || isUploadingImage || !selectedLayerId) {
+      return;
+    }
+    replaceImageTargetIdRef.current = selectedLayerId;
+    imageFileInputRef.current?.click();
+  }, [isUploadingImage, project, scene, selectedLayerId]);
 
   const handleSelectedLayerPatch = useCallback(
     (patch: EditableLayerPatch) => {
@@ -1542,57 +1773,9 @@ function App() {
           let nextHeight = merged.height;
 
           if (typographyChanged) {
-            const displayText = applyTextCase(merged.text, merged.textCase);
-            switch (merged.autoResize) {
-              case "both": {
-                const measured = measureNaturalTextSize(
-                  displayText,
-                  {
-                    fontFamily: merged.fontFamily,
-                    fontSize: merged.fontSize,
-                    fontWeight: merged.fontWeight,
-                    fontStyle: merged.fontStyle,
-                    lineHeight: merged.lineHeight,
-                    letterSpacing: merged.letterSpacing,
-                  },
-                );
-                nextWidth = measured.width;
-                nextHeight = measured.height;
-                break;
-              }
-              case "height": {
-                nextWidth = merged.width;
-                const measured = measureNaturalTextSize(
-                  displayText,
-                  {
-                    fontFamily: merged.fontFamily,
-                    fontSize: merged.fontSize,
-                    fontWeight: merged.fontWeight,
-                    fontStyle: merged.fontStyle,
-                    lineHeight: merged.lineHeight,
-                    letterSpacing: merged.letterSpacing,
-                  },
-                );
-                const wrapped = measureWrappedTextSize(
-                  displayText,
-                  {
-                    fontFamily: merged.fontFamily,
-                    fontSize: merged.fontSize,
-                    fontWeight: merged.fontWeight,
-                    fontStyle: merged.fontStyle,
-                    lineHeight: merged.lineHeight,
-                    letterSpacing: merged.letterSpacing,
-                  },
-                  nextWidth,
-                );
-                nextHeight = Math.max(measured.height, wrapped.height);
-                break;
-              }
-              case "fixed":
-                nextWidth = merged.width;
-                nextHeight = merged.height;
-                break;
-            }
+            const measured = computeTextBoxSize(merged);
+            nextWidth = measured.width;
+            nextHeight = measured.height;
           }
 
           const widthDelta = nextWidth - layer.width;
@@ -2032,6 +2215,10 @@ function App() {
               !project || isSceneLoading || isCreatingScene || hasSaveConflict
             }
             isCreatingScene={isCreatingScene}
+            canUndo={historyCanUndo}
+            canRedo={historyCanRedo}
+            onUndo={() => void handleUndo()}
+            onRedo={() => void handleRedo()}
             onAddText={() => handleAddLayer("text")}
             onAddImage={handleAddImage}
             onAddRectangle={() => handleAddLayer("rectangle")}
@@ -2164,12 +2351,18 @@ function App() {
                   canGroup={canGroup}
                   onAlign={handleAlign}
                   onGroup={handleGroupSelection}
+                  onDuplicate={handleDuplicateSelection}
+                  onReorder={handleReorderSelection}
                 />
               ) : (
                 <LayerPropertiesPanel
                   layer={selectedLayer}
                   onPatch={handleSelectedLayerPatch}
                   onAlign={handleAlign}
+                  onReplaceImage={handleReplaceImage}
+                  onDuplicate={handleDuplicateSelection}
+                  onReorder={handleReorderSelection}
+                  onDeleteLayer={() => void handleDeleteSelection()}
                 />
               )
             ) : (
@@ -2202,6 +2395,27 @@ function App() {
               <span>Ungroup</span><kbd>⇧⌘G</kbd>
             </button>
           ) : null}
+          <button type="button" role="menuitem" onClick={handleDuplicateSelection}>
+            <span>Duplicate</span><kbd>⌘D</kbd>
+          </button>
+          <button type="button" role="menuitem" onClick={handleCopySelection}>
+            <span>Copy</span><kbd>⌘C</kbd>
+          </button>
+          <button type="button" role="menuitem" onClick={handlePasteSelection}>
+            <span>Paste</span><kbd>⌘V</kbd>
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleReorderSelection("back")}>
+            <span>Send to back</span><kbd>⇧⌘[</kbd>
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleReorderSelection("backward")}>
+            <span>Send backward</span><kbd>⌘[</kbd>
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleReorderSelection("forward")}>
+            <span>Bring forward</span><kbd>⌘]</kbd>
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleReorderSelection("front")}>
+            <span>Bring to front</span><kbd>⇧⌘]</kbd>
+          </button>
         </div>
       ) : null}
     </main>

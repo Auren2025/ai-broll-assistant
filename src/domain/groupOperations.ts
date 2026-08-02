@@ -13,6 +13,11 @@ export interface LayerBounds {
   centerY: number;
 }
 
+// All group geometry math (world<->local conversion, flattening, rescaling) rounds
+// results to 3 decimal places. This 0.001px precision is the only source of drift:
+// a flattened group is otherwise visually identical but may shift positions by up to
+// ~0.001px per coordinate. Any requirement of bit-exact round-trips must account for
+// this boundary.
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
@@ -204,6 +209,19 @@ export function transformGroupChildToScene(
   };
 }
 
+// Flattening (ungroup / group-collapse during delete) is "lossless" under these
+// conditions, because nothing beyond the 3-decimal rounding of `round` can change:
+//   - The group carries no animations (group.animations.length === 0). An animated
+//     group is refused because its timeline state cannot be represented on children.
+//   - The group's opacity is effectively 1 (either opacityEnabled === false, or
+//     opacity === 1). Otherwise the multiplied opacity is baked into children, which
+//     changes the group's own future opacity edits and is not lossless.
+//   - The group's blendMode is "normal" (schema currently locks it to "normal", so
+//     this check is always true today; it exists as a forward guard).
+// Rotation, visibility, and lock state are propagated losslessly to children
+// (children rotation adds the group rotation; visible is AND-ed; locked is OR-ed).
+// Non-flattenable groups (animated or translucent) are refused by `canFlattenGroup`,
+// so callers never silently expand a group that would change the visual result.
 export function canFlattenGroup(group: GroupLayer): boolean {
   return (
     group.animations.length === 0 &&
@@ -257,5 +275,206 @@ export function deleteLayers(
   return {
     ...scene,
     layers: next.map((layer, zIndex) => ({ ...layer, zIndex })),
+  };
+}
+
+export type ZOrderAction = "front" | "forward" | "backward" | "back";
+
+function reorderArray<T extends Layer>(
+  items: readonly T[],
+  isSelected: (item: T) => boolean,
+  action: ZOrderAction,
+): T[] {
+  const selected = items.filter(isSelected);
+  if (selected.length === 0) return [...items];
+  const rest = items.filter((item) => !isSelected(item));
+
+  if (action === "front") return [...rest, ...selected];
+  if (action === "back") return [...selected, ...rest];
+
+  const result = [...items];
+  if (action === "forward") {
+    for (let i = result.length - 2; i >= 0; i--) {
+      if (isSelected(result[i]) && !isSelected(result[i + 1])) {
+        const temp = result[i];
+        result[i] = result[i + 1];
+        result[i + 1] = temp;
+      }
+    }
+  } else {
+    for (let i = 1; i < result.length; i++) {
+      if (isSelected(result[i]) && !isSelected(result[i - 1])) {
+        const temp = result[i];
+        result[i] = result[i - 1];
+        result[i - 1] = temp;
+      }
+    }
+  }
+
+  return result;
+}
+
+export function reorderSelectedLayersZIndex(
+  scene: Scene,
+  selectedLayerIds: readonly string[],
+  action: ZOrderAction,
+): Scene {
+  const selectedIds = new Set(selectedLayerIds);
+  if (selectedIds.size === 0) return scene;
+
+  const topLevelSelected = scene.layers.filter((layer) =>
+    selectedIds.has(layer.id),
+  );
+  const childPairs = scene.layers
+    .filter((layer): layer is GroupLayer => layer.type === "group")
+    .map((group) => ({
+      group,
+      children: group.children.filter((child) => selectedIds.has(child.id)),
+    }))
+    .filter((pair) => pair.children.length > 0);
+
+  const childCount = childPairs.reduce(
+    (total, pair) => total + pair.children.length,
+    0,
+  );
+  if (topLevelSelected.length + childCount !== selectedIds.size) return scene;
+  if (topLevelSelected.length > 0 && childCount > 0) return scene;
+
+  if (childCount > 0) {
+    if (childPairs.length !== 1) return scene;
+    const { group, children } = childPairs[0];
+    if (children.length !== group.children.filter((child) => selectedIds.has(child.id)).length) {
+      return scene;
+    }
+    const reorderedChildren = reorderArray(
+      group.children,
+      (child) => selectedIds.has(child.id),
+      action,
+    ).map((child, zIndex) => ({ ...child, zIndex })) as AtomicLayer[];
+
+    return {
+      ...scene,
+      layers: scene.layers.map((layer) =>
+        layer.id === group.id ? { ...layer, children: reorderedChildren } : layer,
+      ),
+    };
+  }
+
+  const reordered = reorderArray(
+    scene.layers,
+    (layer) => selectedIds.has(layer.id),
+    action,
+  );
+
+  return {
+    ...scene,
+    layers: reordered.map((layer, zIndex) => ({ ...layer, zIndex })),
+  };
+}
+
+function cloneLayer<T extends Layer>(
+  layer: T,
+  newIdFor: (original: Layer) => string,
+): T {
+  if (layer.type === "group") {
+    const children = layer.children.map((child) => cloneLayer(child, newIdFor));
+    return { ...layer, id: newIdFor(layer), children } as T;
+  }
+  return { ...layer, id: newIdFor(layer) } as T;
+}
+
+export function duplicateSelectedLayers(
+  scene: Scene,
+  selectedLayerIds: readonly string[],
+  newIdFor: (original: Layer) => string,
+): Scene {
+  const selectedIds = new Set(selectedLayerIds);
+  if (selectedIds.size === 0) return scene;
+
+  const topLevelSelected = scene.layers.filter((layer) =>
+    selectedIds.has(layer.id),
+  );
+  const childPairs = scene.layers
+    .filter((layer): layer is GroupLayer => layer.type === "group")
+    .map((group) => ({
+      group,
+      children: group.children.filter((child) => selectedIds.has(child.id)),
+    }))
+    .filter((pair) => pair.children.length > 0);
+
+  const childCount = childPairs.reduce(
+    (total, pair) => total + pair.children.length,
+    0,
+  );
+  if (topLevelSelected.length + childCount !== selectedIds.size) return scene;
+  if (topLevelSelected.length > 0 && childCount > 0) return scene;
+
+  if (childCount > 0) {
+    let layers = scene.layers;
+
+    for (const { group } of childPairs) {
+      const ordered = [...group.children].sort((a, b) => a.zIndex - b.zIndex);
+      const result: AtomicLayer[] = [];
+
+      for (const child of ordered) {
+        result.push(child);
+        if (selectedIds.has(child.id)) {
+          result.push(cloneLayer(child, newIdFor));
+        }
+      }
+
+      layers = layers.map((layer) =>
+        layer.id === group.id
+          ? {
+              ...layer,
+              children: result.map((child, zIndex) => ({
+                ...child,
+                zIndex,
+              })) as AtomicLayer[],
+            }
+          : layer,
+      );
+    }
+
+    return { ...scene, layers };
+  }
+
+  const ordered = [...scene.layers].sort((a, b) => a.zIndex - b.zIndex);
+  const result: Layer[] = [];
+
+  for (const layer of ordered) {
+    result.push(layer);
+    if (selectedIds.has(layer.id)) {
+      result.push(cloneLayer(layer, newIdFor));
+    }
+  }
+
+  return {
+    ...scene,
+    layers: result.map((layer, zIndex) => ({ ...layer, zIndex })),
+  };
+}
+
+export function cloneLayersToTop(
+  scene: Scene,
+  templateLayers: readonly Layer[],
+  newIdFor: (original: Layer) => string,
+  offsetX = 0,
+  offsetY = 0,
+): Scene {
+  if (templateLayers.length === 0) return scene;
+
+  const ordered = [...templateLayers].sort((a, b) => a.zIndex - b.zIndex);
+  const clones = ordered.map((layer) => {
+    const clone = cloneLayer(layer, newIdFor);
+    return { ...clone, x: clone.x + offsetX, y: clone.y + offsetY };
+  });
+
+  return {
+    ...scene,
+    layers: [...scene.layers, ...clones].map((layer, zIndex) => ({
+      ...layer,
+      zIndex,
+    })),
   };
 }

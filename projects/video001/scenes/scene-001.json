@@ -8,10 +8,10 @@
     {
       "id": "image-1",
       "name": "Image",
-      "x": 648.628,
-      "y": 290.572,
-      "width": 697.545,
-      "height": 427.656,
+      "x": 382.5,
+      "y": 91.7,
+      "width": 961.5,
+      "height": 773.7,
       "rotation": 0,
       "opacity": 1,
       "opacityEnabled": true,
@@ -19,13 +19,47 @@
       "zIndex": 0,
       "visible": true,
       "locked": false,
-      "animations": [],
+      "animations": [
+        {
+          "id": "image-1-enter",
+          "phase": "enter",
+          "preset": "slide-up",
+          "startFrame": 0,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ],
       "type": "image",
-      "src": "assets/image-f59b6fd361e4a621.png",
+      "src": "assets/image-d55a343c48634b52.png",
       "cornerRadius": 0,
       "stroke": null,
       "strokeWidth": 0,
       "strokePosition": "inside"
+    },
+    {
+      "id": "rectangle-1",
+      "name": "Rectangle",
+      "x": 759.8,
+      "y": 660.7,
+      "width": 195,
+      "height": 117,
+      "rotation": 0,
+      "opacity": 1,
+      "opacityEnabled": true,
+      "blendMode": "normal",
+      "zIndex": 1,
+      "visible": true,
+      "locked": false,
+      "animations": [],
+      "type": "rectangle",
+      "fill": "#6b7280",
+      "fillEnabled": true,
+      "stroke": null,
+      "strokeWidth": 0,
+      "strokePosition": "inside",
+      "cornerEnabled": true,
+      "cornerRadius": 0,
+      "cornerRadii": null
     }
   ]
 }

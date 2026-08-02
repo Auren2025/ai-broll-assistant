@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ZOrderAction } from "../domain/groupOperations";
 import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
@@ -50,6 +51,36 @@ interface LayerPropertiesPanelProps {
   layer: Layer | null;
   onPatch: (patch: EditableLayerPatch) => void;
   onAlign: (action: AlignmentAction) => void;
+  onReplaceImage: () => void;
+  onDuplicate: () => void;
+  onReorder: (action: ZOrderAction) => void;
+  onDeleteLayer: () => void;
+}
+
+const ARRANGE_BUTTONS: { action: ZOrderAction; label: string; icon: string }[] =
+  [
+    { action: "back", label: "Send to back", icon: "⏮" },
+    { action: "backward", label: "Send backward", icon: "◀" },
+    { action: "forward", label: "Bring forward", icon: "▶" },
+    { action: "front", label: "Bring to front", icon: "⏭" },
+  ];
+
+function ArrangeControls({ onReorder }: { onReorder: (action: ZOrderAction) => void }) {
+  return (
+    <div className="layer-arrange-row" role="group" aria-label="Layer z-order">
+      {ARRANGE_BUTTONS.map((button) => (
+        <button
+          key={button.action}
+          type="button"
+          title={button.label}
+          aria-label={button.label}
+          onClick={() => onReorder(button.action)}
+        >
+          {button.icon}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function LayerAlignmentControls({
@@ -86,11 +117,15 @@ export function MultiLayerPropertiesPanel({
   canGroup,
   onAlign,
   onGroup,
+  onDuplicate,
+  onReorder,
 }: {
   selectionCount: number;
   canGroup: boolean;
   onAlign: (action: AlignmentAction) => void;
   onGroup: () => void;
+  onDuplicate: () => void;
+  onReorder: (action: ZOrderAction) => void;
 }) {
   return (
     <section className="layer-design-panel" aria-label="Multiple layer properties">
@@ -130,6 +165,19 @@ export function MultiLayerPropertiesPanel({
           Group
           <span>⌘G</span>
         </button>
+        <button
+          type="button"
+          className="selection-group-button selection-ghost-button"
+          onClick={onDuplicate}
+        >
+          Duplicate
+          <span>⌘D</span>
+        </button>
+      </section>
+
+      <section className="layer-design-section layer-arrange-section">
+        <h4>Arrange</h4>
+        <ArrangeControls onReorder={onReorder} />
       </section>
     </section>
   );
@@ -210,6 +258,10 @@ export function LayerPropertiesPanel({
   layer,
   onPatch,
   onAlign,
+  onReplaceImage,
+  onDuplicate,
+  onReorder,
+  onDeleteLayer,
 }: LayerPropertiesPanelProps) {
   if (!layer) return <p className="app-stage">Select a layer to view its properties.</p>;
 
@@ -236,6 +288,23 @@ export function LayerPropertiesPanel({
       </header>
 
       <LayerAlignmentControls selectionCount={1} onAlign={onAlign} />
+
+      <section className="layer-design-section layer-arrange-section">
+        <h4>Arrange</h4>
+        <ArrangeControls onReorder={onReorder} />
+        <div className="layer-actions-row">
+          <button type="button" onClick={onDuplicate}>
+            <span>Duplicate</span><kbd>⌘D</kbd>
+          </button>
+          <button
+            type="button"
+            className="is-danger"
+            onClick={onDeleteLayer}
+          >
+            Delete
+          </button>
+        </div>
+      </section>
 
       <section className="layer-design-section layer-layout-section">
         <h4>Layout</h4>
@@ -336,6 +405,13 @@ export function LayerPropertiesPanel({
             </div>
           </div>
           <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src}</strong></div>
+          <button
+            type="button"
+            className="layer-image-replace"
+            onClick={onReplaceImage}
+          >
+            Replace image…
+          </button>
         </section>
       ) : null}
 

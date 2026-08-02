@@ -946,6 +946,10 @@ button {
   grid-template-columns: 112px minmax(0, 1fr);
 }
 
+.scene-project-section .scene-design-row {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
 .scene-color-inputs input[type="text"] {
   padding: 0 2px 0 16px;
   text-align: left;
@@ -1145,6 +1149,94 @@ button {
   color: #a4a0aa;
   background: #eceaee;
   cursor: default;
+}
+
+.selection-actions-section .selection-ghost-button {
+  color: #5845c9;
+  background: #efedff;
+}
+
+.layer-arrange-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 0 12px 4px 16px;
+}
+
+.layer-arrange-row button {
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #97979b;
+  background: rgb(242 241 243 / 35%);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.layer-arrange-row button:hover {
+  color: #7a40ed;
+  background: #f2ecfd;
+}
+
+.layer-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+
+.layer-actions-row button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #d8d9df;
+  border-radius: 7px;
+  color: #19171c;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.layer-actions-row button:hover {
+  border-color: #bfc1ca;
+  background: #f8f8fa;
+}
+
+.layer-actions-row button.is-danger {
+  color: #c0392b;
+  border-color: #e6b9b3;
+}
+
+.layer-actions-row button.is-danger:hover {
+  background: #fdf0ef;
+}
+
+.layer-actions-row kbd {
+  color: #97979b;
+  font: inherit;
+  font-size: 10px;
+}
+
+.layer-image-replace {
+  width: calc(100% - 24px);
+  height: 32px;
+  margin: 8px 8px 0 16px;
+  border: 1px solid #d8d9df;
+  border-radius: 7px;
+  color: #19171c;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.layer-image-replace:hover {
+  border-color: #bfc1ca;
+  background: #f8f8fa;
 }
 
 .layer-design-section {

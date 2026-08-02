@@ -40,6 +40,8 @@ export function ScenePropertiesPanel({
   const [colorInput, setColorInput] = useState(
     (scene.backgroundColor ?? "#ffffff").slice(1).toUpperCase(),
   );
+  const [topicInput, setTopicInput] = useState(scene.topic);
+  const [projectNameInput, setProjectNameInput] = useState(project.name);
   const color = scene.backgroundColor ?? lastColor;
   const maximumAnimationEnd = Math.max(
     1,
@@ -64,6 +66,14 @@ export function ScenePropertiesPanel({
     }
   }, [scene.backgroundColor]);
 
+  useEffect(() => {
+    setTopicInput(scene.topic);
+  }, [scene.topic]);
+
+  useEffect(() => {
+    setProjectNameInput(project.name);
+  }, [project.name]);
+
   function patchProjectSize(width: number, height: number): void {
     if (width > 0 && height > 0) {
       onProjectChange({ ...project, width, height });
@@ -85,6 +95,61 @@ export function ScenePropertiesPanel({
         <span className="scene-design-icon" aria-hidden="true" />
         <h3>Scene {sceneNumber}</h3>
       </header>
+
+      <section className="scene-design-section scene-topic-section">
+        <label className="scene-design-row scene-topic-row">
+          <span>Topic</span>
+          <input
+            type="text"
+            aria-label="Scene topic"
+            maxLength={120}
+            value={topicInput}
+            onChange={(event) => {
+              setTopicInput(event.currentTarget.value);
+              const value = event.currentTarget.value.trim();
+              if (value.length > 0) {
+                onSceneChange({ ...scene, topic: value });
+              }
+            }}
+            onBlur={() => setTopicInput(scene.topic)}
+          />
+        </label>
+      </section>
+
+      <section className="scene-design-section scene-project-section">
+        <h4>Project</h4>
+        <label className="scene-design-row scene-topic-row">
+          <span>Name</span>
+          <input
+            type="text"
+            aria-label="Project name"
+            maxLength={120}
+            value={projectNameInput}
+            onChange={(event) => {
+              setProjectNameInput(event.currentTarget.value);
+              const value = event.currentTarget.value.trim();
+              if (value.length > 0) {
+                onProjectChange({ ...project, name: value });
+              }
+            }}
+            onBlur={() => setProjectNameInput(project.name)}
+          />
+        </label>
+        <div className="scene-design-row">
+          <span>Frame rate</span>
+          <BufferedNumberInput
+            min="1"
+            aria-label="Project frame rate"
+            value={project.fps}
+            onValueChange={(value) => {
+              const fps = Math.max(1, Math.round(value));
+              if (Number.isFinite(fps) && fps !== project.fps) {
+                onProjectChange({ ...project, fps });
+              }
+            }}
+          />
+        </div>
+      </section>
 
       <section className="scene-design-section scene-layout-section">
         <h4>Layout</h4>

@@ -226,20 +226,6 @@ function getPhaseAnimationStyle(
   }
 }
 
-export function getLayerEnterAnimationStyle(
-  animations: readonly LayerAnimation[],
-  frame: number,
-): LayerAnimationStyle {
-  return getPhaseAnimationStyle(animations, "enter", frame);
-}
-
-export function getLayerExitAnimationStyle(
-  animations: readonly LayerAnimation[],
-  frame: number,
-): LayerAnimationStyle {
-  return getPhaseAnimationStyle(animations, "exit", frame);
-}
-
 export function getLayerAnimationStyle(
   animations: readonly LayerAnimation[],
   frame: number,

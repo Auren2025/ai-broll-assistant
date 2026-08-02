@@ -1,6 +1,10 @@
 interface EditorToolbarProps {
   isAddSceneDisabled: boolean;
   isCreatingScene: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   onAddText: () => void;
   onAddImage: () => void;
   onAddRectangle: () => void;
@@ -14,6 +18,10 @@ interface EditorToolbarProps {
 export function EditorToolbar({
   isAddSceneDisabled,
   isCreatingScene,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onAddText,
   onAddImage,
   onAddRectangle,
@@ -91,6 +99,28 @@ export function EditorToolbar({
         </button>
       </div>
       <div className="editor-toolbar-actions">
+        <button
+          className="editor-tool"
+          type="button"
+          disabled={!canUndo}
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+          onClick={onUndo}
+        >
+          <span className="tool-symbol">↩</span>
+          Undo
+        </button>
+        <button
+          className="editor-tool"
+          type="button"
+          disabled={!canRedo}
+          title="Redo (⇧⌘Z)"
+          aria-label="Redo"
+          onClick={onRedo}
+        >
+          <span className="tool-symbol">↪</span>
+          Redo
+        </button>
         <button
           className="button-secondary"
           type="button"

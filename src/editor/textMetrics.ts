@@ -89,8 +89,14 @@ export function computeTextBoxSize(layer: TextLayer): TextBoxSize {
   switch (layer.autoResize) {
     case "both":
       return measureNaturalTextSize(displayText, opts);
-    case "height":
-      return measureWrappedTextSize(displayText, opts, layer.width);
+    case "height": {
+      const measured = measureNaturalTextSize(displayText, opts);
+      const wrapped = measureWrappedTextSize(displayText, opts, layer.width);
+      return {
+        width: layer.width,
+        height: Math.max(measured.height, wrapped.height),
+      };
+    }
     case "fixed":
       return { width: layer.width, height: layer.height };
   }

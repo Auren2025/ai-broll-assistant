@@ -4,6 +4,7 @@ import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
 import {
+  ABUTMENT_BUTTONS,
   ALIGNMENT_BUTTONS,
   DISTRIBUTION_BUTTONS,
   type AlignmentAction,
@@ -112,6 +113,62 @@ function LayerAlignmentControls({
   );
 }
 
+function LayerAbutmentControls({
+  selectionCount,
+  onAlign,
+}: {
+  selectionCount: number;
+  onAlign: (action: AlignmentAction) => void;
+}) {
+  return (
+    <div className="layer-align-row" aria-label="Layer abutment controls">
+      {ABUTMENT_BUTTONS.map((button) => {
+        const disabled = selectionCount < 2;
+        return (
+          <button
+            key={button.action}
+            type="button"
+            title={button.label}
+            aria-label={button.label}
+            disabled={disabled}
+            onClick={() => onAlign(button.action)}
+          >
+            {button.icon}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LayerDistributionControls({
+  selectionCount,
+  onAlign,
+}: {
+  selectionCount: number;
+  onAlign: (action: AlignmentAction) => void;
+}) {
+  return (
+    <div className="layer-distribute-row" aria-label="Layer distribution controls">
+      {DISTRIBUTION_BUTTONS.map((button) => {
+        const disabled = selectionCount < 3;
+        return (
+          <button
+            key={button.action}
+            type="button"
+            title={button.label}
+            aria-label={button.label}
+            disabled={disabled}
+            onClick={() => onAlign(button.action)}
+          >
+            {button.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function MultiLayerPropertiesPanel({
   selectionCount,
   canGroup,
@@ -132,24 +189,19 @@ export function MultiLayerPropertiesPanel({
       <header className="layer-design-header multi-layer-design-header">
         <span className="layer-design-type-icon" aria-hidden="true">◇</span>
         <h3>{selectionCount} layers selected</h3>
-        <details className="selection-actions-menu">
-          <summary aria-label="More selection actions">…</summary>
-          <div>
-            {DISTRIBUTION_BUTTONS.map((button) => (
-              <button
-                key={button.action}
-                type="button"
-                disabled={selectionCount < 3}
-                onClick={() => onAlign(button.action)}
-              >
-                {button.label}
-              </button>
-            ))}
-          </div>
-        </details>
       </header>
 
       <LayerAlignmentControls
+        selectionCount={selectionCount}
+        onAlign={onAlign}
+      />
+
+      <LayerAbutmentControls
+        selectionCount={selectionCount}
+        onAlign={onAlign}
+      />
+
+      <LayerDistributionControls
         selectionCount={selectionCount}
         onAlign={onAlign}
       />

@@ -1154,6 +1154,44 @@ button {
   background: #f2ecfd;
 }
 
+.layer-align-row button:disabled {
+  color: #cfcbd3;
+  cursor: default;
+  background: transparent;
+}
+
+.layer-distribute-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.layer-distribute-row button {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  color: #38343c;
+  background: #f6f4f8;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.layer-distribute-row button:hover:not(:disabled) {
+  color: #5845c9;
+  background: #efedff;
+}
+
+.layer-distribute-row button:disabled {
+  color: #b3afb7;
+  background: #f6f4f8;
+  cursor: default;
+}
+
 .multi-layer-design-header {
   grid-template-columns: 16px minmax(0, 1fr) 28px;
 }

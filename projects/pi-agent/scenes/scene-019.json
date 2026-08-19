@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-019",
+  "topic": "Pi Package 分发与用户级、项目级作用域",
+  "startFrame": 15291,
+  "durationInFrames": 1013,
+  "layers": [
+    {
+      "id": "s19-heading", "name": "Package heading", "x": 120, "y": 70, "width": 1680, "height": 84, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s19-heading-in", "phase": "enter", "preset": "slide-up", "startFrame": 0, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "text", "text": "PI PACKAGE", "fontFamily": "Arial", "fontSize": 64, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 5, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s19-package", "name": "Open package with four resources", "x": 390, "y": 205, "width": 1140, "height": 400, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s19-package-in", "phase": "enter", "preset": "scale", "startFrame": 300, "durationInFrames": 28, "easing": "ease-out"}],
+      "type": "group",
+      "children": [
+        {"id": "s19-box", "name": "Package box", "x": 0, "y": 58, "width": 1140, "height": 342, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 36, "cornerRadii": null},
+        {"id": "s19-box-lid", "name": "Package lid", "x": 250, "y": 0, "width": 640, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#FF7A1A", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 20, "cornerRadii": null},
+        {"id": "s19-box-mark", "name": "Package mark", "x": 410, "y": 14, "width": 320, "height": 52, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "pi install", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#111318", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s19-ext-symbol", "name": "Extension resource symbol", "x": 70, "y": 145, "width": 220, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#A7ADB7", "strokeWidth": 2, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s19-skill-symbol", "name": "Skill resource symbol", "x": 330, "y": 145, "width": 220, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#F5C84C", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 75, "cornerRadii": null},
+        {"id": "s19-prompt-symbol", "name": "Prompt resource symbol", "x": 590, "y": 145, "width": 220, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 5, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#F7F7F5", "fillEnabled": true, "stroke": "#A7ADB7", "strokeWidth": 2, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 18, "cornerRadii": null},
+        {"id": "s19-theme-symbol", "name": "Theme resource symbol", "x": 850, "y": 145, "width": 220, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 6, "visible": true, "locked": false, "animations": [], "type": "circle", "fill": "#FF7A1A", "fillEnabled": true, "stroke": "#F7F7F5", "strokeWidth": 8, "strokePosition": "inside", "donut": 0.48, "sweep": 300, "startAngle": 30},
+        {"id": "s19-resource-labels", "name": "Four resource labels", "x": 62, "y": 315, "width": 1016, "height": 42, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 7, "visible": true, "locked": false, "animations": [], "type": "text", "text": "EXTENSION          SKILL          PROMPT          THEME", "fontFamily": "Arial", "fontSize": 24, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s19-split", "name": "Scope split", "x": 835, "y": 625, "width": 250, "height": 38, "rotation": 90, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s19-split-in", "phase": "enter", "preset": "fade", "startFrame": 748, "durationInFrames": 18, "easing": "ease-out"}],
+      "type": "arrow", "stroke": "#A7ADB7", "strokeWidth": 6, "arrowHeadSize": 30, "arrowStartStyle": "circle", "arrowEndStyle": "triangle"
+    },
+    {
+      "id": "s19-user", "name": "User scope", "x": 240, "y": 720, "width": 620, "height": 160, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s19-user-in", "phase": "enter", "preset": "slide-right", "startFrame": 770, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s19-user-bg", "name": "User scope shape", "x": 0, "y": 0, "width": 620, "height": 160, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#A7ADB7", "strokeWidth": 2, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 80, "cornerRadii": null},
+        {"id": "s19-user-text", "name": "User scope text", "x": 36, "y": 28, "width": 548, "height": 104, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "USER SCOPE\n跨项目复用", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.25, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s19-project", "name": "Project scope", "x": 1060, "y": 720, "width": 620, "height": 160, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s19-project-in", "phase": "enter", "preset": "slide-left", "startFrame": 805, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s19-project-bg", "name": "Project scope shape", "x": 0, "y": 0, "width": 620, "height": 160, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 4, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 22, "cornerRadii": null},
+        {"id": "s19-project-text", "name": "Project scope text", "x": 36, "y": 28, "width": 548, "height": 104, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "PROJECT SCOPE\n仅当前项目", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.25, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    }
+  ]
+}

@@ -12,12 +12,12 @@
     "dev:server": "tsx watch server/index.ts",
     "studio": "remotion studio src/remotion/Studio.tsx",
     "render:project": "tsx scripts/renderProject.ts",
+    "export:html": "tsx scripts/exportHtmlPresentation.ts",
     "parse:srt": "tsx scripts/parseSrt.ts",
     "scaffold": "tsx scripts/scaffoldProject.ts",
     "skeleton": "tsx scripts/buildSceneSkeleton.ts",
     "validate:srt": "tsx scripts/validateSrt.ts",
-    "validate:project": "tsx scripts/validateProject.ts",
-    "migrate:scales": "tsx scripts/migrateScales.ts projects/video001"
+    "validate:project": "tsx scripts/validateProject.ts"
   },
   "dependencies": {
     "@remotion/player": "4.0.504",

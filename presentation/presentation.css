@@ -1,0 +1,148 @@
+:root {
+  color: #f8fafc;
+  background: #0f1115;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+}
+
+.presentation-app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 50% 30%, #242833 0, transparent 42%),
+    #0f1115;
+}
+
+.presentation-header,
+.presentation-controls {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: rgb(15 17 21 / 88%);
+  backdrop-filter: blur(16px);
+}
+
+.presentation-header {
+  justify-content: space-between;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.presentation-header span {
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
+.presentation-stage {
+  display: grid;
+  min-height: 0;
+  padding: 24px;
+  place-items: center;
+  cursor: pointer;
+}
+
+.presentation-player {
+  max-height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, #20242b 25%, transparent 25%),
+    linear-gradient(-45deg, #20242b 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #20242b 75%),
+    linear-gradient(-45deg, transparent 75%, #20242b 75%),
+    #181b20;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+  background-size: 24px 24px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+
+.presentation-controls {
+  justify-content: center;
+  border-top: 1px solid rgb(255 255 255 / 8%);
+}
+
+.presentation-controls button {
+  min-width: 88px;
+  padding: 9px 16px;
+  color: #f8fafc;
+  background: #262b35;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.presentation-controls button:hover:not(:disabled) {
+  background: #333a47;
+}
+
+.presentation-controls button:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.presentation-controls button:disabled {
+  color: #6b7280;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.presentation-error {
+  max-width: 800px;
+  margin: 64px auto;
+  padding: 24px;
+}
+
+.presentation-error pre {
+  overflow: auto;
+  padding: 16px;
+  color: #fecaca;
+  white-space: pre-wrap;
+  background: #211416;
+  border-radius: 8px;
+}
+
+@media (max-width: 640px) {
+  .presentation-header,
+  .presentation-controls {
+    padding: 10px 12px;
+  }
+
+  .presentation-stage {
+    padding: 12px;
+  }
+
+  .presentation-controls button {
+    min-width: 76px;
+    padding-inline: 12px;
+  }
+}

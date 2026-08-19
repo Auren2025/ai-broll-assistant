@@ -24,6 +24,7 @@ export const SubtitleCueListSchema = z
   .min(1)
   .superRefine((cues, context) => {
     const ids = new Set<string>();
+    const indexes = new Set<number>();
 
     cues.forEach((cue, index) => {
       if (ids.has(cue.id)) {
@@ -34,6 +35,47 @@ export const SubtitleCueListSchema = z
         });
       } else {
         ids.add(cue.id);
+      }
+
+      if (indexes.has(cue.index)) {
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate cue index: ${cue.index}`,
+          path: [index, "index"],
+        });
+      } else {
+        indexes.add(cue.index);
+      }
+
+      const previous = cues[index - 1];
+      if (!previous) return;
+
+      if (cue.index <= previous.index) {
+        context.addIssue({
+          code: "custom",
+          message:
+            `Cue index ${cue.index} must be greater than previous cue index ` +
+            `${previous.index}`,
+          path: [index, "index"],
+        });
+      }
+
+      if (cue.startMs < previous.startMs) {
+        context.addIssue({
+          code: "custom",
+          message:
+            `Cue starts at ${cue.startMs}ms before previous cue start ` +
+            `${previous.startMs}ms; cues must be chronological`,
+          path: [index, "startMs"],
+        });
+      } else if (cue.startMs < previous.endMs) {
+        context.addIssue({
+          code: "custom",
+          message:
+            `Cue starts at ${cue.startMs}ms before previous cue ends at ` +
+            `${previous.endMs}ms; overlapping cues are not supported`,
+          path: [index, "startMs"],
+        });
       }
     });
   });

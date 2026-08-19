@@ -59,11 +59,11 @@ export function EditorToolbar({
         <button
           className="editor-tool"
           type="button"
-          title="Add image"
+          title="Add image placeholder"
           onClick={onAddImage}
         >
           <span className="tool-symbol">▣</span>
-          Image
+          Image Frame
         </button>
         <button
           className="editor-tool"

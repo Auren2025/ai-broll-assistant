@@ -14,11 +14,16 @@ function validateSrt(filePath: string): void {
   );
 }
 
-const filePath = process.argv[2] ?? "projects/video001/source.srt";
+const filePath = process.argv[2];
 
-try {
-  validateSrt(filePath);
-} catch (error: unknown) {
-  console.error(error);
+if (!filePath) {
+  console.error("Usage: npm run validate:srt -- projects/<project-id>/source.srt");
   process.exitCode = 1;
+} else {
+  try {
+    validateSrt(filePath);
+  } catch (error: unknown) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }

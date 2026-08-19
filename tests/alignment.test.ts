@@ -55,6 +55,27 @@ function findLayer(scene: Scene, id: string) {
   return layer;
 }
 
+function group(id: string, x: number, y: number, zIndex: number) {
+  return {
+    id,
+    name: id,
+    type: "group",
+    x,
+    y,
+    width: 300,
+    height: 100,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: [rect(`${id}-a`, 0, 0, 0), rect(`${id}-b`, 200, 40, 1)],
+  } as const;
+}
+
 const PROJECT_W = 1920;
 const PROJECT_H = 1080;
 
@@ -264,4 +285,40 @@ test("existing distribute-horizontal still works after refactor (sanity check)",
   assert.equal(findLayer(result, "a").x, 0);
   assert.equal(findLayer(result, "c").x, 600);
   assert.equal(findLayer(result, "b").x, 300);
+});
+
+test("aligning top-level groups updates group positions without changing children", () => {
+  const scene = sceneWith(group("group-1", 100, 100, 0), group("group-2", 500, 300, 1));
+  const beforeChildren = scene.layers.map((layer) =>
+    layer.type === "group" ? layer.children : [],
+  );
+
+  const result = alignSceneLayers(
+    scene,
+    ["group-1", "group-2"],
+    "left",
+    PROJECT_W,
+    PROJECT_H,
+  );
+
+  assert.equal(findLayer(result, "group-1").x, 100);
+  assert.equal(findLayer(result, "group-2").x, 100);
+  assert.deepEqual(
+    result.layers.map((layer) => (layer.type === "group" ? layer.children : [])),
+    beforeChildren,
+  );
+});
+
+test("a top-level group aligns with a top-level atomic layer", () => {
+  const scene = sceneWith(rect("rectangle-1", 50, 0, 0), group("group-1", 500, 100, 1));
+  const result = alignSceneLayers(
+    scene,
+    ["rectangle-1", "group-1"],
+    "right",
+    PROJECT_W,
+    PROJECT_H,
+  );
+
+  assert.equal(findLayer(result, "rectangle-1").x, 700);
+  assert.equal(findLayer(result, "group-1").x, 500);
 });

@@ -1,10 +1,20 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseProject } from "../src/domain/projectSchema";
 import { parseScene } from "../src/domain/sceneSchema";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const PROJECTS_ROOT = resolve("projects");
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
 
 async function scaffold(projectId: string): Promise<void> {
   if (!ID_PATTERN.test(projectId)) {
@@ -13,16 +23,22 @@ async function scaffold(projectId: string): Promise<void> {
 
   const projectDir = resolve(PROJECTS_ROOT, projectId);
 
-  try {
-    await access(projectDir);
-    throw new Error(`Project already exists: ${projectId}`);
-  } catch (error: unknown) {
-    if (error instanceof Error && error.message.startsWith("Project already exists")) {
+  const projectExists = await exists(projectDir);
+  if (projectExists && await exists(resolve(projectDir, "project.json"))) {
+    throw new Error(`Project already initialized: ${projectId}`);
+  }
+
+  if (projectExists) {
+    const existingSceneFiles = await readdir(resolve(projectDir, "scenes"), {
+      withFileTypes: true,
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
-    }
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") {
-      throw error;
+    });
+    if (existingSceneFiles.some((entry) => entry.isFile() && entry.name.endsWith(".json"))) {
+      throw new Error(
+        `Cannot initialize "${projectId}": scenes/ already contains JSON files`,
+      );
     }
   }
 
@@ -44,7 +60,7 @@ async function scaffold(projectId: string): Promise<void> {
     scenes: [{ id: scene.id, file: "scenes/scene-001.json" }],
   });
 
-  await mkdir(projectDir);
+  await mkdir(projectDir, { recursive: true });
   await Promise.all([
     mkdir(resolve(projectDir, "scenes"), { recursive: true }),
     mkdir(resolve(projectDir, "assets"), { recursive: true }),
@@ -52,7 +68,23 @@ async function scaffold(projectId: string): Promise<void> {
     mkdir(resolve(projectDir, "renders"), { recursive: true }),
   ]);
 
-  await writeFile(resolve(projectDir, "source.srt"), "", "utf-8");
+  const sourcePath = resolve(projectDir, "source.srt");
+  if (!await exists(sourcePath)) {
+    const rootEntries = await readdir(projectDir, { withFileTypes: true });
+    const srtFiles = rootEntries.filter(
+      (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".srt"),
+    );
+    if (srtFiles.length > 1) {
+      throw new Error(
+        `Cannot choose source SRT for "${projectId}": found ${srtFiles.length} files`,
+      );
+    }
+    if (srtFiles[0]) {
+      await copyFile(resolve(projectDir, srtFiles[0].name), sourcePath);
+    } else {
+      await writeFile(sourcePath, "", "utf-8");
+    }
+  }
   await writeFile(
     resolve(projectDir, "project.json"),
     `${JSON.stringify(project, null, 2)}\n`,
@@ -64,9 +96,9 @@ async function scaffold(projectId: string): Promise<void> {
     "utf-8",
   );
 
-  console.log(`Scaffolded project "${projectId}" at projects/${projectId}`);
-  console.log("Place the voiceover into projects/<id>/source.srt, then run:");
-  console.log(`  npm run skeleton -- ${projectId}`);
+  console.log(`Initialized project "${projectId}" at projects/${projectId}`);
+  console.log("Confirm source.srt, review the full narration semantically, then replace");
+  console.log("the placeholder scene with the selected B-roll scene plan.");
 }
 
 const projectId = process.argv[2];

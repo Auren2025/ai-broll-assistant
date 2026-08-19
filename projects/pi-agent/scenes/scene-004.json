@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-004",
+  "topic": "本期路线：运行、理解并扩展最小 Agent",
+  "startFrame": 2262,
+  "durationInFrames": 467,
+  "layers": [
+    {
+      "id": "s4-title", "name": "Episode roadmap title", "x": 130, "y": 95, "width": 1660, "height": 100, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s4-title-in", "phase": "enter", "preset": "slide-down", "startFrame": 0, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "text", "text": "这期视频：从 Pi 开始", "fontFamily": "Arial", "fontSize": 66, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s4-step-run", "name": "Roadmap step run", "x": 120, "y": 330, "width": 470, "height": 360, "rotation": -2, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s4-step-run-in", "phase": "enter", "preset": "slide-up", "startFrame": 78, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s4-step-run-bg", "name": "Run step frame", "x": 0, "y": 0, "width": 470, "height": 360, "rotation": 0, "opacity": 0.97, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 7, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 36, "cornerRadii": null},
+        {"id": "s4-step-run-num", "name": "Run step number", "x": 36, "y": 34, "width": 120, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "circle", "fill": "#FF7A1A", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside", "donut": 0, "sweep": 360, "startAngle": 0},
+        {"id": "s4-step-run-num-text", "name": "Run step number text", "x": 36, "y": 34, "width": 120, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "01", "fontFamily": "Arial", "fontSize": 54, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#111318", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s4-step-run-copy", "name": "Run step label", "x": 42, "y": 190, "width": 386, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false, "animations": [], "type": "text", "text": "RUN\n跑起来", "fontFamily": "Arial", "fontSize": 50, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1.18, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s4-arrow-one", "name": "Roadmap arrow one", "x": 605, "y": 480, "width": 130, "height": 60, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s4-arrow-one-in", "phase": "enter", "preset": "slide-right", "startFrame": 126, "durationInFrames": 18, "easing": "ease-out"}],
+      "type": "arrow", "stroke": "#FF7A1A", "strokeWidth": 13, "arrowHeadSize": 46, "arrowStartStyle": "none", "arrowEndStyle": "triangle"
+    },
+    {
+      "id": "s4-step-understand", "name": "Roadmap step understand", "x": 725, "y": 290, "width": 470, "height": 400, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s4-step-understand-in", "phase": "enter", "preset": "scale", "startFrame": 150, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s4-step-understand-bg", "name": "Understand step frame", "x": 0, "y": 0, "width": 470, "height": 400, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#F7F7F5", "strokeWidth": 7, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 42, "cornerRadii": null},
+        {"id": "s4-step-understand-num", "name": "Understand step number", "x": 36, "y": 34, "width": 120, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "circle", "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside", "donut": 0, "sweep": 360, "startAngle": 0},
+        {"id": "s4-step-understand-num-text", "name": "Understand step number text", "x": 36, "y": 34, "width": 120, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "02", "fontFamily": "Arial", "fontSize": 54, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#12315B", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s4-step-understand-copy", "name": "Understand step label", "x": 42, "y": 205, "width": 386, "height": 135, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false, "animations": [], "type": "text", "text": "UNDERSTAND\n拆开结构", "fontFamily": "Arial", "fontSize": 46, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1.2, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s4-arrow-two", "name": "Roadmap arrow two", "x": 1205, "y": 480, "width": 130, "height": 60, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s4-arrow-two-in", "phase": "enter", "preset": "slide-right", "startFrame": 282, "durationInFrames": 18, "easing": "ease-out"}],
+      "type": "arrow", "stroke": "#F5C84C", "strokeWidth": 13, "arrowHeadSize": 46, "arrowStartStyle": "none", "arrowEndStyle": "triangle"
+    },
+    {
+      "id": "s4-step-expand", "name": "Roadmap step expand", "x": 1330, "y": 330, "width": 470, "height": 360, "rotation": 2, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 5, "visible": true, "locked": false,
+      "animations": [{"id": "s4-step-expand-in", "phase": "enter", "preset": "slide-up", "startFrame": 306, "durationInFrames": 24, "easing": "ease-out"}, {"id": "s4-step-expand-em", "phase": "emphasis", "preset": "scale", "startFrame": 390, "durationInFrames": 24, "easing": "ease-in-out"}],
+      "type": "group", "children": [
+        {"id": "s4-step-expand-bg", "name": "Expand step frame", "x": 0, "y": 0, "width": 470, "height": 360, "rotation": 0, "opacity": 0.97, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#F5C84C", "strokeWidth": 7, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 36, "cornerRadii": null},
+        {"id": "s4-step-expand-num", "name": "Expand step number", "x": 36, "y": 34, "width": 120, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "circle", "fill": "#F5C84C", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside", "donut": 0, "sweep": 360, "startAngle": 0},
+        {"id": "s4-step-expand-num-text", "name": "Expand step number text", "x": 36, "y": 34, "width": 120, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "03", "fontFamily": "Arial", "fontSize": 54, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#111318", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s4-step-expand-copy", "name": "Expand step label", "x": 42, "y": 190, "width": 386, "height": 120, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false, "animations": [], "type": "text", "text": "EXPAND\n增加能力", "fontFamily": "Arial", "fontSize": 50, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1.18, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    }
+  ]
+}

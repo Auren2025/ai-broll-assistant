@@ -20,9 +20,12 @@ test("contiguous timeline has no issues", () => {
   assert.deepEqual(issues, []);
 });
 
-test("first scene not at frame 0 is an error", () => {
-  const issues = validateSceneTimeline([scene("a", 30, 100)]);
-  assert.ok(issues.some((i) => i.severity === "error"));
+test("leading gap is a warning by default and an error in strict mode", () => {
+  const timeline = [scene("a", 30, 100)];
+  const defaultIssues = validateSceneTimeline(timeline);
+  const strictIssues = validateSceneTimeline(timeline, { strict: true });
+  assert.ok(defaultIssues.some((i) => i.severity === "warning" && /transparent/i.test(i.message)));
+  assert.ok(strictIssues.some((i) => i.severity === "error" && /transparent/i.test(i.message)));
 });
 
 test("overlap is an error", () => {

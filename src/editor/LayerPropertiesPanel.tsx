@@ -3,6 +3,7 @@ import type { ZOrderAction } from "../domain/groupOperations";
 import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
+import type { ShapeText } from "../domain/shapeTextSchema";
 import {
   ABUTMENT_BUTTONS,
   ALIGNMENT_BUTTONS,
@@ -45,7 +46,9 @@ export type EditableLayerPatch = Partial<{
   arrowHeadSize: number;
   arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
   arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
-  src: string;
+  src: string | null;
+  fit: "fill" | "contain";
+  shapeText: ShapeText;
 }>;
 
 interface LayerPropertiesPanelProps {
@@ -306,6 +309,35 @@ function SegmentedControl<T extends string>({
   );
 }
 
+function ShapeTextControls({
+  value,
+  onChange,
+}: {
+  value: ShapeText;
+  onChange: (value: ShapeText) => void;
+}) {
+  const patch = (next: Partial<ShapeText>) => onChange({ ...value, ...next });
+  return (
+    <section className="layer-design-section layer-text-section">
+      <h4>Shape Text</h4>
+      <label className="layer-design-row"><span>Content</span><textarea aria-label="Shape text content" value={value.text} onChange={(event) => patch({ text: event.currentTarget.value })} /></label>
+      <label className="layer-design-row"><span>Font Family</span><select aria-label="Shape text font family" value={value.fontFamily} onChange={(event) => patch({ fontFamily: event.currentTarget.value })}><option>Arial</option><option>Inter</option><option>Montserrat</option><option>Helvetica</option><option>Georgia</option><option>Courier New</option></select></label>
+      <label className="layer-design-row"><span>Style</span><select aria-label="Shape text style" value={`${value.fontStyle}-${value.fontWeight}`} onChange={(event) => { const [fontStyle, weight] = event.currentTarget.value.split("-"); patch({ fontStyle: fontStyle as ShapeText["fontStyle"], fontWeight: Number(weight) }); }}><option value="normal-400">Regular 400</option><option value="italic-400">Italic 400</option><option value="normal-500">Medium 500</option><option value="normal-600">Semi Bold 600</option><option value="normal-700">Bold 700</option><option value="normal-800">Extra Bold 800</option></select></label>
+      <div className="layer-design-row"><span>Size</span><div className="layer-full-input"><BufferedNumberInput min="1" aria-label="Shape text font size" value={value.fontSize} onValueChange={(fontSize) => patch({ fontSize: Math.max(1, fontSize) })} /></div></div>
+      <div className="layer-design-row"><span>Text align</span><SegmentedControl value={value.textAlign} label="Shape text align" options={[{ value: "left", label: "Left aligned", icon: "≡" }, { value: "center", label: "Center aligned", icon: "≡" }, { value: "right", label: "Right aligned", icon: "≡" }]} onChange={(textAlign) => patch({ textAlign })} /></div>
+      <div className="layer-design-row"><span>Vertical align</span><SegmentedControl value={value.verticalAlign} label="Shape text vertical align" options={[{ value: "top", label: "Top", icon: "⊤" }, { value: "middle", label: "Middle", icon: "↕" }, { value: "bottom", label: "Bottom", icon: "⊥" }]} onChange={(verticalAlign) => patch({ verticalAlign })} /></div>
+      <div className="layer-design-row"><span>Line height</span><div className="layer-single-input layer-wide-input"><BufferedNumberInput min="1" aria-label="Shape text line height" value={Math.round(value.lineHeight * 100)} onValueChange={(lineHeight) => patch({ lineHeight: Math.max(0.01, lineHeight / 100) })} /><span>%</span></div></div>
+      <div className="layer-design-row"><span>Letter spacing</span><div className="layer-single-input layer-wide-input"><BufferedNumberInput aria-label="Shape text letter spacing" value={value.letterSpacing} onValueChange={(letterSpacing) => patch({ letterSpacing })} /><span>px</span></div></div>
+      <div className="layer-design-row"><span>Case</span><SegmentedControl value={value.textCase} label="Shape text case" options={[{ value: "normal", label: "Normal", icon: "Aa" }, { value: "uppercase", label: "Uppercase", icon: "AA" }, { value: "lowercase", label: "Lowercase", icon: "aa" }]} onChange={(textCase) => patch({ textCase })} /></div>
+      <div className="layer-design-row"><span>Padding</span><div className="layer-full-input"><BufferedNumberInput min="0" aria-label="Shape text padding" value={value.padding} onValueChange={(padding) => patch({ padding: Math.max(0, padding) })} /></div></div>
+      <label className="layer-design-row layer-checkbox-row"><span>Fill</span><input type="checkbox" aria-label="Enable shape text fill" checked={value.fillEnabled} onChange={(event) => patch({ fillEnabled: event.currentTarget.checked })} /></label>
+      <div className="layer-design-row"><span>Text fill</span><ColorControl value={value.fill} label="Shape text fill" onChange={(fill) => patch({ fill })} /></div>
+      <div className="layer-design-row"><span>Text stroke</span><ColorControl value={value.stroke ?? "#000000"} label="Shape text stroke" onChange={(stroke) => patch({ stroke })} /></div>
+      <div className="layer-design-row"><span>Stroke width</span><div className="layer-full-input"><BufferedNumberInput min="0" aria-label="Shape text stroke width" value={value.strokeWidth} onValueChange={(strokeWidth) => patch({ strokeWidth: Math.max(0, strokeWidth), stroke: strokeWidth > 0 ? (value.stroke ?? "#000000") : value.stroke })} /></div></div>
+    </section>
+  );
+}
+
 export function LayerPropertiesPanel({
   layer,
   onPatch,
@@ -323,6 +355,7 @@ export function LayerPropertiesPanel({
   const isTriangle = layer.type === "triangle";
   const isImage = layer.type === "image";
   const isGroup = layer.type === "group";
+  const shapeText = isRectangle || isCircle ? layer.shapeText : null;
   const hasFill = isText || isRectangle || isCircle || layer.type === "triangle";
   const hasStroke = !isGroup;
   const stroke = isGroup ? null : layer.stroke;
@@ -394,8 +427,8 @@ export function LayerPropertiesPanel({
       {isCircle ? (
         <section className="layer-design-section">
           <h4>Ellipse</h4>
-          <div className="layer-design-row"><span>Donut</span><div className="layer-single-input"><BufferedNumberInput min="0" max="100" aria-label="Ellipse donut" value={Math.round(layer.donut * 100)} onValueChange={(value) => onPatch({ donut: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div></div>
-          <div className="layer-design-row"><span>Sweep</span><div className="layer-single-input"><BufferedNumberInput min="0" max="100" aria-label="Ellipse sweep" value={Math.round((layer.sweep / 360) * 100)} onValueChange={(value) => onPatch({ sweep: Math.min(360, Math.max(0, value * 3.6)) })} /><span>%</span></div></div>
+          <div className="layer-design-row"><span>Donut</span><div className="layer-single-input"><BufferedNumberInput min="0" max="100" disabled={layer.shapeText.text.trim().length > 0} aria-label="Ellipse donut" value={Math.round(layer.donut * 100)} onValueChange={(value) => onPatch({ donut: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div></div>
+          <div className="layer-design-row"><span>Sweep</span><div className="layer-single-input"><BufferedNumberInput min="0" max="100" disabled={layer.shapeText.text.trim().length > 0} aria-label="Ellipse sweep" value={Math.round((layer.sweep / 360) * 100)} onValueChange={(value) => onPatch({ sweep: Math.min(360, Math.max(0, value * 3.6)) })} /><span>%</span></div></div>
           <div className="layer-design-row"><span>Start angle</span><div className="layer-single-input"><BufferedNumberInput aria-label="Ellipse start angle" value={layer.startAngle} onValueChange={(value) => onPatch({ startAngle: value })} /><span>°</span></div></div>
         </section>
       ) : null}
@@ -415,6 +448,10 @@ export function LayerPropertiesPanel({
           <label className="layer-design-row layer-checkbox-row"><span>Kerning pairs</span><input type="checkbox" aria-label="Kerning pairs" checked={layer.kerningPairs} onChange={(event) => onPatch({ kerningPairs: event.currentTarget.checked })} /></label>
           <label className="layer-design-row layer-checkbox-row"><span>Ligatures</span><input type="checkbox" aria-label="Ligatures" checked={layer.ligatures} onChange={(event) => onPatch({ ligatures: event.currentTarget.checked })} /></label>
         </section>
+      ) : null}
+
+      {shapeText && (isRectangle || (isCircle && layer.donut === 0 && layer.sweep === 360)) ? (
+        <ShapeTextControls value={shapeText} onChange={(nextShapeText) => onPatch({ shapeText: nextShapeText })} />
       ) : null}
 
       <section className="layer-design-section layer-opacity-section">
@@ -456,13 +493,24 @@ export function LayerPropertiesPanel({
               />
             </div>
           </div>
-          <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src}</strong></div>
+          <label className="layer-design-row">
+            <span>Fit</span>
+            <select
+              aria-label="Image fit"
+              value={layer.fit}
+              onChange={(event) => onPatch({ fit: event.currentTarget.value as "fill" | "contain" })}
+            >
+              <option value="contain">Contain</option>
+              <option value="fill">Fill</option>
+            </select>
+          </label>
+          <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src ?? "Not loaded"}</strong></div>
           <button
             type="button"
             className="layer-image-replace"
             onClick={onReplaceImage}
           >
-            Replace image…
+            {layer.src === null ? "Load image…" : "Replace image…"}
           </button>
         </section>
       ) : null}

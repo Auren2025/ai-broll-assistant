@@ -1,8 +1,9 @@
-import type { TextLayer } from "./textLayerSchema";
+import type { TextCaseSchema } from "./shapeTextSchema";
+import type { z } from "zod";
 
 export function applyTextCase(
   text: string,
-  textCase: TextLayer["textCase"],
+  textCase: z.infer<typeof TextCaseSchema>,
 ): string {
   switch (textCase) {
     case "uppercase":

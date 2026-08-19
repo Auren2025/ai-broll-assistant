@@ -8,6 +8,7 @@ import { LOCAL_API_BASE } from "../api/localService";
 import { parseProject, type Project } from "../domain/projectSchema";
 import { parseScene, type Scene } from "../domain/sceneSchema";
 import { ProjectComposition } from "./ProjectComposition";
+import { resolveInteractivePlaybackPolicy } from "./renderPolicy";
 
 const DEFAULT_PROJECT_ID = "video001";
 const COMPOSITION_ID = "Video001";
@@ -17,6 +18,8 @@ interface StudioProps extends Record<string, unknown> {
   projectId: string;
   project: Project;
   scenes: Scene[];
+  includeAudio: boolean;
+  previewBackdrop: boolean;
 }
 
 function resolveProjectId(): string {
@@ -78,12 +81,14 @@ const studioCalculateMetadata: CalculateMetadataFunction<StudioProps> =
         ? props.projectId
         : resolveProjectId();
     const { project, scenes } = await loadProjectFromLocalApi(projectId);
+    const playbackPolicy = resolveInteractivePlaybackPolicy(props);
 
     return {
       props: {
         projectId,
         project,
         scenes,
+        ...playbackPolicy,
       },
       width: project.width,
       height: project.height,
@@ -108,6 +113,8 @@ const defaultProps: StudioProps = {
     scenes: [],
   },
   scenes: [],
+  includeAudio: true,
+  previewBackdrop: true,
 };
 
 function RemotionRoot() {

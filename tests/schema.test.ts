@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseProject } from "../src/domain/projectSchema";
 import { parseScene } from "../src/domain/sceneSchema";
+import { DEFAULT_SHAPE_TEXT } from "../src/domain/shapeTextSchema";
 
 function rectLayer(id: string, zIndex: number) {
   return {
@@ -31,6 +32,32 @@ function rectLayer(id: string, zIndex: number) {
   };
 }
 
+function imageLayer(src: string | null, fit?: "fill" | "contain") {
+  return {
+    id: "image-1",
+    name: "Image",
+    type: "image",
+    x: 0,
+    y: 0,
+    width: 640,
+    height: 360,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    src,
+    ...(fit ? { fit } : {}),
+    cornerRadius: 0,
+    stroke: null,
+    strokeWidth: 0,
+    strokePosition: "inside",
+  };
+}
+
 test("parseScene accepts a valid scene with a rectangle layer", () => {
   const scene = parseScene({
     schemaVersion: 1,
@@ -41,6 +68,53 @@ test("parseScene accepts a valid scene with a rectangle layer", () => {
     layers: [rectLayer("rectangle-1", 0)],
   });
   assert.equal(scene.layers.length, 1);
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "rectangle");
+  if (layer.type === "rectangle") assert.deepEqual(layer.shapeText, DEFAULT_SHAPE_TEXT);
+});
+
+test("parseScene accepts nested shape text without layer-only fields", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [{ ...rectLayer("rectangle-1", 0), shapeText: { ...DEFAULT_SHAPE_TEXT, text: "Hello" } }],
+  });
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "rectangle");
+  if (layer.type === "rectangle") assert.equal(layer.shapeText.text, "Hello");
+  assert.throws(() => parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [{ ...rectLayer("rectangle-1", 0), shapeText: { ...DEFAULT_SHAPE_TEXT, text: "Hello", id: "not-a-layer" } }],
+  }));
+});
+
+test("parseScene rejects effective text on a donut or partial circle", () => {
+  const circle = {
+    ...rectLayer("circle-1", 0),
+    type: "circle",
+    donut: 0.25,
+    sweep: 360,
+    startAngle: 0,
+    shapeText: { ...DEFAULT_SHAPE_TEXT, text: "Invalid" },
+  };
+  delete (circle as Partial<typeof circle>).cornerEnabled;
+  delete (circle as Partial<typeof circle>).cornerRadius;
+  delete (circle as Partial<typeof circle>).cornerRadii;
+  assert.throws(() => parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [circle],
+  }), /requires donut=0 and sweep=360/);
 });
 
 test("parseScene rejects duplicate layer ids", () => {
@@ -79,6 +153,50 @@ test("parseScene rejects an animation past the scene duration", () => {
           ],
         },
       ],
+    }),
+  );
+});
+
+test("parseScene accepts an unfilled image placeholder", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [imageLayer(null, "contain")],
+  });
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "image");
+  if (layer.type !== "image") return;
+  assert.equal(layer.src, null);
+  assert.equal(layer.fit, "contain");
+});
+
+test("parseScene keeps legacy image stretching when fit is absent", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [imageLayer("assets/example.png")],
+  });
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "image");
+  if (layer.type !== "image") return;
+  assert.equal(layer.fit, "fill");
+});
+
+test("parseScene rejects an image source outside assets", () => {
+  assert.throws(() =>
+    parseScene({
+      schemaVersion: 1,
+      id: "scene-001",
+      topic: "t",
+      startFrame: 0,
+      durationInFrames: 100,
+      layers: [imageLayer("../example.png", "contain")],
     }),
   );
 });

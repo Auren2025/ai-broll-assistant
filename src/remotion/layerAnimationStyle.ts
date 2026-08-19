@@ -202,19 +202,17 @@ function getPhaseAnimationStyle(
 
   const resolvedEasing = resolveEasing(animation.easing);
 
-  const progress = interpolate(
-    frame,
-    [
-      animation.startFrame,
-      animation.startFrame + animation.durationInFrames,
-    ],
-    [0, 1],
-    {
-      easing: resolvedEasing,
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    },
-  );
+  const finalFrame = animation.startFrame + animation.durationInFrames - 1;
+  const progress =
+    animation.durationInFrames === 1
+      ? frame < animation.startFrame
+        ? 0
+        : 1
+      : interpolate(frame, [animation.startFrame, finalFrame], [0, 1], {
+          easing: resolvedEasing,
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
 
   switch (phase) {
     case "enter":

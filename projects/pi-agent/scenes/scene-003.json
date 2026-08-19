@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-003",
+  "topic": "从 Pi Core 向完整 Agent 能力图景扩展",
+  "startFrame": 1773,
+  "durationInFrames": 489,
+  "layers": [
+    {
+      "id": "s3-core", "name": "Pi core anchor", "x": 680, "y": 300, "width": 560, "height": 280, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s3-core-in", "phase": "enter", "preset": "scale", "startFrame": 0, "durationInFrames": 24, "easing": "ease-out"}, {"id": "s3-core-em", "phase": "emphasis", "preset": "scale", "startFrame": 132, "durationInFrames": 24, "easing": "ease-in-out"}],
+      "type": "group", "children": [
+        {"id": "s3-core-bg", "name": "Pi core body", "x": 0, "y": 0, "width": 560, "height": 280, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 8, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 54, "cornerRadii": null},
+        {"id": "s3-core-title", "name": "Pi core title", "x": 55, "y": 54, "width": 450, "height": 88, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "Pi CORE", "fontFamily": "Arial", "fontSize": 72, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 3, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s3-core-copy", "name": "Minimum viable agent", "x": 55, "y": 165, "width": 450, "height": 60, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "最小可用 AGENT", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 700, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 2, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#A7ADB7", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s3-cap-skill", "name": "Skill capability", "x": 130, "y": 120, "width": 420, "height": 135, "rotation": -4, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s3-cap-skill-in", "phase": "enter", "preset": "slide-right", "startFrame": 136, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s3-cap-skill-bg", "name": "Skill capability frame", "x": 0, "y": 0, "width": 420, "height": 135, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s3-cap-skill-copy", "name": "Skill capability label", "x": 35, "y": 28, "width": 350, "height": 79, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "SKILL\n做事方法", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s3-cap-tools", "name": "Tools capability", "x": 1370, "y": 120, "width": 420, "height": 135, "rotation": 4, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s3-cap-tools-in", "phase": "enter", "preset": "slide-left", "startFrame": 155, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s3-cap-tools-bg", "name": "Tools capability frame", "x": 0, "y": 0, "width": 420, "height": 135, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s3-cap-tools-copy", "name": "Tools capability label", "x": 35, "y": 28, "width": 350, "height": 79, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "TOOLS\n执行能力", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s3-cap-memory", "name": "Memory capability", "x": 100, "y": 650, "width": 420, "height": 135, "rotation": 4, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s3-cap-memory-in", "phase": "enter", "preset": "slide-right", "startFrame": 174, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s3-cap-memory-bg", "name": "Memory capability frame", "x": 0, "y": 0, "width": 420, "height": 135, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s3-cap-memory-copy", "name": "Memory capability label", "x": 35, "y": 28, "width": 350, "height": 79, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "MEMORY\n长期记忆", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s3-cap-planning", "name": "Planning capability", "x": 750, "y": 705, "width": 420, "height": 135, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s3-cap-planning-in", "phase": "enter", "preset": "slide-up", "startFrame": 193, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s3-cap-planning-bg", "name": "Planning capability frame", "x": 0, "y": 0, "width": 420, "height": 135, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#F5C84C", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s3-cap-planning-copy", "name": "Planning capability label", "x": 35, "y": 28, "width": 350, "height": 79, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "PLANNING\n任务规划", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s3-cap-subagent", "name": "Subagent capability", "x": 1400, "y": 650, "width": 420, "height": 135, "rotation": -4, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 5, "visible": true, "locked": false,
+      "animations": [{"id": "s3-cap-subagent-in", "phase": "enter", "preset": "slide-left", "startFrame": 212, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s3-cap-subagent-bg", "name": "Subagent capability frame", "x": 0, "y": 0, "width": 420, "height": 135, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s3-cap-subagent-copy", "name": "Subagent capability label", "x": 35, "y": 28, "width": 350, "height": 79, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "SUBAGENT\n并行协作", "fontFamily": "Arial", "fontSize": 34, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s3-expansion-label", "name": "Expansion conclusion", "x": 600, "y": 82, "width": 720, "height": 92, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 6, "visible": true, "locked": false,
+      "animations": [{"id": "s3-expansion-label-in", "phase": "enter", "preset": "fade", "startFrame": 265, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "text", "text": "从最小内核，向外扩展", "fontFamily": "Arial", "fontSize": 46, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F5C84C", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    }
+  ]
+}

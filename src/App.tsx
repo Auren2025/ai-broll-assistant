@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { PlayerRef } from "@remotion/player";
 import "./App.css";
 import {
   createScene,
@@ -21,6 +22,7 @@ import {
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
+import { DEFAULT_SHAPE_TEXT } from "./domain/shapeTextSchema";
 import {
   canFlattenGroup,
   cloneLayersToTop,
@@ -74,7 +76,8 @@ type InspectorTab = "design" | "animate";
 type InspectorScope = "scene" | "layer";
 type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "arrow";
 
-const MAX_IMAGE_DIMENSION = 1280;
+const DEFAULT_IMAGE_PLACEHOLDER_WIDTH = 640;
+const DEFAULT_IMAGE_PLACEHOLDER_HEIGHT = 360;
 
 interface EditorSnapshot {
   project: Project;
@@ -93,24 +96,22 @@ function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-function buildImageLayer(
+function buildImagePlaceholderLayer(
   project: Project,
   scene: Scene,
-  src: string,
-  naturalWidth: number,
-  naturalHeight: number,
   id: string,
 ): Layer {
   const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
-  const fitted = scaleToFit(naturalWidth, naturalHeight, MAX_IMAGE_DIMENSION);
+  const width = Math.min(DEFAULT_IMAGE_PLACEHOLDER_WIDTH, project.width);
+  const height = Math.min(DEFAULT_IMAGE_PLACEHOLDER_HEIGHT, project.height);
   return {
     id,
-    name: "Image",
+    name: "Image placeholder",
     type: "image",
-    x: (project.width - fitted.width) / 2,
-    y: (project.height - fitted.height) / 2,
-    width: fitted.width,
-    height: fitted.height,
+    x: (project.width - width) / 2,
+    y: (project.height - height) / 2,
+    width,
+    height,
     rotation: 0,
     opacity: 1,
     opacityEnabled: true,
@@ -119,7 +120,8 @@ function buildImageLayer(
     visible: true,
     locked: false,
     animations: [],
-    src,
+    src: null,
+    fit: "contain",
     cornerRadius: 0,
     stroke: null,
     strokeWidth: 0,
@@ -205,37 +207,6 @@ function makeLayerIdGenerator(
   };
 }
 
-function readImageDimensions(
-  src: string,
-): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const image = new window.Image();
-    image.onload = () => {
-      resolve({
-        width: image.naturalWidth || image.width,
-        height: image.naturalHeight || image.height,
-      });
-    };
-    image.onerror = () => reject(new Error("Failed to read image dimensions"));
-    image.src = src;
-  });
-}
-
-function scaleToFit(
-  width: number,
-  height: number,
-  maximum: number,
-): { width: number; height: number } {
-  if (width <= 0 || height <= 0) {
-    return { width: maximum, height: maximum };
-  }
-  const ratio = Math.min(maximum / width, maximum / height, 1);
-  return {
-    width: Math.max(1, Math.round(width * ratio)),
-    height: Math.max(1, Math.round(height * ratio)),
-  };
-}
-
 function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -259,6 +230,7 @@ function App() {
   );
   const [isTimelineResizing, setIsTimelineResizing] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [previewFrame, setPreviewFrame] = useState(0);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const BASE_CANVAS_SCALE = 0.5;
   const MIN_CANVAS_ZOOM = 0.5;
@@ -292,6 +264,7 @@ function App() {
   const [historyCanRedo, setHistoryCanRedo] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
+  const previewPlayerRef = useRef<PlayerRef | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);
   const replaceImageTargetIdRef = useRef<string | null>(null);
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
@@ -1005,14 +978,21 @@ function App() {
     if (!groupId) return;
     const group = findLayerById(scene.layers, groupId);
     if (!group || group.type !== "group") return;
-    if (!canFlattenGroup(group)) {
+    if (!canFlattenGroup(group, true)) {
       setSceneError(
-        "Remove the group animation or opacity before ungrouping",
+        "Remove the group opacity before ungrouping",
       );
       setContextMenu(null);
       return;
     }
-    const updatedScene = ungroupLayer(scene, groupId);
+    if (
+      group.animations.length > 0 &&
+      !window.confirm("Ungrouping will remove the group animation. Continue?")
+    ) {
+      setContextMenu(null);
+      return;
+    }
+    const updatedScene = ungroupLayer(scene, groupId, true);
     if (!updatedScene) return;
     handleSceneChange(updatedScene);
     setSelectedLayerIds(group.children.map((child) => child.id));
@@ -1334,6 +1314,7 @@ function App() {
             cornerEnabled: true,
             cornerRadius: 0,
             cornerRadii: null,
+            shapeText: { ...DEFAULT_SHAPE_TEXT },
           };
         case "circle":
           return {
@@ -1360,6 +1341,7 @@ function App() {
             donut: 0,
             sweep: 360,
             startAngle: 0,
+            shapeText: { ...DEFAULT_SHAPE_TEXT },
           };
         case "triangle":
           return {
@@ -1427,9 +1409,16 @@ function App() {
     if (!project || !scene || isUploadingImage) {
       return;
     }
-    replaceImageTargetIdRef.current = null;
-    imageFileInputRef.current?.click();
-  }, [isUploadingImage, project, scene]);
+    const id = getNextLayerId(scene.layers, "image");
+    const layer = buildImagePlaceholderLayer(project, scene, id);
+    setSelectedLayerIds([layer.id]);
+    setSelectedAnimationId(null);
+    setInspectorScope("layer");
+    handleSceneChange({
+      ...scene,
+      layers: [...scene.layers, layer],
+    });
+  }, [handleSceneChange, isUploadingImage, project, scene]);
 
   const handleImageFileChange = useCallback(
     async (event: ReactChangeEvent<HTMLInputElement>) => {
@@ -1446,61 +1435,29 @@ function App() {
       const replaceTargetId = replaceImageTargetIdRef.current;
       replaceImageTargetIdRef.current = null;
       try {
-        const asset = await uploadImageAsset(project.id, file, file.name);
-        const dataUrl = URL.createObjectURL(file);
-        let dimensions: { width: number; height: number };
-        try {
-          dimensions = await readImageDimensions(dataUrl);
-        } finally {
-          URL.revokeObjectURL(dataUrl);
+        if (!replaceTargetId) {
+          throw new Error("Select an image placeholder before loading an image");
         }
-        const fitted = scaleToFit(
-          dimensions.width,
-          dimensions.height,
-          MAX_IMAGE_DIMENSION,
-        );
-
-        if (replaceTargetId) {
-          const target = findLayerById(scene.layers, replaceTargetId);
-          if (!target || target.type !== "image") {
-            setImageUploadError("The selected layer is no longer an image");
-            return;
-          }
-          const updatedLayers = updateLayerById(
-            scene.layers,
-            replaceTargetId,
-            (layer) => {
-              if (layer.type !== "image") {
-                return layer;
-              }
-              return {
-                ...layer,
-                src: asset.src,
-                width: fitted.width,
-                height: fitted.height,
-              };
-            },
-          );
-          handleSceneChange({ ...scene, layers: updatedLayers });
+        const target = findLayerById(scene.layers, replaceTargetId);
+        if (!target || target.type !== "image") {
+          setImageUploadError("The selected layer is no longer an image");
           return;
         }
-
-        const id = getNextLayerId(scene.layers, "image");
-        const layer = buildImageLayer(
-          project,
-          scene,
-          asset.src,
-          dimensions.width,
-          dimensions.height,
-          id,
+        const asset = await uploadImageAsset(project.id, file, file.name);
+        const updatedLayers = updateLayerById(
+          scene.layers,
+          replaceTargetId,
+          (layer) => {
+            if (layer.type !== "image") {
+              return layer;
+            }
+            return {
+              ...layer,
+              src: asset.src,
+            };
+          },
         );
-        setSelectedLayerIds([layer.id]);
-        setSelectedAnimationId(null);
-        setInspectorScope("layer");
-        handleSceneChange({
-          ...scene,
-          layers: [...scene.layers, layer],
-        });
+        handleSceneChange({ ...scene, layers: updatedLayers });
       } catch (error: unknown) {
         setImageUploadError(getErrorMessage(error));
         setSceneError(getErrorMessage(error));
@@ -1693,9 +1650,30 @@ function App() {
         return;
       }
       const target = findLayerById(scene.layers, layerId);
-      if (!target || target.type !== "text" || target.locked) {
-        return;
-      }
+       const parentGroup = findParentGroup(scene.layers, layerId);
+       if (
+         !target ||
+         (target.type !== "text" &&
+           target.type !== "rectangle" &&
+           target.type !== "circle") ||
+         target.locked ||
+         parentGroup?.locked
+       ) {
+         return;
+       }
+       if (target.type !== "text") {
+         if (target.type === "circle" && (target.donut !== 0 || target.sweep !== 360)) {
+           return;
+         }
+         if (target.shapeText.text === text) return;
+         const updatedLayers = updateLayerById(scene.layers, layerId, (layer) =>
+           layer.type === "rectangle" || layer.type === "circle"
+             ? { ...layer, shapeText: { ...layer.shapeText, text } }
+             : layer,
+         );
+         handleSceneChange({ ...scene, layers: updatedLayers });
+         return;
+       }
       const nextWidth = Math.max(1, Math.ceil(width));
       const nextHeight = Math.max(1, Math.ceil(height));
       if (
@@ -1878,6 +1856,15 @@ function App() {
     setIsPreviewMode((current) => !current);
   }, []);
 
+  const handlePreviewFrameChange = useCallback((frame: number) => {
+    setPreviewFrame(frame);
+  }, []);
+
+  const handlePreviewSeek = useCallback((frame: number) => {
+    previewPlayerRef.current?.seekTo(frame);
+    setPreviewFrame(frame);
+  }, []);
+
   const handleOpenPreviewWindow = useCallback(() => {
     const existingPreview = previewWindowRef.current;
 
@@ -1944,7 +1931,7 @@ function App() {
       (layer) => layer.type !== "group" && !layer.locked,
     );
   const canUngroup =
-    selectedLayer?.type === "group" && canFlattenGroup(selectedLayer);
+    selectedLayer?.type === "group" && canFlattenGroup(selectedLayer, true);
   const isGroupSelected = selectedLayer?.type === "group";
   const canOpenLayerContextMenu = selectedLayerIds.length > 0;
 
@@ -2135,6 +2122,8 @@ function App() {
                     projectHeight={project.height}
                     fps={project.fps}
                     displayScale={0.5}
+                    playerRef={previewPlayerRef}
+                    onFrameChange={handlePreviewFrameChange}
                   />
                 ) : (
                   <FabricSceneCanvas
@@ -2213,6 +2202,9 @@ function App() {
             fps={project.fps}
             selectedLayerId={selectedLayerId}
             selectedAnimationId={selectedAnimationId}
+            isPreviewMode={isPreviewMode}
+            currentFrame={previewFrame}
+            onSeek={handlePreviewSeek}
             onAnimationSelect={handleAnimationSelect}
             onAnimationTimingChange={handleAnimationTimingChange}
           />

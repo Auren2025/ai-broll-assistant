@@ -2,9 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseScene, type Layer, type Scene } from "../src/domain/sceneSchema";
 import {
+  canFlattenGroup,
   cloneLayersToTop,
   duplicateSelectedLayers,
+  makeGroup,
   reorderSelectedLayersZIndex,
+  ungroupLayer,
 } from "../src/domain/groupOperations";
 
 function rect(id: string, x: number, y: number, zIndex: number) {
@@ -126,4 +129,72 @@ test("pasting layers on top applies the offset and is schema-valid", () => {
   assert.equal(pasted.x, 224);
   assert.equal(pasted.y, 24);
   assert.equal(pasted.zIndex, 2);
+});
+
+test("grouping removes the original layer animations", () => {
+  const animation = {
+    id: "enter-1",
+    phase: "enter",
+    preset: "fade",
+    startFrame: 0,
+    durationInFrames: 20,
+    easing: "ease-out",
+  } as const;
+  const first = { ...rect("rectangle-1", 0, 0, 0), animations: [animation] };
+  const second = { ...rect("rectangle-2", 200, 0, 1), animations: [animation] };
+  const scene = sceneWith(first, second);
+
+  const next = makeGroup(
+    scene,
+    ["rectangle-1", "rectangle-2"],
+    "group-1",
+    "Group 1",
+  );
+
+  assert.ok(next);
+  parseScene(next);
+  const group = next.layers[0];
+  assert.ok(group?.type === "group");
+  assert.deepEqual(group.children.map((child) => child.animations), [[], []]);
+});
+
+test("animated groups require explicit animation removal before ungrouping", () => {
+  const group = {
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    x: 100,
+    y: 100,
+    width: 300,
+    height: 60,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [{
+      id: "group-enter",
+      phase: "enter",
+      preset: "scale",
+      startFrame: 0,
+      durationInFrames: 20,
+      easing: "ease-out",
+    }],
+    children: [rect("rectangle-1", 0, 0, 0), rect("rectangle-2", 200, 0, 1)],
+  } as const;
+  const scene = sceneWith(group);
+  const parsedGroup = scene.layers[0];
+  assert.ok(parsedGroup?.type === "group");
+
+  assert.equal(canFlattenGroup(parsedGroup), false);
+  assert.equal(canFlattenGroup(parsedGroup, true), true);
+  assert.equal(ungroupLayer(scene, parsedGroup.id), null);
+
+  const next = ungroupLayer(scene, parsedGroup.id, true);
+  assert.ok(next);
+  parseScene(next);
+  assert.deepEqual(next.layers.map((layer) => layer.id), ["rectangle-1", "rectangle-2"]);
+  assert.deepEqual(next.layers.map((layer) => layer.animations), [[], []]);
 });

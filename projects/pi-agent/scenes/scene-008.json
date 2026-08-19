@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-008",
+  "topic": "Agent 等于 Model 加 Harness：理解与执行的职责分工",
+  "startFrame": 5847,
+  "durationInFrames": 933,
+  "layers": [
+    {
+      "id": "s8-kicker", "name": "Pi positioning", "x": 120, "y": 70, "width": 1680, "height": 70, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s8-kicker-in", "phase": "enter", "preset": "fade", "startFrame": 0, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "text", "text": "MINIMAL TERMINAL CODING HARNESS", "fontFamily": "Arial", "fontSize": 38, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 5, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#A7ADB7", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s8-agent", "name": "Agent formula result", "x": 100, "y": 250, "width": 500, "height": 470, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s8-agent-in", "phase": "enter", "preset": "scale", "startFrame": 744, "durationInFrames": 26, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s8-agent-bg", "name": "Agent result frame", "x": 0, "y": 0, "width": 500, "height": 470, "rotation": 0, "opacity": 0.99, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#F5C84C", "fillEnabled": true, "stroke": "#F5C84C", "strokeWidth": 8, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 52, "cornerRadii": null},
+        {"id": "s8-agent-title", "name": "Agent title", "x": 45, "y": 105, "width": 410, "height": 110, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "AGENT", "fontFamily": "Arial", "fontSize": 86, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 4, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#111318", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s8-agent-copy", "name": "Agent result copy", "x": 55, "y": 265, "width": 390, "height": 100, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "能够理解\n也能够行动", "fontFamily": "Arial", "fontSize": 40, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.25, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#111318", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s8-equals", "name": "Formula equals", "x": 600, "y": 400, "width": 170, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s8-equals-in", "phase": "enter", "preset": "fade", "startFrame": 752, "durationInFrames": 18, "easing": "ease-out"}],
+      "type": "text", "text": "=", "fontFamily": "Arial", "fontSize": 120, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s8-model", "name": "Model responsibility", "x": 760, "y": 250, "width": 470, "height": 470, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s8-model-in", "phase": "enter", "preset": "slide-up", "startFrame": 482, "durationInFrames": 24, "easing": "ease-out"}, {"id": "s8-model-em", "phase": "emphasis", "preset": "scale", "startFrame": 752, "durationInFrames": 24, "easing": "ease-in-out"}],
+      "type": "group", "children": [
+        {"id": "s8-model-bg", "name": "Model frame", "x": 0, "y": 0, "width": 470, "height": 470, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#F7F7F5", "strokeWidth": 7, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 48, "cornerRadii": null},
+        {"id": "s8-model-title", "name": "Model title", "x": 40, "y": 70, "width": 390, "height": 90, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "MODEL", "fontFamily": "Arial", "fontSize": 68, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 3, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s8-model-copy", "name": "Model responsibility copy", "x": 55, "y": 205, "width": 360, "height": 180, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "理解任务\n分析信息\n判断下一步", "fontFamily": "Arial", "fontSize": 38, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.4, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s8-plus", "name": "Formula plus", "x": 1220, "y": 400, "width": 170, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s8-plus-in", "phase": "enter", "preset": "fade", "startFrame": 760, "durationInFrames": 18, "easing": "ease-out"}],
+      "type": "text", "text": "+", "fontFamily": "Arial", "fontSize": 110, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#FF7A1A", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s8-harness", "name": "Harness responsibility", "x": 1380, "y": 220, "width": 440, "height": 530, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 5, "visible": true, "locked": false,
+      "animations": [{"id": "s8-harness-in", "phase": "enter", "preset": "slide-left", "startFrame": 580, "durationInFrames": 24, "easing": "ease-out"}, {"id": "s8-harness-em", "phase": "emphasis", "preset": "scale", "startFrame": 770, "durationInFrames": 24, "easing": "ease-in-out"}],
+      "type": "group", "children": [
+        {"id": "s8-harness-bg", "name": "Harness frame", "x": 0, "y": 0, "width": 440, "height": 530, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 8, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 48, "cornerRadii": null},
+        {"id": "s8-harness-title", "name": "Harness title", "x": 30, "y": 60, "width": 380, "height": 90, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "HARNESS", "fontFamily": "Arial", "fontSize": 55, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 2, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#FF7A1A", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s8-harness-copy", "name": "Harness responsibility copy", "x": 40, "y": 190, "width": 360, "height": 250, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "准备环境\n组织上下文\n提供工具\n驱动执行", "fontFamily": "Arial", "fontSize": 36, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.45, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s8-formula-caption", "name": "Formula caption", "x": 310, "y": 825, "width": 1300, "height": 70, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 6, "visible": true, "locked": false,
+      "animations": [{"id": "s8-formula-caption-in", "phase": "enter", "preset": "slide-up", "startFrame": 802, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "text", "text": "AGENT = MODEL + HARNESS", "fontFamily": "Arial", "fontSize": 52, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 5, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F5C84C", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    }
+  ]
+}

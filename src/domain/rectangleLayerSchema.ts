@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { LayerBaseSchema, StrokePositionSchema } from './layerSchema'
+import { DEFAULT_SHAPE_TEXT, ShapeTextSchema } from './shapeTextSchema'
 
 // Geometry rules shared by Fabric.js Adapter and Remotion Adapter:
 // - width and height are the rectangle's base geometric size.
@@ -28,6 +29,7 @@ export const RectangleLayerSchema = LayerBaseSchema.extend({
     .strict()
     .nullable()
     .default(null),
+  shapeText: ShapeTextSchema.default(DEFAULT_SHAPE_TEXT),
 }).strict()
 
 export type RectangleLayer = z.infer<typeof RectangleLayerSchema>

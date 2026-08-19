@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-005",
+  "topic": "Pi 工作区：启动目录决定文件与配置范围",
+  "startFrame": 3078,
+  "durationInFrames": 445,
+  "layers": [
+    {
+      "id": "s5-home-warning", "name": "Do not start in home", "x": 140, "y": 92, "width": 740, "height": 110, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s5-home-warning-in", "phase": "enter", "preset": "slide-right", "startFrame": 0, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "text", "text": "不要在用户目录直接启动", "fontFamily": "Arial", "fontSize": 48, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#A7ADB7", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s5-workspace", "name": "Workspace folder scope", "x": 150, "y": 260, "width": 1180, "height": 540, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s5-workspace-in", "phase": "enter", "preset": "scale", "startFrame": 72, "durationInFrames": 28, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s5-workspace-tab", "name": "Folder tab", "x": 0, "y": 0, "width": 420, "height": 95, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#F7F7F5", "strokeWidth": 6, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 26, "cornerRadii": null},
+        {"id": "s5-workspace-body", "name": "Folder body", "x": 0, "y": 72, "width": 1180, "height": 468, "rotation": 0, "opacity": 0.97, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 8, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 34, "cornerRadii": null},
+        {"id": "s5-workspace-title", "name": "Workspace name", "x": 40, "y": 8, "width": 340, "height": 75, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "pi-learning/", "fontFamily": "Arial", "fontSize": 39, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s5-workspace-files", "name": "Workspace contents", "x": 70, "y": 155, "width": 410, "height": 270, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false, "animations": [{"id": "s5-workspace-files-in", "phase": "enter", "preset": "fade", "startFrame": 180, "durationInFrames": 22, "easing": "ease-out"}], "type": "text", "text": "src/\nREADME.md\n.pi/\nconfig.json", "fontFamily": "Arial", "fontSize": 36, "fontWeight": 700, "fontStyle": "normal", "lineHeight": 1.55, "letterSpacing": 0, "textAlign": "left", "verticalAlign": "top", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#A7ADB7", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s5-workspace-scope", "name": "Workspace scope label", "x": 560, "y": 190, "width": 540, "height": 170, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false, "animations": [{"id": "s5-workspace-scope-in", "phase": "enter", "preset": "slide-left", "startFrame": 132, "durationInFrames": 24, "easing": "ease-out"}], "type": "text", "text": "读取文件\n修改内容\n加载配置", "fontFamily": "Arial", "fontSize": 42, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.35, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s5-scope-arrow", "name": "Directory defines scope", "x": 1330, "y": 480, "width": 180, "height": 70, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s5-scope-arrow-in", "phase": "enter", "preset": "slide-right", "startFrame": 246, "durationInFrames": 20, "easing": "ease-out"}],
+      "type": "arrow", "stroke": "#FF7A1A", "strokeWidth": 14, "arrowHeadSize": 52, "arrowStartStyle": "none", "arrowEndStyle": "triangle"
+    },
+    {
+      "id": "s5-terminal", "name": "Terminal started inside folder", "x": 1450, "y": 300, "width": 350, "height": 420, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s5-terminal-in", "phase": "enter", "preset": "slide-left", "startFrame": 336, "durationInFrames": 24, "easing": "ease-out"}, {"id": "s5-terminal-em", "phase": "emphasis", "preset": "scale", "startFrame": 416, "durationInFrames": 20, "easing": "ease-in-out"}],
+      "type": "group", "children": [
+        {"id": "s5-terminal-bg", "name": "Terminal body", "x": 0, "y": 0, "width": 350, "height": 420, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#F7F7F5", "strokeWidth": 6, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 28, "cornerRadii": null},
+        {"id": "s5-terminal-bar", "name": "Terminal title bar", "x": 0, "y": 0, "width": 350, "height": 64, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 28, "cornerRadii": null},
+        {"id": "s5-terminal-copy", "name": "Terminal command", "x": 30, "y": 105, "width": 290, "height": 230, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "$ cd pi-learning\n$ pi\n\nWORKSPACE\nLOCKED", "fontFamily": "Arial", "fontSize": 30, "fontWeight": 700, "fontStyle": "normal", "lineHeight": 1.45, "letterSpacing": 0, "textAlign": "left", "verticalAlign": "top", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F5C84C", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s5-conclusion", "name": "Startup directory conclusion", "x": 500, "y": 835, "width": 920, "height": 64, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s5-conclusion-in", "phase": "enter", "preset": "fade", "startFrame": 270, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "text", "text": "启动位置 = 当前工作区边界", "fontFamily": "Arial", "fontSize": 46, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 1, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F5C84C", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    }
+  ]
+}

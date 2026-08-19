@@ -3,12 +3,17 @@ import { AbsoluteFill, Img, useCurrentFrame } from "remotion";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import { buildAssetUrl } from "../api/localService";
 import { applyTextCase } from "../domain/textCase";
+import { getShapeTextContentBox } from "../domain/shapeTextLayout";
+import type { ShapeText } from "../domain/shapeTextSchema";
 import { getLayerAnimationStyle } from "./layerAnimationStyle";
+import { resolveSceneBackground } from "./renderPolicy";
 import { getTextRenderLayout } from "./textRenderLayout";
 
 export interface SceneCompositionProps {
   scene: Scene;
   projectId: string;
+  assetBaseUrl?: string;
+  previewBackdrop?: boolean;
 }
 
 function getLayerBaseStyle(layer: Layer): CSSProperties {
@@ -185,7 +190,69 @@ function ArrowHead({
   return <polygon points={points} fill={color} />;
 }
 
-function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; projectId: string }) {
+function ShapeTextView({
+  shapeText,
+  width,
+  height,
+}: {
+  shapeText: ShapeText;
+  width: number;
+  height: number;
+}) {
+  if (shapeText.text.length === 0) return null;
+  const box = getShapeTextContentBox(width, height, shapeText.padding);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: box.x,
+        top: box.y,
+        width: box.width,
+        height: box.height,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent:
+          shapeText.verticalAlign === "top"
+            ? "flex-start"
+            : shapeText.verticalAlign === "bottom"
+              ? "flex-end"
+              : "center",
+        overflow: "hidden",
+        boxSizing: "border-box",
+        color: shapeText.fillEnabled ? shapeText.fill : "transparent",
+        fontFamily: shapeText.fontFamily,
+        fontSize: shapeText.fontSize,
+        fontWeight: shapeText.fontWeight,
+        fontStyle: shapeText.fontStyle,
+        lineHeight: shapeText.lineHeight,
+        letterSpacing: `${shapeText.letterSpacing}px`,
+        textAlign: shapeText.textAlign,
+        fontKerning: shapeText.kerningPairs ? "normal" : "none",
+        fontVariantLigatures: shapeText.ligatures ? "normal" : "none",
+        WebkitTextStroke:
+          shapeText.stroke && shapeText.strokeWidth > 0
+            ? `${shapeText.strokeWidth}px ${shapeText.stroke}`
+            : undefined,
+        whiteSpace: "pre-wrap",
+        overflowWrap: "break-word",
+      }}
+    >
+      {applyTextCase(shapeText.text, shapeText.textCase)}
+    </div>
+  );
+}
+
+function LayerView({
+  layer,
+  frame,
+  projectId,
+  assetBaseUrl,
+}: {
+  layer: Layer;
+  frame: number;
+  projectId: string;
+  assetBaseUrl?: string;
+}) {
   if (!layer.visible) return null;
 
   const animationStyle = getLayerAnimationStyle(layer.animations, frame);
@@ -205,7 +272,13 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
         {[...layer.children]
           .sort((first, second) => first.zIndex - second.zIndex)
           .map((child) => (
-            <LayerView key={child.id} layer={child} frame={frame} projectId={projectId} />
+            <LayerView
+              key={child.id}
+              layer={child}
+              frame={frame}
+              projectId={projectId}
+              assetBaseUrl={assetBaseUrl}
+            />
           ))}
       </div>
     );
@@ -223,7 +296,7 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
           const strokeInset = layer.strokeWidth / 2;
 
     return (
-            <div style={style}>
+            <div style={{ ...style, overflow: "hidden" }}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -246,6 +319,7 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
                   strokeWidth={layer.strokeWidth}
                 />
               </svg>
+              <ShapeTextView shapeText={layer.shapeText} width={layer.width} height={layer.height} />
             </div>
     );
   }
@@ -253,7 +327,7 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
   if (layer.type === "circle") {
           const strokeOffset = -layer.strokeWidth / 2;
     return (
-            <div style={style}>
+            <div style={{ ...style, overflow: "hidden" }}>
               <svg
                 width={layer.width}
                 height={layer.height}
@@ -285,6 +359,9 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
                   strokeWidth={layer.strokeWidth}
                 />
               </svg>
+              {layer.donut === 0 && layer.sweep === 360 ? (
+                <ShapeTextView shapeText={layer.shapeText} width={layer.width} height={layer.height} />
+              ) : null}
             </div>
     );
   }
@@ -369,25 +446,38 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
   }
 
   if (layer.type === "image") {
-    const imageUrl = buildAssetUrl(projectId, layer.src);
+    const imageUrl = layer.src === null
+      ? null
+      : assetBaseUrl
+        ? `${assetBaseUrl.replace(/\/$/, "")}/${layer.src}`
+        : buildAssetUrl(projectId, layer.src);
     const maximum = Math.max(0, Math.min(layer.width, layer.height) / 2);
     const cornerRadius = Math.max(0, Math.min(layer.cornerRadius, maximum));
     return (
-      <div style={{ ...style, overflow: "hidden", borderRadius: cornerRadius }}>
-        <Img
-          src={imageUrl}
-          style={{
-            width: layer.width,
-            height: layer.height,
-            display: "block",
-            borderRadius: cornerRadius,
-            border:
-              layer.stroke && layer.strokeWidth > 0
-                ? `${layer.strokeWidth}px solid ${layer.stroke}`
-                : undefined,
-            boxSizing: "border-box",
-          }}
-        />
+      <div
+        style={{
+          ...style,
+          overflow: "hidden",
+          borderRadius: cornerRadius,
+          backgroundColor: imageUrl === null ? "#d1d5db" : undefined,
+          border:
+            layer.stroke && layer.strokeWidth > 0
+              ? `${layer.strokeWidth}px solid ${layer.stroke}`
+              : undefined,
+          boxSizing: "border-box",
+        }}
+      >
+        {imageUrl ? (
+          <Img
+            src={imageUrl}
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "block",
+              objectFit: layer.fit,
+            }}
+          />
+        ) : null}
       </div>
     );
   }
@@ -439,7 +529,12 @@ function LayerView({ layer, frame, projectId }: { layer: Layer; frame: number; p
   );
 }
 
-export function SceneComposition({ scene, projectId }: SceneCompositionProps) {
+export function SceneComposition({
+  scene,
+  projectId,
+  assetBaseUrl,
+  previewBackdrop = false,
+}: SceneCompositionProps) {
   const frame = useCurrentFrame();
   const sortedLayers = [...scene.layers].sort(
     (first, second) => first.zIndex - second.zIndex,
@@ -448,13 +543,22 @@ export function SceneComposition({ scene, projectId }: SceneCompositionProps) {
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: scene.backgroundColor ?? "transparent",
+        backgroundColor: resolveSceneBackground(
+          scene.backgroundColor,
+          previewBackdrop,
+        ),
         overflow: "hidden",
         isolation: "isolate",
       }}
     >
       {sortedLayers.map((layer) => (
-        <LayerView key={layer.id} layer={layer} frame={frame} projectId={projectId} />
+        <LayerView
+          key={layer.id}
+          layer={layer}
+          frame={frame}
+          projectId={projectId}
+          assetBaseUrl={assetBaseUrl}
+        />
       ))}
     </AbsoluteFill>
   );

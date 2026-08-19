@@ -4,5 +4,74 @@
   "topic": "JSON as the single source of truth",
   "startFrame": 150,
   "durationInFrames": 150,
-  "layers": []
+  "layers": [
+    {
+      "id": "rectangle-1",
+      "name": "Rectangle",
+      "x": 412,
+      "y": 289.1,
+      "width": 400,
+      "height": 240,
+      "rotation": 0,
+      "opacity": 1,
+      "opacityEnabled": true,
+      "blendMode": "normal",
+      "zIndex": 0,
+      "visible": true,
+      "locked": false,
+      "animations": [
+        {
+          "id": "rectangle-1-enter",
+          "phase": "enter",
+          "preset": "slide-up",
+          "startFrame": 0,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ],
+      "type": "rectangle",
+      "fill": "#6b7280",
+      "fillEnabled": true,
+      "stroke": null,
+      "strokeWidth": 0,
+      "strokePosition": "inside",
+      "cornerEnabled": true,
+      "cornerRadius": 0,
+      "cornerRadii": null
+    },
+    {
+      "id": "circle-1",
+      "name": "Circle",
+      "x": 949.8,
+      "y": 342.65,
+      "width": 132.9,
+      "height": 132.9,
+      "rotation": 0,
+      "opacity": 1,
+      "opacityEnabled": true,
+      "blendMode": "normal",
+      "zIndex": 1,
+      "visible": true,
+      "locked": false,
+      "animations": [
+        {
+          "id": "circle-1-enter",
+          "phase": "enter",
+          "preset": "slide-down",
+          "startFrame": 0,
+          "durationInFrames": 20,
+          "easing": "ease-out"
+        }
+      ],
+      "type": "circle",
+      "fill": "#6b7280",
+      "fillEnabled": true,
+      "stroke": null,
+      "strokeWidth": 0,
+      "strokePosition": "inside",
+      "donut": 0,
+      "sweep": 360,
+      "startAngle": 0
+    }
+  ]
 }

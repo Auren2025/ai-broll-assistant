@@ -15,15 +15,13 @@ export interface TimelineScene {
  * Validates the project-level scene timeline rules from AGENTS.md §5:
  * - The project contains at least one scene (error).
  * - Scenes are ordered by increasing startFrame (error).
- * - The first scene starts at frame 0 (error).
  * - Scenes never overlap: each scene starts at or after the previous scene's end
  *   frame (error on overlap). Overlap is always a data error and must be rejected.
- * - Gaps between scenes are allowed (warning): the narration still plays during a
- *   gap. This is the audio-anchored behavior after manual duration edits or scene
- *   deletions, which never shift later scenes.
+ * - Leading and internal gaps are allowed (warning): uncovered frames remain
+ *   transparent while narration or source footage continues.
  *
- * `strict` additionally treats gaps as errors (used when validating freshly
- * AI-generated timelines that should be contiguous).
+ * `strict` additionally treats gaps as errors for the optional contiguous
+ * coverage diagnostic. Routine B-roll project validation should allow gaps.
  */
 export function validateSceneTimeline(
   scenes: readonly TimelineScene[],
@@ -39,10 +37,12 @@ export function validateSceneTimeline(
     return issues;
   }
 
-  if (scenes[0]?.startFrame !== 0) {
+  if (scenes[0] && scenes[0].startFrame > 0) {
     issues.push({
-      severity: "error",
-      message: `First scene "${scenes[0]?.id}" must start at frame 0, got ${scenes[0]?.startFrame}`,
+      severity: options.strict ? "error" : "warning",
+      message:
+        `First scene "${scenes[0].id}" starts at frame ${scenes[0].startFrame}; ` +
+        `the leading ${scenes[0].startFrame} frame(s) remain transparent.`,
     });
   }
 

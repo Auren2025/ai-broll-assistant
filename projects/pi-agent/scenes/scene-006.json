@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-006",
+  "topic": "终端 Agent 的读取、修改与命令执行能力",
+  "startFrame": 4205,
+  "durationInFrames": 361,
+  "layers": [
+    {
+      "id": "s6-title", "name": "Terminal agent title", "x": 120, "y": 72, "width": 1680, "height": 84, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s6-title-in", "phase": "enter", "preset": "slide-down", "startFrame": 0, "durationInFrames": 20, "easing": "ease-out"}],
+      "type": "text", "text": "告诉它目标，它在终端里行动", "fontFamily": "Arial", "fontSize": 56, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s6-terminal-image", "name": "Pi terminal hero", "x": 210, "y": 220, "width": 980, "height": 620, "rotation": -1, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s6-terminal-image-in", "phase": "enter", "preset": "scale", "startFrame": 40, "durationInFrames": 26, "easing": "ease-out"}],
+      "type": "image", "src": null, "fit": "contain", "cornerRadius": 34, "stroke": "#12315B", "strokeWidth": 8, "strokePosition": "inside"
+    },
+    {
+      "id": "s6-terminal-placeholder", "name": "Terminal placeholder description", "x": 340, "y": 430, "width": 720, "height": 170, "rotation": -1, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s6-terminal-placeholder-in", "phase": "enter", "preset": "fade", "startFrame": 48, "durationInFrames": 20, "easing": "ease-out"}],
+      "type": "text", "text": "图片：Pi 终端 Agent 界面\n> 正在处理当前工作区", "fontFamily": "Arial", "fontSize": 40, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.35, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s6-cap-read", "name": "Read capability", "x": 1280, "y": 240, "width": 480, "height": 160, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s6-cap-read-in", "phase": "enter", "preset": "slide-left", "startFrame": 220, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s6-cap-read-bg", "name": "Read capability frame", "x": 0, "y": 0, "width": 480, "height": 160, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 6, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 26, "cornerRadii": null},
+        {"id": "s6-cap-read-copy", "name": "Read capability label", "x": 34, "y": 32, "width": 412, "height": 96, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "READ\n读取文件", "fontFamily": "Arial", "fontSize": 42, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 2, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s6-cap-edit", "name": "Edit capability", "x": 1280, "y": 455, "width": 480, "height": 160, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s6-cap-edit-in", "phase": "enter", "preset": "slide-left", "startFrame": 246, "durationInFrames": 22, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s6-cap-edit-bg", "name": "Edit capability frame", "x": 0, "y": 0, "width": 480, "height": 160, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 6, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 26, "cornerRadii": null},
+        {"id": "s6-cap-edit-copy", "name": "Edit capability label", "x": 34, "y": 32, "width": 412, "height": 96, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "EDIT\n修改内容", "fontFamily": "Arial", "fontSize": 42, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 2, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s6-cap-bash", "name": "Bash capability", "x": 1280, "y": 670, "width": 480, "height": 160, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 5, "visible": true, "locked": false,
+      "animations": [{"id": "s6-cap-bash-in", "phase": "enter", "preset": "slide-left", "startFrame": 302, "durationInFrames": 22, "easing": "ease-out"}, {"id": "s6-cap-bash-em", "phase": "emphasis", "preset": "scale", "startFrame": 332, "durationInFrames": 20, "easing": "ease-in-out"}],
+      "type": "group", "children": [
+        {"id": "s6-cap-bash-bg", "name": "Bash capability frame", "x": 0, "y": 0, "width": 480, "height": 160, "rotation": 0, "opacity": 0.98, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#F5C84C", "fillEnabled": true, "stroke": "#F5C84C", "strokeWidth": 6, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 26, "cornerRadii": null},
+        {"id": "s6-cap-bash-copy", "name": "Bash capability label", "x": 34, "y": 32, "width": 412, "height": 96, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": "BASH\n执行命令", "fontFamily": "Arial", "fontSize": 42, "fontWeight": 900, "fontStyle": "normal", "lineHeight": 1.15, "letterSpacing": 2, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#111318", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    }
+  ]
+}

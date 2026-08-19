@@ -10,6 +10,9 @@ interface SceneAnimationTimelineProps {
   fps: number;
   selectedLayerId: string | null;
   selectedAnimationId: string | null;
+  isPreviewMode: boolean;
+  currentFrame: number;
+  onSeek: (frame: number) => void;
   onAnimationSelect: (layerId: string, animationId: string) => void;
   onAnimationTimingChange: (
     layerId: string,
@@ -62,12 +65,56 @@ export function SceneAnimationTimeline({
   fps,
   selectedLayerId,
   selectedAnimationId,
+  isPreviewMode,
+  currentFrame,
+  onSeek,
   onAnimationSelect,
   onAnimationTimingChange,
 }: SceneAnimationTimelineProps) {
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const events = getTimelineEvents(scene.layers);
   const ticks = getTickFrames(scene.durationInFrames, fps);
+  const maximumFrame = Math.max(0, scene.durationInFrames - 1);
+  const playheadLeft = (currentFrame / scene.durationInFrames) * 100;
+
+  function seekFromClientX(clientX: number, ruler: HTMLElement): void {
+    const bounds = ruler.getBoundingClientRect();
+    const ratio = clamp((clientX - bounds.left) / bounds.width, 0, 1);
+    onSeek(Math.round(ratio * maximumFrame));
+  }
+
+  function beginScrub(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (!isPreviewMode || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const ruler = event.currentTarget;
+    const updateFrame = (pointerEvent: PointerEvent): void => {
+      seekFromClientX(pointerEvent.clientX, ruler);
+    };
+    const finishScrub = (): void => {
+      window.removeEventListener("pointermove", updateFrame);
+      window.removeEventListener("pointerup", finishScrub);
+      window.removeEventListener("pointercancel", finishScrub);
+    };
+
+    seekFromClientX(event.clientX, ruler);
+    window.addEventListener("pointermove", updateFrame);
+    window.addEventListener("pointerup", finishScrub);
+    window.addEventListener("pointercancel", finishScrub);
+  }
+
+  function handleRulerKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+
+    event.preventDefault();
+    const direction = event.key === "ArrowLeft" ? -1 : 1;
+    const step = event.shiftKey ? 5 : 1;
+    onSeek(clamp(currentFrame + direction * step, 0, maximumFrame));
+  }
 
   function beginDrag(
     event: ReactPointerEvent<HTMLElement>,
@@ -208,7 +255,19 @@ export function SceneAnimationTimeline({
       ) : (
         <div className="animation-timeline-grid">
           <div className="animation-timeline-label-heading">Build order</div>
-          <div className="animation-timeline-ruler" aria-hidden="true">
+          <div
+            className={`animation-timeline-ruler${isPreviewMode ? " is-scrubbable" : ""}`}
+            role={isPreviewMode ? "slider" : undefined}
+            tabIndex={isPreviewMode ? 0 : undefined}
+            aria-hidden={isPreviewMode ? undefined : true}
+            aria-label={isPreviewMode ? "Preview frame" : undefined}
+            aria-valuemin={isPreviewMode ? 0 : undefined}
+            aria-valuemax={isPreviewMode ? maximumFrame : undefined}
+            aria-valuenow={isPreviewMode ? currentFrame : undefined}
+            aria-valuetext={isPreviewMode ? `${currentFrame} frames` : undefined}
+            onKeyDown={isPreviewMode ? handleRulerKeyDown : undefined}
+            onPointerDown={isPreviewMode ? beginScrub : undefined}
+          >
             {ticks.map((frame) => (
               <span
                 key={frame}
@@ -217,6 +276,15 @@ export function SceneAnimationTimeline({
                 {Number((frame / fps).toFixed(2))}s
               </span>
             ))}
+            {isPreviewMode ? (
+              <i
+                className="animation-timeline-playhead"
+                style={{ left: `${playheadLeft}%` }}
+                aria-hidden="true"
+              >
+                <b>{currentFrame}</b>
+              </i>
+            ) : null}
           </div>
 
           {events.map((timelineEvent, index) => {
@@ -255,6 +323,13 @@ export function SceneAnimationTimeline({
                         style={{ left: `${(frame / scene.durationInFrames) * 100}%` }}
                       />
                     ))}
+                  {isPreviewMode ? (
+                    <span
+                      className="animation-timeline-playhead"
+                      style={{ left: `${playheadLeft}%` }}
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className={`animation-event-bar phase-${animation.phase}${isSelected ? " is-selected" : ""}`}

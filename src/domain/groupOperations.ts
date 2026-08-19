@@ -127,6 +127,7 @@ export function makeGroup(
     x: round(layer.x - bounds.left),
     y: round(layer.y - bounds.top),
     zIndex: index,
+    animations: [],
   }));
   const group: GroupLayer = {
     id: groupId,
@@ -211,8 +212,9 @@ export function transformGroupChildToScene(
 
 // Flattening (ungroup / group-collapse during delete) is "lossless" under these
 // conditions, because nothing beyond the 3-decimal rounding of `round` can change:
-//   - The group carries no animations (group.animations.length === 0). An animated
-//     group is refused because its timeline state cannot be represented on children.
+//   - The group carries no animations (group.animations.length === 0), unless the
+//     caller explicitly confirms that those animations should be discarded. Group
+//     animation cannot be represented exactly on independent children.
 //   - The group's opacity is effectively 1 (either opacityEnabled === false, or
 //     opacity === 1). Otherwise the multiplied opacity is baked into children, which
 //     changes the group's own future opacity edits and is not lossless.
@@ -220,23 +222,31 @@ export function transformGroupChildToScene(
 //     this check is always true today; it exists as a forward guard).
 // Rotation, visibility, and lock state are propagated losslessly to children
 // (children rotation adds the group rotation; visible is AND-ed; locked is OR-ed).
-// Non-flattenable groups (animated or translucent) are refused by `canFlattenGroup`,
-// so callers never silently expand a group that would change the visual result.
-export function canFlattenGroup(group: GroupLayer): boolean {
+// Non-flattenable groups are refused by `canFlattenGroup`, so callers never silently
+// expand a group that would change the visual result.
+export function canFlattenGroup(
+  group: GroupLayer,
+  discardAnimations = false,
+): boolean {
   return (
-    group.animations.length === 0 &&
+    (discardAnimations || group.animations.length === 0) &&
     (!group.opacityEnabled || group.opacity === 1) &&
     group.blendMode === "normal"
   );
 }
 
-export function ungroupLayer(scene: Scene, groupId: string): Scene | null {
+export function ungroupLayer(
+  scene: Scene,
+  groupId: string,
+  discardAnimations = false,
+): Scene | null {
   const ordered = [...scene.layers].sort((a, b) => a.zIndex - b.zIndex);
   const groupIndex = ordered.findIndex(
     (layer) => layer.id === groupId && layer.type === "group",
   );
   const group = ordered[groupIndex];
   if (!group || group.type !== "group") return null;
+  if (!canFlattenGroup(group, discardAnimations)) return null;
 
   const children = [...group.children]
     .sort((a, b) => a.zIndex - b.zIndex)

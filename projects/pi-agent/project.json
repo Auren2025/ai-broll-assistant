@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "id": "pi-agent",
+  "name": "Pi Agent Explained",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "scenes": [
+    {
+      "id": "scene-001",
+      "file": "scenes/scene-001.json"
+    },
+    {
+      "id": "scene-002",
+      "file": "scenes/scene-002.json"
+    },
+    {
+      "id": "scene-003",
+      "file": "scenes/scene-003.json"
+    },
+    {
+      "id": "scene-004",
+      "file": "scenes/scene-004.json"
+    },
+    {
+      "id": "scene-005",
+      "file": "scenes/scene-005.json"
+    },
+    {
+      "id": "scene-006",
+      "file": "scenes/scene-006.json"
+    },
+    {
+      "id": "scene-007",
+      "file": "scenes/scene-007.json"
+    },
+    {
+      "id": "scene-008",
+      "file": "scenes/scene-008.json"
+    },
+    {
+      "id": "scene-009",
+      "file": "scenes/scene-009.json"
+    },
+    {
+      "id": "scene-010",
+      "file": "scenes/scene-010.json"
+    },
+    {
+      "id": "scene-011",
+      "file": "scenes/scene-011.json"
+    },
+    {
+      "id": "scene-012",
+      "file": "scenes/scene-012.json"
+    },
+    {
+      "id": "scene-013",
+      "file": "scenes/scene-013.json"
+    },
+    {
+      "id": "scene-014",
+      "file": "scenes/scene-014.json"
+    },
+    {
+      "id": "scene-015",
+      "file": "scenes/scene-015.json"
+    },
+    {
+      "id": "scene-016",
+      "file": "scenes/scene-016.json"
+    },
+    {
+      "id": "scene-017",
+      "file": "scenes/scene-017.json"
+    },
+    {
+      "id": "scene-018",
+      "file": "scenes/scene-018.json"
+    },
+    {
+      "id": "scene-019",
+      "file": "scenes/scene-019.json"
+    },
+    {
+      "id": "scene-020",
+      "file": "scenes/scene-020.json"
+    },
+    {
+      "id": "scene-021",
+      "file": "scenes/scene-021.json"
+    },
+    {
+      "id": "scene-022",
+      "file": "scenes/scene-022.json"
+    },
+    {
+      "id": "scene-023",
+      "file": "scenes/scene-023.json"
+    },
+    {
+      "id": "scene-024",
+      "file": "scenes/scene-024.json"
+    },
+    {
+      "id": "scene-025",
+      "file": "scenes/scene-025.json"
+    },
+    {
+      "id": "scene-026",
+      "file": "scenes/scene-026.json"
+    },
+    {
+      "id": "scene-027",
+      "file": "scenes/scene-027.json"
+    }
+  ]
+}

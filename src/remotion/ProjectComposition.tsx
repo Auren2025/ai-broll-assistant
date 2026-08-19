@@ -7,20 +7,25 @@ import { SceneComposition } from "./SceneComposition";
 export interface ProjectCompositionProps {
   project: Project;
   scenes: Scene[];
+  includeAudio?: boolean;
+  previewBackdrop?: boolean;
 }
 
 export function ProjectComposition({
   project,
   scenes,
+  includeAudio = true,
+  previewBackdrop = false,
 }: ProjectCompositionProps) {
   return (
     <AbsoluteFill
       style={{
         backgroundColor: "transparent",
         overflow: "hidden",
+        translate: "-2px 0px"
       }}
     >
-      {project.audioFile ? (
+      {includeAudio && project.audioFile ? (
         <Audio src={buildAssetUrl(project.id, project.audioFile)} />
       ) : null}
       {scenes.map((scene) => (
@@ -30,7 +35,11 @@ export function ProjectComposition({
           durationInFrames={scene.durationInFrames}
           name={`${project.name} · ${scene.id}`}
         >
-          <SceneComposition scene={scene} projectId={project.id} />
+          <SceneComposition
+            scene={scene}
+            projectId={project.id}
+            previewBackdrop={previewBackdrop}
+          />
         </Sequence>
       ))}
     </AbsoluteFill>

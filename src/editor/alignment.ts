@@ -140,15 +140,15 @@ export function alignSceneLayers(
   };
 
   for (const layer of scene.layers) {
-    if (layer.type === "group") {
+    if (selectedLayerIdSet.has(layer.id)) {
+      getSpace("scene", projectWidth, projectHeight).layers.push(layer);
+    } else if (layer.type === "group") {
       const childLayers = layer.children.filter((child) =>
         selectedLayerIdSet.has(child.id),
       );
       if (childLayers.length > 0) {
         getSpace(layer.id, layer.width, layer.height).layers.push(...childLayers);
       }
-    } else if (selectedLayerIdSet.has(layer.id)) {
-      getSpace("scene", projectWidth, projectHeight).layers.push(layer);
     }
   }
 
@@ -313,6 +313,21 @@ export function alignSceneLayers(
 
   let changed = false;
   const layers = scene.layers.map((layer) => {
+    const nextCenter = nextCenters.get(layer.id);
+    if (nextCenter) {
+      const nextX = roundCoordinate(
+        (nextCenter.x ?? layer.x + layer.width / 2) - layer.width / 2,
+      );
+      const nextY = roundCoordinate(
+        (nextCenter.y ?? layer.y + layer.height / 2) - layer.height / 2,
+      );
+
+      if (nextX === layer.x && nextY === layer.y) return layer;
+
+      changed = true;
+      return { ...layer, x: nextX, y: nextY };
+    }
+
     if (layer.type === "group") {
       if (!layer.children.some((child) => nextCenters.has(child.id))) {
         return layer;
@@ -345,29 +360,7 @@ export function alignSceneLayers(
       return { ...layer, children };
     }
 
-    const nextCenter = nextCenters.get(layer.id);
-
-    if (!nextCenter) {
-      return layer;
-    }
-
-    const nextX = roundCoordinate(
-      (nextCenter.x ?? layer.x + layer.width / 2) - layer.width / 2,
-    );
-    const nextY = roundCoordinate(
-      (nextCenter.y ?? layer.y + layer.height / 2) - layer.height / 2,
-    );
-
-    if (nextX === layer.x && nextY === layer.y) {
-      return layer;
-    }
-
-    changed = true;
-    return {
-      ...layer,
-      x: nextX,
-      y: nextY,
-    };
+    return layer;
   });
 
   return changed ? { ...scene, layers } : scene;

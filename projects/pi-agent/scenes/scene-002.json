@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-002",
+  "topic": "Pi 最小 Agent 核心：五个基础模块组装",
+  "startFrame": 1024,
+  "durationInFrames": 749,
+  "layers": [
+    {
+      "id": "s2-pi-image", "name": "Pi hero logo", "x": 650, "y": 245, "width": 620, "height": 400, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false,
+      "animations": [{"id": "s2-pi-image-in", "phase": "enter", "preset": "scale", "startFrame": 52, "durationInFrames": 28, "easing": "ease-out"}, {"id": "s2-pi-image-em", "phase": "emphasis", "preset": "scale", "startFrame": 130, "durationInFrames": 24, "easing": "ease-in-out"}],
+      "type": "image", "src": null, "fit": "contain", "cornerRadius": 200, "stroke": "#FF7A1A", "strokeWidth": 7, "strokePosition": "inside"
+    },
+    {
+      "id": "s2-pi-placeholder", "name": "Pi logo placeholder description", "x": 750, "y": 370, "width": 420, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false,
+      "animations": [{"id": "s2-pi-placeholder-in", "phase": "enter", "preset": "fade", "startFrame": 60, "durationInFrames": 20, "easing": "ease-out"}],
+      "type": "text", "text": "图片：Pi Logo\nMINIMAL AGENT", "fontFamily": "Arial", "fontSize": 42, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.3, "letterSpacing": 2, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"
+    },
+    {
+      "id": "s2-module-model", "name": "Model call module", "x": 160, "y": 90, "width": 500, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false,
+      "animations": [{"id": "s2-module-model-in", "phase": "enter", "preset": "slide-right", "startFrame": 254, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s2-module-model-bg", "name": "Model module frame", "x": 0, "y": 0, "width": 500, "height": 150, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s2-module-model-num", "name": "Model module number", "x": 26, "y": 28, "width": 92, "height": 92, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "circle", "fill": "#12315B", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 4, "strokePosition": "inside", "donut": 0, "sweep": 360, "startAngle": 0},
+        {"id": "s2-module-model-copy", "name": "Model call label", "x": 140, "y": 34, "width": 330, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "MODEL CALL\n模型调用", "fontFamily": "Arial", "fontSize": 32, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.2, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s2-module-context", "name": "Context module", "x": 1260, "y": 90, "width": 500, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 3, "visible": true, "locked": false,
+      "animations": [{"id": "s2-module-context-in", "phase": "enter", "preset": "slide-left", "startFrame": 274, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s2-module-context-bg", "name": "Context module frame", "x": 0, "y": 0, "width": 500, "height": 150, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#12315B", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s2-module-context-mark", "name": "Context module mark", "x": 28, "y": 45, "width": 92, "height": 60, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#A7ADB7", "strokeWidth": 4, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 12, "cornerRadii": null},
+        {"id": "s2-module-context-copy", "name": "Context label", "x": 144, "y": 34, "width": 326, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "CONTEXT\n上下文", "fontFamily": "Arial", "fontSize": 32, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.2, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s2-module-loop", "name": "Agent loop module", "x": 100, "y": 685, "width": 500, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 4, "visible": true, "locked": false,
+      "animations": [{"id": "s2-module-loop-in", "phase": "enter", "preset": "slide-up", "startFrame": 294, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s2-module-loop-bg", "name": "Loop module frame", "x": 0, "y": 0, "width": 500, "height": 150, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s2-module-loop-ring", "name": "Loop ring", "x": 30, "y": 28, "width": 94, "height": 94, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "circle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 10, "strokePosition": "inside", "donut": 0.68, "sweep": 300, "startAngle": 20},
+        {"id": "s2-module-loop-copy", "name": "Agent loop label", "x": 144, "y": 34, "width": 326, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "AGENT LOOP\n循环运行", "fontFamily": "Arial", "fontSize": 32, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.2, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s2-module-tools", "name": "Tools module", "x": 710, "y": 720, "width": 500, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 5, "visible": true, "locked": false,
+      "animations": [{"id": "s2-module-tools-in", "phase": "enter", "preset": "slide-up", "startFrame": 314, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s2-module-tools-bg", "name": "Tools module frame", "x": 0, "y": 0, "width": 500, "height": 150, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#FF7A1A", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s2-module-tools-glyph", "name": "Tools glyph", "x": 30, "y": 39, "width": 96, "height": 72, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "text", "text": ">_", "fontFamily": "Arial", "fontSize": 48, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1, "letterSpacing": 0, "textAlign": "center", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#FF7A1A", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"},
+        {"id": "s2-module-tools-copy", "name": "Tools label", "x": 144, "y": 34, "width": 326, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "TOOLS\n工具调用", "fontFamily": "Arial", "fontSize": 32, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.2, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    },
+    {
+      "id": "s2-module-session", "name": "Session module", "x": 1320, "y": 685, "width": 500, "height": 150, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 6, "visible": true, "locked": false,
+      "animations": [{"id": "s2-module-session-in", "phase": "enter", "preset": "slide-up", "startFrame": 334, "durationInFrames": 24, "easing": "ease-out"}],
+      "type": "group", "children": [
+        {"id": "s2-module-session-bg", "name": "Session module frame", "x": 0, "y": 0, "width": 500, "height": 150, "rotation": 0, "opacity": 0.96, "opacityEnabled": true, "blendMode": "normal", "zIndex": 0, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#111318", "fillEnabled": true, "stroke": "#F5C84C", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 24, "cornerRadii": null},
+        {"id": "s2-module-session-stack", "name": "Session stack", "x": 34, "y": 34, "width": 88, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 1, "visible": true, "locked": false, "animations": [], "type": "rectangle", "fill": "#12315B", "fillEnabled": true, "stroke": "#F5C84C", "strokeWidth": 5, "strokePosition": "inside", "cornerEnabled": true, "cornerRadius": 14, "cornerRadii": null},
+        {"id": "s2-module-session-copy", "name": "Session label", "x": 144, "y": 34, "width": 326, "height": 82, "rotation": 0, "opacity": 1, "opacityEnabled": true, "blendMode": "normal", "zIndex": 2, "visible": true, "locked": false, "animations": [], "type": "text", "text": "SESSION\n过程保存", "fontFamily": "Arial", "fontSize": 32, "fontWeight": 800, "fontStyle": "normal", "lineHeight": 1.2, "letterSpacing": 1, "textAlign": "left", "verticalAlign": "middle", "autoResize": "fixed", "textCase": "normal", "kerningPairs": true, "ligatures": true, "fill": "#F7F7F5", "fillEnabled": true, "stroke": null, "strokeWidth": 0, "strokePosition": "inside"}
+      ]
+    }
+  ]
+}

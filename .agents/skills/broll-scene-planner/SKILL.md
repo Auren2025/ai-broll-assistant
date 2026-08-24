@@ -7,6 +7,8 @@ description: Plan semantic B-roll scenes from a complete SRT and materialize app
 
 Use this skill for `SRT -> reviewed scene plan`. Do not generate visual layers or animations here.
 
+The workspace root contains the agent configuration. Treat `app/` as the application root: paths such as `projects/` and `src/` are relative to `app/`, and all npm scripts run with `app/` as the working directory.
+
 ## Persistent Data Boundary
 
 - `project.json` and `scenes/*.json` are the only persistent project/scene data.
@@ -28,12 +30,30 @@ Use this skill for `SRT -> reviewed scene plan`. Do not generate visual layers o
    ```bash
    npm run validate:srt -- projects/<project-id>/source.srt
    ```
-    Read the entire narration before proposing the first boundary. Identify the overall argument, chapters, transitions, demonstrations, comparisons, conclusions, and sections intended for talking head or screen recording.
+    Read the entire narration before proposing the first boundary. Identify the overall argument, chapters, transitions, demonstrations, comparisons, conclusions, and sections intended for talking head or screen recording. Scene-by-scene collaboration never means interpreting only a local excerpt.
     `npm run skeleton -- <project-id>` may be used to print non-mutating pause-based candidate groups, but its output is only an aid and never a semantic proposal or approved scene plan.
 
-4. **Select B-roll intervals semantically.** Create a scene only where a structured visual adds useful information. Use topic, argument, step, comparison, and narrative-purpose changes to decide boundaries. Subtitle gaps, cue counts, cue boundaries, and fixed durations are supporting signals only. Keep one coherent visual intention together even across several cues or pauses. Reconsider the scene when meaning changes even without a pause. Leave intentional transparent gaps for narration, talking head, and screen demonstrations that do not need B-roll.
+4. **Interpret speech by visual function.** Distinguish these categories while reasoning, but never persist them as another data model:
+   - content that needs a visual model, such as a principle, structure, relationship, process, comparison, hierarchy, or key evidence;
+   - narration that continues to explain the current visual model;
+   - narration that does not need B-roll, including setup, transitions, repetition, talking head, and screen demonstrations;
+   - optional supporting detail that may enrich an existing composition without introducing another visual proposition.
 
-5. **Calculate exact timing.** Put selected boundaries on SRT cue boundaries unless the user explicitly supplies another audio anchor. At project FPS:
+5. **Select visual propositions, not sentences.** Create a scene only when a structured visual materially improves understanding. Give each scene one stable primary composition that can support an extended explanation. Keep elaboration, examples, rewording, emphasis, and repeated conclusions in that composition without creating new scenes. When narration adds a key object, establishes or changes a relationship, advances a process, or requires a focus shift, plan a progressive reveal inside the same scene. Start a new scene only when the core visual proposition or the composition needed to carry it genuinely changes. Subtitle gaps, cue counts, cue boundaries, and fixed durations are timing aids only. Leave intentional transparent gaps where no structured visual is useful.
+
+6. **Present a concise narrative map.** Before discussing the first scene, show a short global map containing only narration chapters, candidate visual propositions, and likely transparent intervals. The map proves whole-SRT understanding and establishes direction; it is not a detailed scene proposal and does not ask the user to approve every scene at once.
+
+7. **Discuss exactly one candidate scene.** Work in narration order unless the user names another target. Present only the current candidate and include:
+   - its SRT range and the spoken idea it covers;
+   - why that idea benefits from visualization;
+   - the stable primary composition that will remain on screen;
+   - only the progressive reveals required to add an object, establish or change a relationship, advance a process, or move necessary focus;
+   - the explanatory passages that intentionally leave the composition unchanged;
+   - optional supporting details, clearly separated from required content;
+   - the transparent or held intervals immediately before and after it.
+   Ask the user to confirm, simplify, skip, or adjust the boundary. Do not expand the response into detailed proposals for later scenes.
+
+8. **Calculate exact timing for the current candidate.** Put selected boundaries on SRT cue boundaries unless the user explicitly supplies another audio anchor. At project FPS:
    ```text
    startFrame = floor(startMs * fps / 1000)
    endFrame = ceil(endMs * fps / 1000)
@@ -41,41 +61,42 @@ Use this skill for `SRT -> reviewed scene plan`. Do not generate visual layers o
    ```
    End at the last included narration cue by default. Extend through a pause only when the visual intention explicitly needs to hold. Scenes must be ordered and non-overlapping; leading, internal, and trailing gaps are valid.
 
-6. **Present the complete proposal before writing.** Include one row per proposed scene:
+9. **Materialize only the current approved scene.** Approval applies only to the candidate being discussed. A correction, simplification, skip, or boundary adjustment is not approval of any later scene.
+   - For create/adopt, run `npm run scaffold -- <project-id>` only after the first scene is approved, then replace its placeholder with that approved scene.
+   - Write the approved scene as complete schema-valid canonical data with a concise semantic-and-visual `topic` and `layers: []` before animation begins.
+   - Insert later approved scenes in narration order while preserving project settings, audio references, existing valid IDs, and completed scenes.
+   - During resegmentation, do not replace or delete unreviewed existing scenes. Obtain explicit confirmation before any approved change that affects manual work.
+   - Remove only a newly created scaffold placeholder. Do not silently delete pre-existing scene files.
 
-   | Scene | SRT cues | Time | Frames | Semantic purpose | What the audience sees | Assets | Gap rationale |
-   |---|---|---|---|---|---|---|---|
-
-   Also summarize the narration sections deliberately left without B-roll. A proposed `topic` must describe both the semantic point and visual purpose; never copy the first subtitle as a substitute for analysis.
-
-7. **Stop for explicit approval.** Do not scaffold, replace scene references, or write scene JSON before the user approves the proposal. If the user requests changes, revise the proposal and ask again. Approval of one subset does not approve unrelated scenes.
-
-8. **Materialize only the approved plan.**
-   - For create/adopt, run `npm run scaffold -- <project-id>` only after approval, then replace its placeholder scene and references with approved scenes.
-   - Write complete schema-valid `project.json` and scene files with `layers: []`.
-   - Preserve approved timing, existing valid IDs, project settings, audio references, and unrelated manual data.
-   - Remove a newly created scaffold placeholder from the final references and files. Do not silently delete pre-existing scene files.
-
-9. **Validate the canonical skeleton.** Run:
+10. **Validate and hand off the approved scene.** Run:
    ```bash
    npm run validate:srt -- projects/<project-id>/source.srt
    npm run validate:project -- projects/<project-id>
    ```
-   Fix schema, ordering, overlap, reference, and timing errors. Gap warnings are expected for selective B-roll. Report that the approved skeleton is ready for `broll-scene-animator`; do not generate layers unless the user also asked to continue after approval.
+   Fix schema, ordering, overlap, reference, and timing errors. Gap warnings are expected for selective B-roll. Report that the current scene skeleton is ready for `broll-scene-animator`. When invoked through `ai-broll`, hand off this scene for animation and visual review before discussing the next candidate. When invoked for planning only, stop after the validated skeleton.
+
+11. **Finish with a global audit.** After all candidates have been discussed, verify that every B-roll interval serves a visual proposition, all omitted narration is intentional, and completed scenes remain ordered and non-overlapping. Do not regenerate approved scenes merely to make the final plan look more uniform.
 
 ## Quality Gate
 
 - The complete SRT was read before selection.
-- Every scene has one coherent semantic and visual purpose.
-- Every omitted interval is intentional, not an accidental missed section.
+- The global map is concise and detailed review covers only one scene at a time.
+- Every scene has one stable primary composition and one coherent visual proposition.
+- Explanations, examples, rewording, and repetition do not create scenes by themselves.
+- Progressive reveals are limited to changes that alter the audience's visual model.
+- At final audit, every omitted interval is intentional rather than accidentally missed.
 - Time ranges map to the intended narration and do not overlap.
-- The user approved the proposal before persistent scene data changed.
+- The user approved each persisted scene before its canonical data changed.
+- Previously approved and produced scenes remain untouched unless explicitly reopened.
 - No parallel storyboard or scene-description file was persisted.
 
 ## Prohibited Actions
 
 - Do not use pause-based `npm run skeleton` output as the final scene plan or imply that it writes project data.
+- Do not present a detailed all-scenes table or require all-scenes approval unless the user explicitly requests that workflow.
+- Do not turn each subtitle, sentence, spoken concept, example, or rhetorical emphasis into a scene candidate.
 - Do not generate layers or animations in this skill.
 - Do not shift an existing narration anchor merely to remove a transparent gap.
 - Do not overwrite manual scenes without explicit resegmentation approval.
+- Do not revise completed scenes while planning later scenes unless the user explicitly reopens them.
 - Do not modify application source, schemas, adapters, or build configuration.

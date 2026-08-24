@@ -1,0 +1,2052 @@
+import { useCallback, useEffect, useRef } from "react";
+import {
+  ActiveSelection,
+  Canvas,
+  FabricObject,
+  Group as FabricGroup,
+  FixedLayout,
+  LayoutManager,
+  Rect,
+  Textbox,
+  classRegistry,
+} from "fabric";
+import type { AtomicLayer } from "../domain/atomicLayerSchema";
+import type { GroupLayer } from "../domain/groupLayerSchema";
+import { scaleGroupChildren } from "../domain/groupOperations";
+import type { Layer, Scene } from "../domain/sceneSchema";
+import { getShapeTextContentBox } from "../domain/shapeTextLayout";
+import type { ShapeText } from "../domain/shapeTextSchema";
+import { createDimensionResizeControls } from "./fabricDimensionControls";
+import { resolveDragTarget } from "./fabricTargetResolution";
+import {
+  MIN_TEXT_WIDTH,
+  applyTextCase,
+  computeTextBoxSize,
+  getCharSpacing,
+} from "./textMetrics";
+
+type CornerRadii = {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+};
+
+/**
+ * Decide which axis a Shift-held drag is locked to. Returns the axis the
+ * dragged has been moving *more* along, or null if there is not yet
+ * enough motion to decide.
+ */
+function resolveShiftLockAxis(
+  dragStart: { x: number; y: number },
+  current: { x: number; y: number },
+  motionFloor: number,
+): "x" | "y" | null {
+  const dx = Math.abs(current.x - dragStart.x);
+  const dy = Math.abs(current.y - dragStart.y);
+  if (dx < motionFloor && dy < motionFloor) return null;
+  return dx >= dy ? "x" : "y";
+}
+
+function roundedRectanglePath(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  radii: CornerRadii,
+): void {
+  const maximum = Math.min(width, height) / 2;
+  const topLeft = Math.min(radii.topLeft, maximum);
+  const topRight = Math.min(radii.topRight, maximum);
+  const bottomRight = Math.min(radii.bottomRight, maximum);
+  const bottomLeft = Math.min(radii.bottomLeft, maximum);
+  const left = -width / 2;
+  const top = -height / 2;
+  const right = width / 2;
+  const bottom = height / 2;
+
+  ctx.beginPath();
+  ctx.moveTo(left + topLeft, top);
+  ctx.lineTo(right - topRight, top);
+  ctx.quadraticCurveTo(right, top, right, top + topRight);
+  ctx.lineTo(right, bottom - bottomRight);
+  ctx.quadraticCurveTo(right, bottom, right - bottomRight, bottom);
+  ctx.lineTo(left + bottomLeft, bottom);
+  ctx.quadraticCurveTo(left, bottom, left, bottom - bottomLeft);
+  ctx.lineTo(left, top + topLeft);
+  ctx.quadraticCurveTo(left, top, left + topLeft, top);
+  ctx.closePath();
+}
+
+function roundedTrianglePath(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const points = [
+    { x: 0, y: -height / 2 },
+    { x: width / 2, y: height / 2 },
+    { x: -width / 2, y: height / 2 },
+  ];
+  const corners = points.map((point, index) => {
+    const previous = points[(index + points.length - 1) % points.length];
+    const next = points[(index + 1) % points.length];
+    const previousLength = Math.hypot(previous.x - point.x, previous.y - point.y);
+    const nextLength = Math.hypot(next.x - point.x, next.y - point.y);
+    const previousUnit = {
+      x: (previous.x - point.x) / previousLength,
+      y: (previous.y - point.y) / previousLength,
+    };
+    const nextUnit = {
+      x: (next.x - point.x) / nextLength,
+      y: (next.y - point.y) / nextLength,
+    };
+    const angle = Math.acos(
+      Math.min(
+        1,
+        Math.max(-1, previousUnit.x * nextUnit.x + previousUnit.y * nextUnit.y),
+      ),
+    );
+    const tangentScale = Math.tan(angle / 2);
+    const requestedDistance = tangentScale > 0 ? radius / tangentScale : 0;
+    const distance = Math.min(
+      requestedDistance,
+      previousLength / 2,
+      nextLength / 2,
+    );
+    const effectiveRadius = distance * tangentScale;
+    return {
+      point,
+      radius: effectiveRadius,
+      entry: {
+        x: point.x + previousUnit.x * distance,
+        y: point.y + previousUnit.y * distance,
+      },
+      exit: {
+        x: point.x + nextUnit.x * distance,
+        y: point.y + nextUnit.y * distance,
+      },
+    };
+  });
+
+  ctx.beginPath();
+  ctx.moveTo(corners[0].entry.x, corners[0].entry.y);
+  for (const corner of corners) {
+    ctx.arcTo(
+      corner.point.x,
+      corner.point.y,
+      corner.exit.x,
+      corner.exit.y,
+      corner.radius,
+    );
+    const nextCorner = corners[(corners.indexOf(corner) + 1) % corners.length];
+    ctx.lineTo(nextCorner.entry.x, nextCorner.entry.y);
+  }
+  ctx.closePath();
+}
+
+function paintShape(
+  ctx: CanvasRenderingContext2D,
+  path: () => void,
+  fill: string | null,
+  stroke: string | null,
+  strokeWidth: number,
+): void {
+  ctx.save();
+  path();
+
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill("evenodd");
+  }
+
+  if (stroke && strokeWidth > 0) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth * 2;
+    ctx.save();
+    ctx.clip("evenodd");
+    path();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+class FabricRoundedRectangleObject extends FabricObject {
+  static type = "FabricRoundedRectangle";
+
+  declare fillColor: string | null;
+  declare strokeColor: string | null;
+  declare shapeStrokeWidth: number;
+  declare cornerRadii: CornerRadii;
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    paintShape(
+      ctx,
+      () => roundedRectanglePath(ctx, this.width, this.height, this.cornerRadii),
+      this.fillColor,
+      this.strokeColor,
+      this.shapeStrokeWidth,
+    );
+  }
+}
+
+class FabricEllipseObject extends FabricObject {
+  static type = "FabricEllipse";
+
+  declare fillColor: string | null;
+  declare strokeColor: string | null;
+  declare shapeStrokeWidth: number;
+  declare donut: number;
+  declare sweep: number;
+  declare startAngle: number;
+
+  private ellipsePath(ctx: CanvasRenderingContext2D): void {
+    const outerX = this.width / 2;
+    const outerY = this.height / 2;
+    const innerX = outerX * this.donut;
+    const innerY = outerY * this.donut;
+    const start = ((this.startAngle - 90) * Math.PI) / 180;
+    const end = start + (this.sweep * Math.PI) / 180;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, outerX, outerY, 0, start, end);
+    if (innerX > 0 && innerY > 0) {
+      ctx.ellipse(0, 0, innerX, innerY, 0, end, start, true);
+    } else if (this.sweep < 360) {
+      ctx.lineTo(0, 0);
+    }
+    ctx.closePath();
+  }
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    paintShape(
+      ctx,
+      () => this.ellipsePath(ctx),
+      this.fillColor,
+      this.strokeColor,
+      this.shapeStrokeWidth,
+    );
+  }
+}
+
+class FabricRoundedTriangleObject extends FabricObject {
+  static type = "FabricRoundedTriangle";
+
+  declare fillColor: string | null;
+  declare strokeColor: string | null;
+  declare shapeStrokeWidth: number;
+  declare cornerRadius: number;
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    paintShape(
+      ctx,
+      () => roundedTrianglePath(ctx, this.width, this.height, this.cornerRadius),
+      this.fillColor,
+      this.strokeColor,
+      this.shapeStrokeWidth,
+    );
+  }
+}
+
+class FabricArrowObject extends FabricObject {
+  static type = "FabricArrow";
+
+  declare stroke: string;
+  declare strokeWidth: number;
+  declare arrowHeadSize: number;
+  declare arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+  declare arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
+
+  private renderArrowHead(
+    ctx: CanvasRenderingContext2D,
+    side: "start" | "end",
+    style: "triangle" | "line" | "diamond" | "circle",
+    size: number,
+  ): void {
+    const direction = side === "start" ? -1 : 1;
+    const tipX = direction * (this.width / 2);
+    const innerX = tipX - direction * size;
+
+    const halfSize = size / 2;
+
+    if (style === "line") {
+      ctx.strokeStyle = this.stroke;
+      ctx.lineWidth = this.strokeWidth;
+      ctx.beginPath();
+      ctx.moveTo(innerX, -halfSize);
+      ctx.lineTo(tipX, 0);
+      ctx.lineTo(innerX, halfSize);
+      ctx.stroke();
+      return;
+    }
+
+    ctx.fillStyle = this.stroke;
+    ctx.beginPath();
+    if (style === "diamond") {
+      const middleX = tipX - direction * (size / 2);
+      ctx.moveTo(tipX, 0);
+      ctx.lineTo(middleX, -halfSize);
+      ctx.lineTo(innerX, 0);
+      ctx.lineTo(middleX, halfSize);
+    } else if (style === "circle") {
+      const centerX = tipX - direction * (size / 2);
+      ctx.arc(centerX, 0, size / 2, 0, Math.PI * 2);
+    } else {
+      ctx.moveTo(tipX, 0);
+      ctx.lineTo(innerX, -halfSize);
+      ctx.lineTo(innerX, halfSize);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    this.stroke = (options.stroke as string | undefined) ?? "#1f2937";
+    this.strokeWidth = (options.strokeWidth as number | undefined) ?? 6;
+    this.arrowHeadSize = (options.arrowHeadSize as number | undefined) ?? 24;
+  }
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    const w = this.width;
+    const h = this.height;
+    const sw = this.strokeWidth;
+    const ah = Math.max(0, Math.min(this.arrowHeadSize, w / 2));
+
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = this.stroke;
+
+    const startInset = this.arrowStartStyle !== "none" ? ah : 0;
+    const endInset = this.arrowEndStyle !== "none" ? ah : 0;
+    const shaftWidth = w - startInset - endInset;
+
+    if (sw > 0 && shaftWidth > 0) {
+      ctx.fillRect(-w / 2 + startInset, -sw / 2, shaftWidth, sw);
+    }
+
+    if (ah > 0 && this.arrowStartStyle !== "none") {
+      this.renderArrowHead(ctx, "start", this.arrowStartStyle, ah);
+    }
+    if (ah > 0 && this.arrowEndStyle !== "none") {
+      this.renderArrowHead(ctx, "end", this.arrowEndStyle, ah);
+    }
+
+    ctx.restore();
+  }
+}
+
+class FabricImageLayerObject extends FabricObject {
+  static type = "FabricImageLayer";
+
+  declare imageSrc: string;
+  declare imageStrokeColor: string | null;
+  declare imageStrokeWidth: number;
+  declare imageCornerRadius: number;
+  declare imageFit: "fill" | "contain";
+
+  private htmlImage: HTMLImageElement | null = null;
+  private imageLoadFailed = false;
+
+  constructor(options: Record<string, unknown> = {}) {
+    super(options);
+    this.imageSrc = (options.imageSrc as string | undefined) ?? "";
+    this.imageStrokeColor =
+      (options.imageStrokeColor as string | null | undefined) ?? null;
+    this.imageStrokeWidth =
+      (options.imageStrokeWidth as number | undefined) ?? 0;
+    this.imageCornerRadius =
+      (options.imageCornerRadius as number | undefined) ?? 0;
+    this.imageFit =
+      (options.imageFit as "fill" | "contain" | undefined) ?? "fill";
+    this.loadImage();
+  }
+
+  private loadImage(): void {
+    if (!this.imageSrc) {
+      this.imageLoadFailed = true;
+      return;
+    }
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      this.htmlImage = image;
+      this.imageLoadFailed = false;
+      this.dirty = true;
+      if (this.canvas) {
+        this.canvas.requestRenderAll();
+      }
+    };
+    image.onerror = () => {
+      this.htmlImage = null;
+      this.imageLoadFailed = true;
+      this.dirty = true;
+      if (this.canvas) {
+        this.canvas.requestRenderAll();
+      }
+    };
+    image.src = this.imageSrc;
+  }
+
+  setImageSource(src: string): void {
+    if (this.imageSrc === src) {
+      return;
+    }
+    this.imageSrc = src;
+    this.imageLoadFailed = false;
+    this.htmlImage = null;
+    this.loadImage();
+  }
+
+  private getEffectiveCornerRadii(): CornerRadii {
+    const maximum = Math.min(this.width, this.height) / 2;
+    const radius = Math.max(
+      0,
+      Math.min(this.imageCornerRadius, maximum),
+    );
+    return {
+      topLeft: radius,
+      topRight: radius,
+      bottomRight: radius,
+      bottomLeft: radius,
+    };
+  }
+
+  override _render(ctx: CanvasRenderingContext2D): void {
+    const w = this.width;
+    const h = this.height;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    const cornerRadii = this.getEffectiveCornerRadii();
+
+    ctx.save();
+    roundedRectanglePath(ctx, w, h, cornerRadii);
+    ctx.clip();
+
+    if (this.htmlImage) {
+      if (this.imageFit === "contain") {
+        const naturalWidth = this.htmlImage.naturalWidth || this.htmlImage.width;
+        const naturalHeight = this.htmlImage.naturalHeight || this.htmlImage.height;
+        const ratio = Math.min(w / naturalWidth, h / naturalHeight);
+        const drawWidth = naturalWidth * ratio;
+        const drawHeight = naturalHeight * ratio;
+        ctx.drawImage(
+          this.htmlImage,
+          -drawWidth / 2,
+          -drawHeight / 2,
+          drawWidth,
+          drawHeight,
+        );
+      } else {
+        ctx.drawImage(this.htmlImage, -w / 2, -h / 2, w, h);
+      }
+    } else if (this.imageLoadFailed) {
+      ctx.fillStyle = "#d1d5db";
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    } else {
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+    ctx.restore();
+
+    if (this.imageStrokeColor && this.imageStrokeWidth > 0) {
+      ctx.save();
+      roundedRectanglePath(ctx, w, h, cornerRadii);
+      ctx.strokeStyle = this.imageStrokeColor;
+      ctx.lineWidth = this.imageStrokeWidth * 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+class FabricLayerTextbox extends Textbox {
+  static type = "FabricLayerTextbox";
+
+  declare editSourceText?: string;
+
+  constructor(text: string, options: Record<string, unknown> = {}) {
+    super(text, {
+      ...options,
+      dynamicMinWidth: 0,
+    });
+    this.editSourceText =
+      (options.editSourceText as string | undefined) ?? text;
+  }
+
+  override enterEditingImpl(): void {
+    if (this.editSourceText !== undefined && this.text !== this.editSourceText) {
+      this.set({ text: this.editSourceText });
+    }
+    super.enterEditingImpl();
+  }
+}
+
+class FabricShapeTextObject extends FabricGroup {
+  static type = "FabricShapeText";
+
+  readonly shapeObject: FabricRoundedRectangleObject | FabricEllipseObject;
+  readonly textObject: FabricLayerTextbox;
+
+  constructor(
+    shapeObject: FabricRoundedRectangleObject | FabricEllipseObject,
+    options: Record<string, unknown> = {},
+  ) {
+    const textObject = new FabricLayerTextbox("", {
+      originX: "center",
+      originY: "center",
+      dynamicMinWidth: 0,
+    });
+    super([shapeObject, textObject], {
+      ...options,
+      layoutManager: new LayoutManager(new FixedLayout()),
+      subTargetCheck: true,
+      interactive: false,
+      objectCaching: false,
+    });
+    this.shapeObject = shapeObject;
+    this.textObject = textObject;
+  }
+
+  applyShapeText(shapeText: ShapeText, width: number, height: number): void {
+    const box = getShapeTextContentBox(width, height, shapeText.padding);
+    const text = this.textObject;
+    const displayText = text.isEditing
+      ? (text.text ?? shapeText.text)
+      : applyTextCase(shapeText.text, shapeText.textCase);
+    text.editSourceText = shapeText.text;
+    text.set({
+      text: displayText,
+      width: Math.max(1, box.width),
+      fontFamily: shapeText.fontFamily,
+      fontSize: shapeText.fontSize,
+      fontWeight: shapeText.fontWeight,
+      fontStyle: shapeText.fontStyle,
+      lineHeight: shapeText.lineHeight,
+      charSpacing: getCharSpacing(shapeText.fontSize, shapeText.letterSpacing),
+      textAlign: shapeText.textAlign,
+      fill: shapeText.fillEnabled ? shapeText.fill : "transparent",
+      stroke: shapeText.stroke,
+      strokeWidth: shapeText.strokeWidth,
+      paintFirst:
+        shapeText.stroke && shapeText.strokeWidth > 0 ? "stroke" : "fill",
+      editable: this.selectable,
+      visible: box.width > 0 && box.height > 0,
+    });
+    text.initDimensions();
+    const naturalHeight = text.height;
+    const centerY =
+      shapeText.verticalAlign === "top"
+        ? -height / 2 + box.y + naturalHeight / 2
+        : shapeText.verticalAlign === "bottom"
+          ? height / 2 - box.y - naturalHeight / 2
+          : 0;
+    text.set({ left: 0, top: centerY });
+    text.clipPath = new Rect({
+      originX: "center",
+      originY: "center",
+      left: 0,
+      top: -centerY,
+      width: Math.max(1, box.width),
+      height: Math.max(1, box.height),
+    });
+    text.dirty = true;
+    text.setCoords();
+  }
+}
+
+classRegistry.setClass(FabricArrowObject);
+classRegistry.setClass(FabricRoundedRectangleObject);
+classRegistry.setClass(FabricEllipseObject);
+classRegistry.setClass(FabricRoundedTriangleObject);
+classRegistry.setClass(FabricLayerTextbox);
+classRegistry.setClass(FabricImageLayerObject);
+classRegistry.setClass(FabricShapeTextObject);
+
+interface FabricSceneCanvasProps {
+  scene: Scene;
+  projectId: string;
+  projectWidth: number;
+  projectHeight: number;
+  displayScale?: number;
+  zoom?: number;
+  zoomCursorRef?: { current: { x: number; y: number } | null };
+  onSceneChange: (scene: Scene) => void;
+  onSelectedLayerIdsChange: (layerIds: string[]) => void;
+  onHoveredLayerIdChange: (layerId: string | null) => void;
+  onContextMenuRequest: (x: number, y: number) => void;
+  selectedLayerIds: readonly string[];
+  pendingTextEditLayerId?: string | null;
+  onPendingTextEditConsumed?: () => void;
+  onTextLayerChange?: (
+    layerId: string,
+    text: string,
+    naturalWidth: number,
+    naturalHeight: number,
+  ) => void;
+}
+
+function buildAssetUrl(projectId: string, src: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/${src}`;
+}
+
+function roundNumber(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function findLayerByIdOrChild(scene: Scene, layerId: string): Layer | null {
+  for (const layer of scene.layers) {
+    if (layer.id === layerId) return layer;
+    if (layer.type === "group") {
+      const child = layer.children.find(
+        (candidate) => candidate.id === layerId,
+      );
+      if (child) return child;
+    }
+  }
+  return null;
+}
+
+function findParentGroupLayer(
+  scene: Scene,
+  layerId: string,
+): GroupLayer | null {
+  for (const layer of scene.layers) {
+    if (
+      layer.type === "group" &&
+      layer.children.some((candidate) => candidate.id === layerId)
+    ) {
+      return layer;
+    }
+  }
+  return null;
+}
+
+function sortChildrenByZIndex(
+  children: readonly AtomicLayer[],
+): AtomicLayer[] {
+  return [...children].sort(
+    (first, second) => first.zIndex - second.zIndex,
+  );
+}
+
+function getChildLayerPositionFromObject(
+  groupLayer: GroupLayer,
+  childWidth: number,
+  childHeight: number,
+  childObject: FabricObject,
+): { x: number; y: number } {
+  const centerX = childObject.left ?? 0;
+  const centerY = childObject.top ?? 0;
+  return {
+    x: roundNumber(centerX + groupLayer.width / 2 - childWidth / 2),
+    y: roundNumber(centerY + groupLayer.height / 2 - childHeight / 2),
+  };
+}
+
+function fabricChildrenMatch(
+  fabricChildren: readonly FabricObject[],
+  sceneChildren: readonly AtomicLayer[],
+  objectToLayerId: ReadonlyMap<FabricObject, string>,
+): boolean {
+  return (
+    fabricChildren.length === sceneChildren.length &&
+    fabricChildren.every(
+      (childObject, index) =>
+        objectToLayerId.get(childObject) === sceneChildren[index].id,
+    )
+  );
+}
+
+function readVisibleWidth(obj: FabricObject, minWidth = 1): number {
+  return Math.max(
+    minWidth,
+    roundNumber((obj.width ?? 0) * Math.abs(obj.scaleX ?? 1)),
+  );
+}
+
+function readVisibleHeight(obj: FabricObject, minHeight = 1): number {
+  return Math.max(
+    minHeight,
+    roundNumber((obj.height ?? 0) * Math.abs(obj.scaleY ?? 1)),
+  );
+}
+
+function updateLayerFromFabricObject(
+  layer: Layer,
+  object: FabricObject,
+): Layer {
+  if (
+    layer.type === "group" &&
+    object instanceof FabricGroup &&
+    !(object instanceof FabricShapeTextObject)
+  ) {
+    const scaleX = Math.abs(object.scaleX ?? 1);
+    const scaleY = Math.abs(object.scaleY ?? 1);
+    const rescaled = scaleGroupChildren(layer, scaleX, scaleY);
+    object.set({
+      scaleX: 1,
+      scaleY: 1,
+      width: rescaled.width,
+      height: rescaled.height,
+    });
+    object.setCoords();
+    return {
+      ...rescaled,
+      x: roundNumber((object.left ?? 0) - rescaled.width / 2),
+      y: roundNumber((object.top ?? 0) - rescaled.height / 2),
+      rotation: roundNumber(object.angle ?? 0),
+    };
+  }
+
+  const isText = layer.type === "text";
+  const minWidth = isText ? MIN_TEXT_WIDTH : 1;
+  const minHeight = isText ? 1 : 1;
+  const width = readVisibleWidth(object, minWidth);
+  const height = readVisibleHeight(object, minHeight);
+  object.set({ scaleX: 1, scaleY: 1 });
+  object.setCoords();
+
+  return {
+    ...layer,
+    x: roundNumber((object.left ?? 0) - width / 2),
+    y: roundNumber((object.top ?? 0) - height / 2),
+    width,
+    height,
+    rotation: roundNumber(object.angle ?? 0),
+  };
+}
+
+function updateChildLayerFromFabricObject(
+  groupLayer: GroupLayer,
+  childLayer: AtomicLayer,
+  childObject: FabricObject,
+): AtomicLayer {
+  const isText = childLayer.type === "text";
+  const width = readVisibleWidth(childObject, isText ? MIN_TEXT_WIDTH : 1);
+  const height = readVisibleHeight(childObject);
+  const position = getChildLayerPositionFromObject(
+    groupLayer,
+    width,
+    height,
+    childObject,
+  );
+  childObject.set({ scaleX: 1, scaleY: 1 });
+  childObject.setCoords();
+  return {
+    ...childLayer,
+    width,
+    height,
+    x: position.x,
+    y: position.y,
+    rotation: roundNumber(childObject.angle ?? 0),
+  };
+}
+
+function applyLayerToFabricObject(
+  object: FabricObject,
+  layer: Layer,
+  groupLayer: GroupLayer | undefined,
+  projectId: string,
+): void {
+  const isChild = groupLayer !== undefined;
+  const isLocked = layer.locked || (isChild ? groupLayer!.locked : false);
+
+  if (layer.type !== "group" && layer.type !== "text") {
+    object.controls = createDimensionResizeControls();
+    object.lockScalingFlip = true;
+  }
+
+  object.set({
+    borderColor: "#7147e8",
+    borderScaleFactor: 2,
+    cornerColor: "#ffffff",
+    cornerSize: 9,
+    cornerStrokeColor: "#7147e8",
+    cornerStyle: "rect",
+    transparentCorners: false,
+    hoverCursor: isLocked ? "default" : "pointer",
+    moveCursor: "move",
+  });
+
+  if (
+    (layer.type === "rectangle" || layer.type === "circle") &&
+    object instanceof FabricShapeTextObject
+  ) {
+    const left = isChild
+      ? layer.x + layer.width / 2 - (groupLayer as GroupLayer).width / 2
+      : layer.x + layer.width / 2;
+    const top = isChild
+      ? layer.y + layer.height / 2 - (groupLayer as GroupLayer).height / 2
+      : layer.y + layer.height / 2;
+    object.set({
+      left,
+      top,
+      width: layer.width,
+      height: layer.height,
+      scaleX: 1,
+      scaleY: 1,
+      angle: layer.rotation,
+      opacity: layer.opacityEnabled ? layer.opacity : 1,
+      globalCompositeOperation:
+        layer.blendMode === "normal" ? "source-over" : layer.blendMode,
+      visible: layer.visible,
+      selectable: !isLocked,
+      evented: !isLocked,
+      activeOn: isChild ? "up" : "down",
+    });
+    const shapeObject = object.shapeObject;
+    shapeObject.set({ width: layer.width, height: layer.height, left: 0, top: 0 });
+    if (
+      layer.type === "rectangle" &&
+      shapeObject instanceof FabricRoundedRectangleObject
+    ) {
+      const cornerRadii = layer.cornerEnabled
+        ? (layer.cornerRadii ?? {
+            topLeft: layer.cornerRadius,
+            topRight: layer.cornerRadius,
+            bottomRight: layer.cornerRadius,
+            bottomLeft: layer.cornerRadius,
+          })
+        : { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 };
+      shapeObject.set({
+        fillColor: layer.fillEnabled ? layer.fill : null,
+        strokeColor: layer.stroke,
+        shapeStrokeWidth: layer.strokeWidth,
+        cornerRadii,
+      });
+      object.applyShapeText(layer.shapeText, layer.width, layer.height);
+    } else if (
+      layer.type === "circle" &&
+      shapeObject instanceof FabricEllipseObject
+    ) {
+      shapeObject.set({
+        fillColor: layer.fillEnabled ? layer.fill : null,
+        strokeColor: layer.stroke,
+        shapeStrokeWidth: layer.strokeWidth,
+        donut: layer.donut,
+        sweep: layer.sweep,
+        startAngle: layer.startAngle,
+      });
+      object.applyShapeText(layer.shapeText, layer.width, layer.height);
+      object.textObject.visible = layer.donut === 0 && layer.sweep === 360;
+    }
+    shapeObject.dirty = true;
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
+  if (layer.type === "group" && object instanceof FabricGroup) {
+    object.set({
+      left: layer.x + layer.width / 2,
+      top: layer.y + layer.height / 2,
+      width: layer.width,
+      height: layer.height,
+      scaleX: 1,
+      scaleY: 1,
+      angle: layer.rotation,
+      opacity: layer.opacityEnabled ? layer.opacity : 1,
+      visible: layer.visible,
+      selectable: !isLocked,
+      evented: !isLocked,
+      subTargetCheck: true,
+      interactive: true,
+    });
+    object.setControlsVisibility({ ml: false, mr: false, mt: false, mb: false });
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
+  const left = isChild
+    ? (layer as AtomicLayer).x +
+      layer.width / 2 -
+      (groupLayer as GroupLayer).width / 2
+    : layer.x + layer.width / 2;
+  const top = isChild
+    ? (layer as AtomicLayer).y +
+      layer.height / 2 -
+      (groupLayer as GroupLayer).height / 2
+    : layer.y + layer.height / 2;
+
+  object.set({
+    left,
+    top,
+    scaleX: 1,
+    scaleY: 1,
+    angle: layer.rotation,
+    opacity: layer.opacityEnabled ? layer.opacity : 1,
+    globalCompositeOperation:
+      layer.blendMode === "normal" ? "source-over" : layer.blendMode,
+    visible: layer.visible,
+    selectable: !isLocked,
+    evented: !isLocked,
+    activeOn: isChild ? "up" : "down",
+  });
+
+  if (
+    layer.type === "rectangle" &&
+    object instanceof FabricRoundedRectangleObject
+  ) {
+    const cornerRadii = layer.cornerEnabled
+      ? (layer.cornerRadii ?? {
+          topLeft: layer.cornerRadius,
+          topRight: layer.cornerRadius,
+          bottomRight: layer.cornerRadius,
+          bottomLeft: layer.cornerRadius,
+        })
+      : { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 };
+    object.set({
+      width: layer.width,
+      height: layer.height,
+      fillColor: layer.fillEnabled ? layer.fill : null,
+      strokeColor: layer.stroke,
+      shapeStrokeWidth: layer.strokeWidth,
+      cornerRadii,
+    });
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
+  if (layer.type === "circle" && object instanceof FabricEllipseObject) {
+    object.set({
+      width: layer.width,
+      height: layer.height,
+      fillColor: layer.fillEnabled ? layer.fill : null,
+      strokeColor: layer.stroke,
+      shapeStrokeWidth: layer.strokeWidth,
+      donut: layer.donut,
+      sweep: layer.sweep,
+      startAngle: layer.startAngle,
+    });
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
+  if (
+    layer.type === "triangle" &&
+    object instanceof FabricRoundedTriangleObject
+  ) {
+    object.set({
+      width: layer.width,
+      height: layer.height,
+      fillColor: layer.fillEnabled ? layer.fill : null,
+      strokeColor: layer.stroke,
+      shapeStrokeWidth: layer.strokeWidth,
+      cornerRadius: layer.cornerEnabled ? layer.cornerRadius : 0,
+    });
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
+  if (layer.type === "arrow" && object instanceof FabricArrowObject) {
+    object.set({
+      width: layer.width,
+      height: layer.height,
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+      arrowHeadSize: layer.arrowHeadSize,
+      arrowStartStyle: layer.arrowStartStyle,
+      arrowEndStyle: layer.arrowEndStyle,
+    });
+    object.dirty = true;
+    object.setCoords();
+    return;
+  }
+
+  if (layer.type === "text" && object instanceof FabricLayerTextbox) {
+    const displayText = object.isEditing
+      ? (object.text ?? layer.text)
+      : applyTextCase(layer.text, layer.textCase);
+
+    object.editSourceText = layer.text;
+
+    if (object.text !== displayText) {
+      object.set({ text: displayText });
+    }
+
+    object.set({
+      fontFamily: layer.fontFamily,
+      fontSize: layer.fontSize,
+      fontWeight: layer.fontWeight,
+      fontStyle: layer.fontStyle,
+      lineHeight: layer.lineHeight,
+      charSpacing: getCharSpacing(layer.fontSize, layer.letterSpacing),
+      textAlign: layer.textAlign,
+      fill: layer.fillEnabled ? layer.fill : "transparent",
+      stroke: layer.stroke,
+      strokeWidth: layer.strokeWidth,
+      paintFirst: layer.stroke && layer.strokeWidth > 0 ? "stroke" : "fill",
+      editable: !layer.locked,
+    });
+
+    object.set({
+      width: layer.width,
+      height: layer.height,
+    });
+
+    object.dirty = true;
+    object.setCoords();
+  }
+
+  if (layer.type === "image" && object instanceof FabricImageLayerObject) {
+    object.setImageSource(layer.src ? buildAssetUrl(projectId, layer.src) : "");
+    object.set({
+      width: layer.width,
+      height: layer.height,
+      imageStrokeColor: layer.stroke,
+      imageStrokeWidth: layer.strokeWidth,
+      imageCornerRadius: layer.cornerRadius,
+      imageFit: layer.fit,
+    });
+    object.dirty = true;
+    object.setCoords();
+  }
+}
+
+function createFabricObjectForLayer(
+  layer: Layer,
+  projectId: string,
+): FabricObject {
+  let object: FabricObject;
+
+  switch (layer.type) {
+    case "rectangle":
+      object = new FabricShapeTextObject(new FabricRoundedRectangleObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      }), { originX: "center", originY: "center" });
+      break;
+    case "circle":
+      object = new FabricShapeTextObject(new FabricEllipseObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      }), { originX: "center", originY: "center" });
+      break;
+    case "triangle":
+      object = new FabricRoundedTriangleObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      });
+      break;
+    case "text":
+      object = new FabricLayerTextbox(layer.text, {
+        originX: "center",
+        originY: "center",
+        editSourceText: layer.text,
+      });
+      break;
+    case "arrow":
+      object = new FabricArrowObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+      });
+      break;
+    case "image":
+      object = new FabricImageLayerObject({
+        originX: "center",
+        originY: "center",
+        objectCaching: false,
+        imageSrc: layer.src ? buildAssetUrl(projectId, layer.src) : "",
+        imageFit: layer.fit,
+      });
+      break;
+    case "group": {
+      const sortedChildren = sortChildrenByZIndex(layer.children);
+      const childObjects = sortedChildren.map((child) =>
+        createFabricObjectForLayer(child, projectId),
+      );
+      const group = new FabricGroup(childObjects, {
+        originX: "center",
+        originY: "center",
+        width: layer.width,
+        height: layer.height,
+        layoutManager: new LayoutManager(new FixedLayout()),
+        objectCaching: false,
+      });
+      group.getObjects().forEach((childObject, index) => {
+        const child = sortedChildren[index];
+        applyLayerToFabricObject(childObject, child, layer, projectId);
+      });
+      object = group;
+      break;
+    }
+  }
+
+  applyLayerToFabricObject(object, layer, undefined, projectId);
+  return object;
+}
+
+function isFabricObjectForLayer(
+  object: FabricObject,
+  layer: Layer,
+): boolean {
+  switch (layer.type) {
+    case "rectangle":
+      return object instanceof FabricShapeTextObject && object.shapeObject instanceof FabricRoundedRectangleObject;
+    case "circle":
+      return object instanceof FabricShapeTextObject && object.shapeObject instanceof FabricEllipseObject;
+    case "triangle":
+      return object instanceof FabricRoundedTriangleObject;
+    case "text":
+      return object instanceof FabricLayerTextbox;
+    case "arrow":
+      return object instanceof FabricArrowObject;
+    case "image":
+      return object instanceof FabricImageLayerObject;
+    case "group":
+      return object instanceof FabricGroup;
+  }
+}
+
+function applySelectionToCanvas(
+  canvas: Canvas,
+  selectedLayerIds: readonly string[],
+  layerIdToObject: ReadonlyMap<string, FabricObject>,
+): void {
+  const selectedObjects = [
+    ...new Set(
+      selectedLayerIds.flatMap((layerId) => {
+        const directObject = layerIdToObject.get(layerId);
+        return directObject ? [directObject] : [];
+      }),
+    ),
+  ];
+
+  if (selectedObjects.length === 0) {
+    canvas.discardActiveObject();
+    return;
+  }
+
+  if (selectedObjects.length === 1) {
+    canvas.setActiveObject(selectedObjects[0]);
+    return;
+  }
+
+  canvas.setActiveObject(new ActiveSelection(selectedObjects, { canvas }));
+}
+
+export function FabricSceneCanvas({
+  scene,
+  projectId,
+  projectWidth,
+  projectHeight,
+  displayScale = 0.5,
+  zoom = 1,
+  zoomCursorRef,
+  onSceneChange,
+  onSelectedLayerIdsChange,
+  onHoveredLayerIdChange,
+  onContextMenuRequest,
+  selectedLayerIds,
+  pendingTextEditLayerId,
+  onPendingTextEditConsumed,
+  onTextLayerChange,
+}: FabricSceneCanvasProps) {
+  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const fabricCanvasRef = useRef<Canvas | null>(null);
+  const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
+  const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
+  const hoveredObjectRef = useRef<FabricObject | null>(null);
+  // Shift-drag axis lock: the dragged's center when Shift is first detected
+  // mid-drag, and the locked axis + the pin position of the locked-out
+  // axis once the initial direction is clear.
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lockOriginRef = useRef<{ left: number; top: number } | null>(null);
+  const lockedAxisRef = useRef<"x" | "y" | null>(null);
+  const sceneRef = useRef<Scene>(scene);
+  const projectIdRef = useRef<string>(projectId);
+  const contextMenuRequestRef = useRef(onContextMenuRequest);
+  const isApplyingSelectionRef = useRef(false);
+  const pendingTextEditRef = useRef<string | null>(null);
+  const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
+  const onPendingTextEditConsumedRef = useRef<
+    (() => void) | undefined
+  >(undefined);
+  const onTextLayerChangeRef = useRef<
+    ((layerId: string, text: string, width: number, height: number) => void) |
+      undefined
+  >(undefined);
+
+  selectedLayerIdsRef.current = selectedLayerIds;
+
+  useEffect(() => {
+    sceneRef.current = scene;
+  }, [scene]);
+
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
+  useEffect(() => {
+    contextMenuRequestRef.current = onContextMenuRequest;
+  }, [onContextMenuRequest]);
+
+  useEffect(() => {
+    pendingTextEditRef.current = pendingTextEditLayerId ?? null;
+  }, [pendingTextEditLayerId]);
+
+  useEffect(() => {
+    onPendingTextEditConsumedRef.current = () => {
+      onPendingTextEditConsumed?.();
+    };
+  }, [onPendingTextEditConsumed]);
+
+  useEffect(() => {
+    onTextLayerChangeRef.current = onTextLayerChange;
+  }, [onTextLayerChange]);
+
+  const syncObjectsToScene = useCallback(
+    (objects: readonly FabricObject[]): void => {
+      const objectByLayerId = new Map<string, FabricObject>();
+
+      for (const object of objects) {
+        const layerId = objectToLayerIdRef.current.get(object);
+
+        if (layerId) {
+          objectByLayerId.set(layerId, object);
+        }
+      }
+
+      if (objectByLayerId.size === 0) {
+        return;
+      }
+
+      const currentScene = sceneRef.current;
+      const updatedScene: Scene = {
+        ...currentScene,
+        layers: currentScene.layers.map((layer) => {
+          if (layer.type === "group") {
+            const groupObject = objectByLayerId.get(layer.id);
+            const nextGroup = groupObject
+              ? updateLayerFromFabricObject(layer, groupObject)
+              : layer;
+            if (nextGroup.type !== "group") return nextGroup;
+            let childChanged = false;
+            const children = nextGroup.children.map((child) => {
+              const childObject = objectByLayerId.get(child.id);
+              if (!childObject) return child;
+              childChanged = true;
+              return updateChildLayerFromFabricObject(
+                nextGroup,
+                child,
+                childObject,
+              );
+            });
+            return childChanged ? { ...nextGroup, children } : nextGroup;
+          }
+          const object = objectByLayerId.get(layer.id);
+          return object ? updateLayerFromFabricObject(layer, object) : layer;
+        }),
+      };
+
+      sceneRef.current = updatedScene;
+      onSceneChange(updatedScene);
+    },
+    [onSceneChange],
+  );
+
+  const registerTextEvents = useCallback(
+    (canvas: Canvas, object: FabricObject): void => {
+      if (!(object instanceof FabricLayerTextbox)) return;
+
+      object.on("editing:exited", () => {
+        const layerId = objectToLayerIdRef.current.get(object);
+        if (!layerId) return;
+        const currentScene = sceneRef.current;
+        const layer = findLayerByIdOrChild(currentScene, layerId);
+        const parentGroup = findParentGroupLayer(currentScene, layerId);
+        const shapeOwner =
+          object.parent instanceof FabricShapeTextObject
+            ? object.parent
+            : undefined;
+        if (layer && shapeOwner) {
+          applyLayerToFabricObject(
+            shapeOwner,
+            layer,
+            parentGroup ?? undefined,
+            projectIdRef.current,
+          );
+          shapeOwner.setCoords();
+          canvas.requestRenderAll();
+        } else if (layer) {
+          applyLayerToFabricObject(
+            object,
+            layer,
+            parentGroup ?? undefined,
+            projectIdRef.current,
+          );
+          object.setCoords();
+          canvas.requestRenderAll();
+        }
+      });
+
+      object.on("editing:entered", () => {
+        const layerId = objectToLayerIdRef.current.get(object);
+        if (!layerId) return;
+        const currentScene = sceneRef.current;
+        const layer = findLayerByIdOrChild(currentScene, layerId);
+        if (
+          !layer ||
+          (layer.type !== "text" &&
+            layer.type !== "rectangle" &&
+            layer.type !== "circle")
+        ) return;
+
+        const sourceText = layer.type === "text" ? layer.text : layer.shapeText.text;
+        object.editSourceText = sourceText;
+        if (object.text !== sourceText) {
+          object.set({ text: sourceText });
+        }
+        if (object.hiddenTextarea && object.hiddenTextarea.value !== sourceText) {
+          object.hiddenTextarea.value = sourceText;
+          object.selectionStart = object.selectionEnd = sourceText.length;
+          object._updateTextarea();
+        }
+      });
+    },
+    [],
+  );
+
+  const addFabricObject = useCallback(
+    (canvas: Canvas, layer: Layer): FabricObject => {
+      const object = createFabricObjectForLayer(layer, projectIdRef.current);
+      layerIdToObjectRef.current.set(layer.id, object);
+      objectToLayerIdRef.current.set(object, layer.id);
+
+      if (layer.type === "group" && object instanceof FabricGroup) {
+        const sortedChildren = sortChildrenByZIndex(layer.children);
+        object.getObjects().forEach((childObject, index) => {
+          const child = sortedChildren[index];
+          if (child) {
+            layerIdToObjectRef.current.set(child.id, childObject);
+            objectToLayerIdRef.current.set(childObject, child.id);
+            if (childObject instanceof FabricShapeTextObject) {
+              objectToLayerIdRef.current.set(childObject.textObject, child.id);
+            }
+          }
+        });
+      }
+
+      if (object instanceof FabricShapeTextObject) {
+        objectToLayerIdRef.current.set(object.textObject, layer.id);
+      }
+
+      canvas.add(object);
+
+      registerTextEvents(canvas, object);
+      if (object instanceof FabricShapeTextObject) {
+        registerTextEvents(canvas, object.textObject);
+      }
+      if (object instanceof FabricGroup) {
+        object.getObjects().forEach((childObject) => {
+          registerTextEvents(canvas, childObject);
+          if (childObject instanceof FabricShapeTextObject) {
+            registerTextEvents(canvas, childObject.textObject);
+          }
+        });
+      }
+
+      return object;
+    },
+    [registerTextEvents],
+  );
+
+  useEffect(() => {
+    const canvasElement = canvasElementRef.current;
+
+    if (!canvasElement) {
+      return;
+    }
+
+    const canvas = new Canvas(canvasElement, {
+      width: projectWidth * displayScale,
+      height: projectHeight * displayScale,
+      backgroundColor: sceneRef.current.backgroundColor ?? "#000000",
+      fireRightClick: true,
+      selection: true,
+      selectionKey: "shiftKey",
+      stopContextMenu: true,
+      preserveObjectStacking: true,
+    });
+
+    canvas.setViewportTransform([displayScale, 0, 0, displayScale, 0, 0]);
+    fabricCanvasRef.current = canvas;
+    const objectToLayerId = objectToLayerIdRef.current;
+    const layerIdToObject = layerIdToObjectRef.current;
+    objectToLayerId.clear();
+    layerIdToObject.clear();
+
+    const sortedLayers = [...sceneRef.current.layers].sort(
+      (first, second) => first.zIndex - second.zIndex,
+    );
+
+    for (const layer of sortedLayers) {
+      addFabricObject(canvas, layer);
+    }
+
+    const handleContextMenu = (event: MouseEvent): void => {
+      event.preventDefault();
+      contextMenuRequestRef.current(event.clientX, event.clientY);
+    };
+    canvas.upperCanvasEl.addEventListener("contextmenu", handleContextMenu, true);
+
+    const syncSelectedLayers = (): void => {
+      if (isApplyingSelectionRef.current || promotedDragTarget !== null) {
+        return;
+      }
+
+      const layerIds = canvas
+        .getActiveObjects()
+        .map((object) => objectToLayerIdRef.current.get(object))
+        .filter((layerId): layerId is string => layerId !== undefined);
+
+      onSelectedLayerIdsChange(layerIds);
+    };
+
+    canvas.on("object:modified", (event) => {
+      lockedAxisRef.current = null;
+      lockOriginRef.current = null;
+      const target = event.target;
+
+      if (!target) {
+        return;
+      }
+      if (
+        target instanceof FabricLayerTextbox &&
+        target.parent instanceof FabricShapeTextObject
+      ) return;
+
+      if (target instanceof ActiveSelection) {
+        const selectedObjects = target.getObjects();
+        const selectedIds = selectedObjects
+          .map((object) => objectToLayerIdRef.current.get(object))
+          .filter((layerId): layerId is string => layerId !== undefined);
+
+        const spaces = new Set(
+          selectedObjects.map((object) => {
+            const parent = object.parent;
+            if (parent instanceof FabricGroup) {
+              return objectToLayerIdRef.current.get(parent) ?? "scene";
+            }
+            return "scene";
+          }),
+        );
+
+        queueMicrotask(() => {
+          isApplyingSelectionRef.current = true;
+
+          try {
+            canvas.discardActiveObject();
+
+            if (spaces.size > 1) {
+              const currentScene = sceneRef.current;
+              for (const selectedObject of selectedObjects) {
+                const layerId = objectToLayerIdRef.current.get(selectedObject);
+                if (!layerId) continue;
+                const layer = findLayerByIdOrChild(currentScene, layerId);
+                const parentGroup = findParentGroupLayer(currentScene, layerId);
+                if (layer) {
+                  applyLayerToFabricObject(
+                    selectedObject,
+                    layer,
+                    parentGroup ?? undefined,
+                    projectIdRef.current,
+                  );
+                }
+              }
+            } else {
+              syncObjectsToScene(selectedObjects);
+            }
+
+            applySelectionToCanvas(
+              canvas,
+              selectedIds,
+              layerIdToObjectRef.current,
+            );
+            canvas.requestRenderAll();
+          } finally {
+            isApplyingSelectionRef.current = false;
+          }
+        });
+        return;
+      }
+
+      syncObjectsToScene([target]);
+    });
+
+    canvas.on("object:resizing", (event) => {
+      const target = event.target;
+      if (!(target instanceof FabricShapeTextObject)) return;
+      const layerId = objectToLayerIdRef.current.get(target);
+      if (!layerId) return;
+      const layer = findLayerByIdOrChild(sceneRef.current, layerId);
+      if (!layer || (layer.type !== "rectangle" && layer.type !== "circle")) {
+        return;
+      }
+
+      const width = Math.max(1, target.width);
+      const height = Math.max(1, target.height);
+      target.shapeObject.set({ left: 0, top: 0, width, height });
+      target.applyShapeText(layer.shapeText, width, height);
+      target.shapeObject.dirty = true;
+      target.dirty = true;
+      target.setCoords();
+      if (target.parent instanceof FabricGroup) {
+        target.parent.dirty = true;
+      }
+      canvas.requestRenderAll();
+    });
+
+    canvas.on("object:moving", (event) => {
+      const target = event.target;
+      if (!target) return;
+      if (target instanceof FabricLayerTextbox && target.isEditing) return;
+
+      // Shift-drag axis lock: lock movement to whichever axis the user is
+      // moving more on. We commit to the axis once motion clears the floor
+      // (1 scene unit) so a perfectly diagonal micro-jitter at the start
+      // doesn't pick the wrong axis.
+      if (event.e.shiftKey) {
+        if (lockedAxisRef.current === null) {
+          const start = dragStartRef.current;
+          if (start) {
+            const rect = target.getBoundingRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const axis = resolveShiftLockAxis(start, { x: cx, y: cy }, 1);
+            if (axis) {
+              lockedAxisRef.current = axis;
+              lockOriginRef.current = {
+                left: target.left ?? 0,
+                top: target.top ?? 0,
+              };
+            }
+          }
+        }
+        const axis = lockedAxisRef.current;
+        const origin = lockOriginRef.current;
+        if (axis && origin) {
+          // Re-pin the locked-out axis to where it was when Shift engaged,
+          // overriding any Fabric-driven pointer translation. The dragged
+          // visually only moves along the locked axis.
+          if (axis === "x") {
+            target.set({ top: origin.top });
+          } else {
+            target.set({ left: origin.left });
+          }
+          target.setCoords();
+        }
+      }
+    });
+
+    canvas.on("selection:created", syncSelectedLayers);
+    canvas.on("selection:updated", syncSelectedLayers);
+    canvas.on("selection:cleared", syncSelectedLayers);
+    const resolveHoverTarget = (
+      target: FabricObject | null | undefined,
+    ): FabricObject | null => {
+      if (!target) return null;
+      const parent = target.parent;
+      return parent instanceof FabricGroup ? parent : target;
+    };
+
+    canvas.on("mouse:move", (event) => {
+      const hoverTarget = resolveHoverTarget(event.target);
+      if (hoverTarget === hoveredObjectRef.current) return;
+
+      hoveredObjectRef.current = hoverTarget;
+      onHoveredLayerIdChange(
+        hoverTarget
+          ? (objectToLayerIdRef.current.get(hoverTarget) ?? null)
+          : null,
+      );
+      canvas.requestRenderAll();
+    });
+    canvas.on("mouse:out", () => {
+      if (!hoveredObjectRef.current) return;
+
+      hoveredObjectRef.current = null;
+      onHoveredLayerIdChange(null);
+      canvas.requestRenderAll();
+    });
+    canvas.on("after:render", ({ ctx }) => {
+      const hoveredObject = hoveredObjectRef.current;
+      if (
+        !hoveredObject ||
+        !hoveredObject.visible ||
+        !canvas.getObjects().includes(hoveredObject) ||
+        canvas.getActiveObjects().includes(hoveredObject)
+      ) {
+        return;
+      }
+
+      hoveredObject._renderControls(ctx, {
+        borderColor: "#7147e8",
+        hasBorders: true,
+        hasControls: false,
+      });
+    });
+    canvas.on("mouse:up", () => {
+      lockedAxisRef.current = null;
+      lockOriginRef.current = null;
+    });
+    canvas.on("mouse:dblclick", (event) => {
+      const selectedObject =
+        selectedLayerIdsRef.current.length === 1
+          ? layerIdToObjectRef.current.get(selectedLayerIdsRef.current[0])
+          : undefined;
+      const selectedChildWasHit =
+        selectedObject?.parent instanceof FabricGroup &&
+        selectedObject.containsPoint(event.scenePoint);
+      const childObject = selectedChildWasHit
+        ? selectedObject
+        : [...(event.subTargets ?? []), event.target]
+            .reverse()
+            .find((candidate) => {
+              let current = candidate;
+              while (current) {
+                if (objectToLayerIdRef.current.has(current)) return true;
+                current = current.parent;
+              }
+              return false;
+            });
+      if (!childObject) return;
+      let mappedObject: FabricObject | undefined = childObject;
+      while (mappedObject && !objectToLayerIdRef.current.has(mappedObject)) {
+        mappedObject = mappedObject.parent;
+      }
+      if (!mappedObject) return;
+      const childId = objectToLayerIdRef.current.get(mappedObject);
+      const child = childId
+        ? findLayerByIdOrChild(sceneRef.current, childId)
+        : undefined;
+      if (!child || child.locked) return;
+      const editableText =
+        mappedObject instanceof FabricShapeTextObject &&
+        (child.type !== "circle" || (child.donut === 0 && child.sweep === 360))
+          ? mappedObject.textObject
+          : mappedObject instanceof FabricLayerTextbox
+            ? mappedObject
+            : undefined;
+      canvas.setActiveObject(editableText ?? mappedObject);
+      onSelectedLayerIdsChange([child.id]);
+      if (editableText) {
+        editableText.enterEditing();
+        editableText.selectAll();
+      }
+      canvas.requestRenderAll();
+    });
+
+    let promotedDragTarget: { id: string; object: FabricObject } | null = null;
+    canvas.on("mouse:down:before", (event) => {
+      const rawTarget = event.target;
+      if (!rawTarget) {
+        promotedDragTarget = null;
+        return;
+      }
+
+      const target = resolveDragTarget(
+        rawTarget,
+        selectedLayerIdsRef.current,
+        (candidate) =>
+          candidate.parent instanceof FabricShapeTextObject
+            ? candidate.parent
+            : candidate,
+        (candidate) =>
+          candidate.parent instanceof FabricObject
+            ? candidate.parent
+            : undefined,
+        (candidate) => objectToLayerIdRef.current.get(candidate),
+        (candidate) =>
+          candidate instanceof FabricGroup &&
+          !(candidate instanceof FabricShapeTextObject),
+      );
+      const targetId = objectToLayerIdRef.current.get(target);
+      promotedDragTarget =
+        targetId && target !== rawTarget
+          ? { id: targetId, object: target }
+          : null;
+    });
+    canvas.on("mouse:down", (event) => {
+      const pointerEvent = event.e as MouseEvent;
+      if (pointerEvent.button === 2) {
+        pointerEvent.preventDefault();
+        contextMenuRequestRef.current(
+          pointerEvent.clientX,
+          pointerEvent.clientY,
+        );
+        return;
+      }
+      if (!event.target) {
+        onSelectedLayerIdsChange([]);
+        return;
+      }
+      if (promotedDragTarget) {
+        const { id, object } = promotedDragTarget;
+        canvas.setActiveObject(object);
+        onSelectedLayerIdsChange([id]);
+        canvas._currentTransform = null;
+        canvas._setupCurrentTransform(pointerEvent, object, false);
+        canvas.requestRenderAll();
+      }
+      // Record the drag start so Shift-lock can detect the initial drag
+      // direction (whichever axis the user moves more on first).
+      const active = canvas.getActiveObject();
+      if (active) {
+        const rect = active.getBoundingRect();
+        dragStartRef.current = {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+        lockOriginRef.current = {
+          left: active.left ?? 0,
+          top: active.top ?? 0,
+        };
+        lockedAxisRef.current = null;
+      }
+    });
+    canvas.on("mouse:up", () => {
+      if (!promotedDragTarget) {
+        return;
+      }
+      const { id, object } = promotedDragTarget;
+      const activeObject = canvas.getActiveObject();
+      if (activeObject !== object) {
+        canvas.setActiveObject(object);
+        onSelectedLayerIdsChange([id]);
+        canvas.requestRenderAll();
+      }
+      promotedDragTarget = null;
+    });
+
+    canvas.on("text:changed", (event) => {
+      const target = event.target;
+      if (!(target instanceof FabricLayerTextbox)) return;
+      if (!target.isEditing) return;
+      const layerId = objectToLayerIdRef.current.get(target);
+      if (!layerId) return;
+
+      const textLayer = findLayerByIdOrChild(
+        sceneRef.current,
+        layerId,
+      );
+      if (
+        !textLayer ||
+        (textLayer.type !== "text" &&
+          textLayer.type !== "rectangle" &&
+          textLayer.type !== "circle")
+      ) return;
+
+      const sourceText = textLayer.type === "text" ? textLayer.text : textLayer.shapeText.text;
+      const newText = target.text ?? sourceText;
+      target.editSourceText = newText;
+      const measured = textLayer.type === "text"
+        ? computeTextBoxSize({ ...textLayer, text: newText })
+        : { width: textLayer.width, height: textLayer.height };
+      if (textLayer.type === "text") {
+        target.set({ width: measured.width, height: measured.height });
+      }
+      target.setCoords();
+
+      onTextLayerChangeRef.current?.(
+        layerId,
+        newText,
+        measured.width,
+        measured.height,
+      );
+    });
+
+    canvas.requestRenderAll();
+
+    return () => {
+      hoveredObjectRef.current = null;
+      onHoveredLayerIdChange(null);
+      canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
+      void canvas.dispose();
+      fabricCanvasRef.current = null;
+      objectToLayerId.clear();
+      layerIdToObject.clear();
+    };
+  }, [
+    addFabricObject,
+    displayScale,
+    onSelectedLayerIdsChange,
+    onHoveredLayerIdChange,
+    projectHeight,
+    projectWidth,
+    scene.id,
+    syncObjectsToScene,
+  ]);
+
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const scale = displayScale * zoom;
+    const cursor = zoomCursorRef?.current;
+    const canvasElement = canvasElementRef.current;
+    const rectBefore =
+      cursor && canvasElement ? canvasElement.getBoundingClientRect() : null;
+
+    canvas.setDimensions({
+      width: projectWidth * scale,
+      height: projectHeight * scale,
+    });
+
+    let panX = 0;
+    let panY = 0;
+
+    // Zoom toward the cursor: keep the scene point under the pointer fixed.
+    if (cursor && canvasElement && rectBefore) {
+      const currentScale = canvas.viewportTransform[0];
+      const currentPanX = canvas.viewportTransform[4];
+      const currentPanY = canvas.viewportTransform[5];
+      const sceneX = (cursor.x - rectBefore.left - currentPanX) / currentScale;
+      const sceneY = (cursor.y - rectBefore.top - currentPanY) / currentScale;
+      const rectAfter = canvasElement.getBoundingClientRect();
+      panX = cursor.x - rectAfter.left - sceneX * scale;
+      panY = cursor.y - rectAfter.top - sceneY * scale;
+    }
+
+    canvas.setViewportTransform([scale, 0, 0, scale, panX, panY]);
+    canvas.requestRenderAll();
+  }, [
+    displayScale,
+    projectHeight,
+    projectWidth,
+    scene.id,
+    zoom,
+    zoomCursorRef,
+  ]);
+
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const layerIdToObject = layerIdToObjectRef.current;
+    const objectToLayerId = objectToLayerIdRef.current;
+    const forgetObject = (object: FabricObject): void => {
+      if (object instanceof FabricGroup) {
+        object.getObjects().forEach(forgetObject);
+      }
+      const layerId = objectToLayerId.get(object);
+      objectToLayerId.delete(object);
+      if (layerId && layerIdToObject.get(layerId) === object) {
+        layerIdToObject.delete(layerId);
+      }
+    };
+    const removeAndForget = (object: FabricObject): void => {
+      canvas.remove(object);
+      forgetObject(object);
+      if (hoveredObjectRef.current === object) {
+        hoveredObjectRef.current = null;
+        onHoveredLayerIdChange(null);
+      }
+    };
+    isApplyingSelectionRef.current = true;
+
+    try {
+      const activeObject = canvas.getActiveObject();
+      const editingObject =
+        activeObject instanceof FabricLayerTextbox && activeObject.isEditing
+          ? activeObject
+          : null;
+      const editingLayerId = editingObject
+        ? objectToLayerId.get(editingObject)
+        : undefined;
+      const editingSelection = editingObject
+        ? {
+            start: editingObject.selectionStart,
+            end: editingObject.selectionEnd,
+          }
+        : null;
+      if (!editingObject) {
+        canvas.discardActiveObject();
+      }
+      canvas.backgroundColor = scene.backgroundColor ?? "#000000";
+
+      const sortedLayers = [...scene.layers].sort(
+        (first, second) => first.zIndex - second.zIndex,
+      );
+      const topLevelIds = new Set(sortedLayers.map((layer) => layer.id));
+      const desiredLayerIds = new Set<string>();
+      for (const layer of sortedLayers) {
+        desiredLayerIds.add(layer.id);
+        if (layer.type === "group") {
+          layer.children.forEach((child) => desiredLayerIds.add(child.id));
+        }
+      }
+
+      const hasStructuralMismatch = canvas.getObjects().some((object) => {
+        const layerId = objectToLayerId.get(object);
+        return layerId === undefined || !topLevelIds.has(layerId);
+      });
+
+      if (hasStructuralMismatch) {
+        for (const object of [...canvas.getObjects()]) {
+          canvas.remove(object);
+        }
+        objectToLayerId.clear();
+        layerIdToObject.clear();
+        hoveredObjectRef.current = null;
+        onHoveredLayerIdChange(null);
+
+        sortedLayers.forEach((layer) => {
+          addFabricObject(canvas, layer);
+        });
+
+        applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
+
+        if (editingLayerId) {
+          const editingTarget = layerIdToObject.get(editingLayerId);
+          if (
+            editingTarget instanceof FabricLayerTextbox &&
+            !editingTarget.isEditing &&
+            editingTarget.editable
+          ) {
+            canvas.setActiveObject(editingTarget);
+            editingTarget.enterEditing();
+            editingTarget.selectionStart = editingSelection?.start ?? 0;
+            editingTarget.selectionEnd = editingSelection?.end ?? 0;
+            if (editingTarget.hiddenTextarea) {
+              editingTarget._updateTextarea();
+            }
+          }
+        }
+
+        canvas.requestRenderAll();
+        return;
+      }
+
+      for (const [layerId, object] of layerIdToObject) {
+        if (!desiredLayerIds.has(layerId)) {
+          removeAndForget(object);
+        }
+      }
+
+      sortedLayers.forEach((layer, index) => {
+        let object = layerIdToObject.get(layer.id);
+
+        if (object && !isFabricObjectForLayer(object, layer)) {
+          removeAndForget(object);
+          object = undefined;
+        }
+
+        if (
+          object &&
+          layer.type === "group" &&
+          object instanceof FabricGroup
+        ) {
+          const sortedChildren = sortChildrenByZIndex(layer.children);
+          if (
+            !fabricChildrenMatch(
+              object.getObjects(),
+              sortedChildren,
+              objectToLayerId,
+            )
+          ) {
+            removeAndForget(object);
+            object = undefined;
+          }
+        }
+
+        if (!object) {
+          object = addFabricObject(canvas, layer);
+        } else if (
+          layer.type === "group" &&
+          object instanceof FabricGroup
+        ) {
+          applyLayerToFabricObject(object, layer, undefined, projectIdRef.current);
+          const sortedChildren = sortChildrenByZIndex(layer.children);
+          object.getObjects().forEach((childObject, childIndex) => {
+            const child = sortedChildren[childIndex];
+            if (childObject === editingObject) {
+              const selStart = editingObject.selectionStart;
+              const selEnd = editingObject.selectionEnd;
+              applyLayerToFabricObject(childObject, child, layer, projectIdRef.current);
+              editingObject.selectionStart = selStart;
+              editingObject.selectionEnd = selEnd;
+              if (editingObject.hiddenTextarea) {
+                editingObject._updateTextarea();
+              }
+            } else {
+              applyLayerToFabricObject(childObject, child, layer, projectIdRef.current);
+            }
+          });
+          object.setCoords();
+        } else if (object === editingObject) {
+          const selStart = editingObject.selectionStart;
+          const selEnd = editingObject.selectionEnd;
+          applyLayerToFabricObject(object, layer, undefined, projectIdRef.current);
+          editingObject.selectionStart = selStart;
+          editingObject.selectionEnd = selEnd;
+          if (editingObject.hiddenTextarea) {
+            editingObject._updateTextarea();
+          }
+        } else {
+          applyLayerToFabricObject(object, layer, undefined, projectIdRef.current);
+        }
+
+        canvas.moveObjectTo(object, index);
+      });
+
+      if (!editingObject) {
+        applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
+      }
+
+      const pendingId = pendingTextEditRef.current;
+      if (pendingId) {
+        const target = layerIdToObject.get(pendingId);
+        if (
+          target instanceof FabricLayerTextbox &&
+          !target.isEditing &&
+          target.editable
+        ) {
+          canvas.setActiveObject(target);
+          target.enterEditing();
+          target.selectAll();
+        }
+        pendingTextEditRef.current = null;
+        onPendingTextEditConsumedRef.current?.();
+      }
+
+      canvas.requestRenderAll();
+    } finally {
+      isApplyingSelectionRef.current = false;
+    }
+  }, [addFabricObject, onHoveredLayerIdChange, scene, selectedLayerIds]);
+
+  return (
+    <div
+      style={{
+        width: "max-content",
+        overflow: "hidden",
+        background: scene.backgroundColor ?? "#000000",
+      }}
+    >
+      <canvas ref={canvasElementRef} />
+    </div>
+  );
+}

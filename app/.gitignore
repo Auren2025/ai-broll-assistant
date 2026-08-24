@@ -1,0 +1,26 @@
+node_modules/
+dist/
+dist-ssr
+.vite/
+coverage/
+
+.env
+.env.*.local
+
+projects/*/renders/*
+projects/*/exports/*
+*.log
+npm-debug.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+projects/*/renders/*
+!projects/*/renders/.gitkeep

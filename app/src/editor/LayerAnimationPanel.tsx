@@ -3,7 +3,7 @@ import type { Layer } from "../domain/sceneSchema";
 import type {
   AnimationEasing,
   AnimationPhase,
-  AnimationPreset,
+  FadeAndMoveDirection,
   LayerAnimation,
 } from "../domain/layerAnimationSchema";
 import { BufferedNumberInput } from "./BufferedNumberInput";
@@ -14,24 +14,22 @@ const PHASES = [
   { phase: "exit", label: "Build Out" },
 ] as const satisfies readonly { phase: AnimationPhase; label: string }[];
 
-const PRESET_GROUPS = [
-  { title: "Fade", presets: ["fade"] },
-  {
-    title: "Move",
-    presets: ["slide-up", "slide-down", "slide-left", "slide-right"],
-  },
-  { title: "Scale", presets: ["scale"] },
-] as const satisfies readonly {
-  title: string;
-  presets: readonly AnimationPreset[];
-}[];
-
 const EASINGS = [
-  "linear",
-  "ease-in",
-  "ease-out",
-  "ease-in-out",
-] as const satisfies readonly AnimationEasing[];
+  { value: "linear", label: "None" },
+  { value: "ease-in", label: "Ease In" },
+  { value: "ease-out", label: "Ease Out" },
+  { value: "ease-in-out", label: "Ease Both" },
+] as const satisfies readonly { value: AnimationEasing; label: string }[];
+
+const DIRECTIONS = [
+  { value: "right-to-left", label: "Right to Left" },
+  { value: "left-to-right", label: "Left to Right" },
+  { value: "bottom-to-top", label: "Bottom to Top" },
+  { value: "top-to-bottom", label: "Top to Bottom" },
+] as const satisfies readonly {
+  value: FadeAndMoveDirection;
+  label: string;
+}[];
 
 interface LayerAnimationPanelProps {
   layer: Layer | null;
@@ -46,11 +44,31 @@ interface BufferedRangeProps {
   label: string;
   min: number;
   max: number;
+  step?: number;
   value: number;
   onCommit: (value: number) => void;
 }
 
-function BufferedRange({ label, min, max, value, onCommit }: BufferedRangeProps) {
+interface AnimationPatch {
+  startFrame?: number;
+  durationInFrames?: number;
+  easing?: AnimationEasing;
+  direction?: FadeAndMoveDirection;
+  travelDistance?: number;
+  translateX?: number;
+  translateY?: number;
+  scale?: number;
+  opacity?: number;
+}
+
+function BufferedRange({
+  label,
+  min,
+  max,
+  step = 1,
+  value,
+  onCommit,
+}: BufferedRangeProps) {
   const [draft, setDraft] = useState(value);
 
   useEffect(() => {
@@ -67,7 +85,7 @@ function BufferedRange({ label, min, max, value, onCommit }: BufferedRangeProps)
       aria-label={label}
       min={min}
       max={max}
-      step={1}
+      step={step}
       value={draft}
       onChange={(event) => setDraft(Number(event.currentTarget.value))}
       onPointerUp={commit}
@@ -77,11 +95,37 @@ function BufferedRange({ label, min, max, value, onCommit }: BufferedRangeProps)
   );
 }
 
-function presetLabel(preset: string): string {
-  return preset
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+function animationLabel(animation: LayerAnimation): string {
+  switch (animation.preset) {
+    case "fade-and-move":
+      return "Fade and Move";
+    case "magic-move":
+      return "Magic Move";
+    case "dissolve":
+      return "Dissolve";
+  }
+}
+
+function phaseEffectLabel(phase: AnimationPhase): string {
+  switch (phase) {
+    case "enter":
+      return "Fade and Move";
+    case "emphasis":
+      return "Magic Move";
+    case "exit":
+      return "Dissolve";
+  }
+}
+
+function phasePresetClass(phase: AnimationPhase): string {
+  switch (phase) {
+    case "enter":
+      return "fade-and-move";
+    case "emphasis":
+      return "magic-move";
+    case "exit":
+      return "dissolve";
+  }
 }
 
 function makeUniqueAnimationId(layer: Layer, phase: AnimationPhase): string {
@@ -95,38 +139,49 @@ function makeUniqueAnimationId(layer: Layer, phase: AnimationPhase): string {
 }
 
 function defaultAnimation(
+  layer: Layer,
   phase: AnimationPhase,
-  preset: AnimationPreset,
   sceneDurationInFrames: number,
-): Omit<LayerAnimation, "id"> {
+  fps: number,
+): LayerAnimation {
+  const durationInFrames = Math.min(fps, sceneDurationInFrames);
+  const id = makeUniqueAnimationId(layer, phase);
+
   if (phase === "enter") {
     return {
+      id,
       phase,
-      preset,
+      preset: "fade-and-move",
       startFrame: 0,
-      durationInFrames: Math.min(20, sceneDurationInFrames),
+      durationInFrames,
       easing: "ease-out",
+      direction: "bottom-to-top",
+      travelDistance: 40,
     };
   }
 
   if (phase === "exit") {
-    const durationInFrames = Math.min(20, sceneDurationInFrames);
     return {
+      id,
       phase,
-      preset,
+      preset: "dissolve",
       startFrame: sceneDurationInFrames - durationInFrames,
       durationInFrames,
-      easing: "ease-in",
+      easing: "ease-in-out",
     };
   }
 
-  const durationInFrames = Math.min(24, sceneDurationInFrames);
   return {
+    id,
     phase,
-    preset,
+    preset: "magic-move",
     startFrame: Math.floor((sceneDurationInFrames - durationInFrames) / 2),
     durationInFrames,
     easing: "ease-in-out",
+    translateX: 0,
+    translateY: 0,
+    scale: 1,
+    opacity: 1,
   };
 }
 
@@ -153,43 +208,33 @@ export function LayerAnimationPanel({
     onAnimationSelect(null);
   }
 
-  function applyPreset(preset: AnimationPreset): void {
+  function applyPhaseEffect(): void {
     if (!layer) return;
     const existing = layer.animations.find(
       (animation) => animation.phase === displayedPhase,
     );
 
     if (existing) {
-      onAnimationsChange(
-        layer.animations.map((animation) =>
-          animation.id === existing.id ? { ...animation, preset } : animation,
-        ),
-      );
       onAnimationSelect(existing.id);
       return;
     }
 
-    const animation: LayerAnimation = {
-      id: makeUniqueAnimationId(layer, displayedPhase),
-      ...defaultAnimation(displayedPhase, preset, sceneDurationInFrames),
-    };
+    const animation = defaultAnimation(
+      layer,
+      displayedPhase,
+      sceneDurationInFrames,
+      fps,
+    );
     onAnimationsChange([...layer.animations, animation]);
     onAnimationSelect(animation.id);
   }
 
-  function patchSelectedAnimation(
-    patch: Partial<
-      Pick<
-        LayerAnimation,
-        "preset" | "startFrame" | "durationInFrames" | "easing"
-      >
-    >,
-  ): void {
+  function patchSelectedAnimation(patch: AnimationPatch): void {
     if (!layer || !selectedAnimation) return;
     onAnimationsChange(
       layer.animations.map((animation) =>
         animation.id === selectedAnimation.id
-          ? { ...animation, ...patch }
+          ? ({ ...animation, ...patch } as LayerAnimation)
           : animation,
       ),
     );
@@ -238,7 +283,7 @@ export function LayerAnimationPanel({
             <span className={`animation-preset-preview preset-${selectedAnimation.preset}`} />
             <div>
               <p>{layer.name}</p>
-              <h3>{presetLabel(selectedAnimation.preset)}</h3>
+              <h3>{animationLabel(selectedAnimation)}</h3>
             </div>
           </header>
 
@@ -247,7 +292,7 @@ export function LayerAnimationPanel({
             className="animation-change-button"
             onClick={() => onAnimationSelect(null)}
           >
-            Change animation
+            Change
           </button>
 
           <div className="animation-control-section">
@@ -323,27 +368,156 @@ export function LayerAnimationPanel({
             />
           </div>
 
-          <label className="animation-select-row">
-            <span>Preset</span>
-            <select
-              aria-label="Animation preset"
-              value={selectedAnimation.preset}
-              onChange={(event) =>
-                patchSelectedAnimation({
-                  preset: event.currentTarget.value as AnimationPreset,
-                })
-              }
-            >
-              {PRESET_GROUPS.flatMap((group) => group.presets).map((preset) => (
-                <option key={preset} value={preset}>
-                  {presetLabel(preset)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {selectedAnimation.preset === "fade-and-move" ? (
+            <>
+              <label className="animation-select-row">
+                <span>Direction</span>
+                <select
+                  aria-label="Fade and Move direction"
+                  value={selectedAnimation.direction}
+                  onChange={(event) =>
+                    patchSelectedAnimation({
+                      direction: event.currentTarget
+                        .value as FadeAndMoveDirection,
+                    })
+                  }
+                >
+                  {DIRECTIONS.map((direction) => (
+                    <option key={direction.value} value={direction.value}>
+                      {direction.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="animation-control-section">
+                <div className="animation-control-heading">
+                  <label>Travel Distance</label>
+                  <div className="animation-time-input">
+                    <BufferedNumberInput
+                      aria-label="Travel distance percentage"
+                      min={0}
+                      max={400}
+                      step={1}
+                      value={selectedAnimation.travelDistance}
+                      onValueChange={(travelDistance) =>
+                        patchSelectedAnimation({ travelDistance })
+                      }
+                    />
+                    <span>%</span>
+                  </div>
+                </div>
+                <BufferedRange
+                  label="Travel distance"
+                  min={0}
+                  max={400}
+                  value={selectedAnimation.travelDistance}
+                  onCommit={(travelDistance) =>
+                    patchSelectedAnimation({ travelDistance })
+                  }
+                />
+              </div>
+            </>
+          ) : null}
+
+          {selectedAnimation.preset === "magic-move" ? (
+            <>
+              <div className="animation-control-section">
+                <div className="animation-control-heading">
+                  <label>Move</label>
+                </div>
+                <div className="animation-vector-inputs">
+                  <label>
+                    <span>X</span>
+                    <BufferedNumberInput
+                      aria-label="Magic Move horizontal distance"
+                      min={-10000}
+                      max={10000}
+                      step={1}
+                      value={selectedAnimation.translateX}
+                      onValueChange={(translateX) =>
+                        patchSelectedAnimation({ translateX })
+                      }
+                    />
+                    <i>px</i>
+                  </label>
+                  <label>
+                    <span>Y</span>
+                    <BufferedNumberInput
+                      aria-label="Magic Move vertical distance"
+                      min={-10000}
+                      max={10000}
+                      step={1}
+                      value={selectedAnimation.translateY}
+                      onValueChange={(translateY) =>
+                        patchSelectedAnimation({ translateY })
+                      }
+                    />
+                    <i>px</i>
+                  </label>
+                </div>
+              </div>
+
+              <div className="animation-control-section">
+                <div className="animation-control-heading">
+                  <label>Scale</label>
+                  <div className="animation-time-input">
+                    <BufferedNumberInput
+                      aria-label="Magic Move scale percentage"
+                      min={1}
+                      max={1000}
+                      step={1}
+                      value={Number((selectedAnimation.scale * 100).toFixed(2))}
+                      onValueChange={(scale) =>
+                        patchSelectedAnimation({ scale: scale / 100 })
+                      }
+                    />
+                    <span>%</span>
+                  </div>
+                </div>
+                <BufferedRange
+                  label="Magic Move scale"
+                  min={1}
+                  max={1000}
+                  value={selectedAnimation.scale * 100}
+                  onCommit={(scale) =>
+                    patchSelectedAnimation({ scale: scale / 100 })
+                  }
+                />
+              </div>
+
+              <div className="animation-control-section">
+                <div className="animation-control-heading">
+                  <label>Opacity</label>
+                  <div className="animation-time-input">
+                    <BufferedNumberInput
+                      aria-label="Magic Move opacity percentage"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Number((selectedAnimation.opacity * 100).toFixed(2))}
+                      onValueChange={(opacity) =>
+                        patchSelectedAnimation({ opacity: opacity / 100 })
+                      }
+                    />
+                    <span>%</span>
+                  </div>
+                </div>
+                <BufferedRange
+                  label="Magic Move opacity"
+                  min={0}
+                  max={100}
+                  value={selectedAnimation.opacity * 100}
+                  onCommit={(opacity) =>
+                    patchSelectedAnimation({ opacity: opacity / 100 })
+                  }
+                />
+              </div>
+            </>
+          ) : null}
 
           <label className="animation-select-row">
-            <span>Delivery</span>
+            <span>Acceleration</span>
             <select
               aria-label="Animation easing"
               value={selectedAnimation.easing}
@@ -354,8 +528,8 @@ export function LayerAnimationPanel({
               }
             >
               {EASINGS.map((easing) => (
-                <option key={easing} value={easing}>
-                  {presetLabel(easing)}
+                <option key={easing.value} value={easing.value}>
+                  {easing.label}
                 </option>
               ))}
             </select>
@@ -375,31 +549,32 @@ export function LayerAnimationPanel({
             <p>{layer.name}</p>
             <h3>Choose an animation</h3>
           </header>
-          {PRESET_GROUPS.map((group) => (
-            <section className="animation-preset-group" key={group.title}>
-              <h4>{group.title}</h4>
-              <div className="animation-preset-grid">
-                {group.presets.map((preset) => {
-                  const existing = layer.animations.find(
+          <section className="animation-preset-group">
+            <h4>{PHASES.find(({ phase }) => phase === displayedPhase)?.label}</h4>
+            <div className="animation-preset-grid is-single">
+              <button
+                type="button"
+                className={
+                  layer.animations.some(
                     (animation) => animation.phase === displayedPhase,
-                  );
-                  const isCurrent = existing?.preset === preset;
-                  return (
-                    <button
-                      type="button"
-                      key={preset}
-                      className={isCurrent ? "is-current" : ""}
-                      onClick={() => applyPreset(preset)}
-                    >
-                      <span className={`animation-preset-preview preset-${preset}`} />
-                      <strong>{presetLabel(preset)}</strong>
-                      {isCurrent ? <small>Current</small> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                  )
+                    ? "is-current"
+                    : ""
+                }
+                onClick={applyPhaseEffect}
+              >
+                <span
+                  className={`animation-preset-preview preset-${phasePresetClass(displayedPhase)}`}
+                />
+                <strong>{phaseEffectLabel(displayedPhase)}</strong>
+                {layer.animations.some(
+                  (animation) => animation.phase === displayedPhase,
+                ) ? (
+                  <small>Current</small>
+                ) : null}
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </section>

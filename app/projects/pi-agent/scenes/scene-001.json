@@ -20,14 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-claude-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 145,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-claude-in","phase":"enter","startFrame":145,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [
@@ -151,14 +144,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-codex-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 198,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-codex-in","phase":"enter","startFrame":198,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [
@@ -282,14 +268,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-opencode-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 220,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-opencode-in","phase":"enter","startFrame":220,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [
@@ -413,14 +392,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-pi-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 242,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-pi-in","phase":"enter","startFrame":242,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [
@@ -499,14 +471,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-manus-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 260,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-manus-in","phase":"enter","startFrame":260,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [
@@ -585,14 +550,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-workbuddy-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 282,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-workbuddy-in","phase":"enter","startFrame":282,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [
@@ -671,14 +629,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1-deepseek-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 340,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1-deepseek-in","phase":"enter","startFrame":340,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":25}
       ],
       "type": "group",
       "children": [

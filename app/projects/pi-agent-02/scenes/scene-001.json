@@ -8,8 +8,8 @@
     {
       "id": "s1-pi",
       "name": "Pi hero identity",
-      "x": 610,
-      "y": 190,
+      "x": 162,
+      "y": 194,
       "width": 700,
       "height": 700,
       "rotation": 0,
@@ -20,7 +20,36 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s1-pi-in", "phase": "enter", "preset": "fade", "startFrame": 0, "durationInFrames": 20, "easing": "ease-out"}
+        {
+          "id": "s1-pi-in",
+          "startFrame": 0,
+          "durationInFrames": 20,
+          "easing": "ease-out",
+          "phase": "enter",
+          "preset": "fade-and-move",
+          "direction": "bottom-to-top",
+          "travelDistance": 0
+        },
+        {
+          "id": "s1-pi-exit",
+          "startFrame": 57,
+          "durationInFrames": 30,
+          "easing": "ease-in-out",
+          "phase": "exit",
+          "preset": "dissolve"
+        },
+        {
+          "id": "s1-pi-emphasis",
+          "startFrame": 28,
+          "durationInFrames": 30,
+          "easing": "ease-in-out",
+          "phase": "emphasis",
+          "preset": "magic-move",
+          "translateX": 769.5,
+          "translateY": -66.7,
+          "scale": 0.77,
+          "opacity": 0.51
+        }
       ],
       "type": "group",
       "children": [

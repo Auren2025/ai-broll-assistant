@@ -20,14 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-bench-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 45,
-          "durationInFrames": 22,
-          "easing": "ease-out"
-        }
+        {"id":"s2-bench-in","phase":"enter","startFrame":45,"durationInFrames":22,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":88.889}
       ],
       "type": "rectangle",
       "fill": "#A7ADB7",
@@ -74,22 +67,8 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-core-in",
-          "phase": "enter",
-          "preset": "scale",
-          "startFrame": 55,
-          "durationInFrames": 28,
-          "easing": "ease-out"
-        },
-        {
-          "id": "s2-core-em",
-          "phase": "emphasis",
-          "preset": "scale",
-          "startFrame": 420,
-          "durationInFrames": 24,
-          "easing": "ease-in-out"
-        }
+        {"id":"s2-core-in","phase":"enter","startFrame":55,"durationInFrames":28,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0},
+        {"id":"s2-core-em","phase":"emphasis","startFrame":420,"durationInFrames":24,"easing":"ease-in-out","preset":"magic-move","translateX":0,"translateY":0,"scale":1.08,"opacity":1}
       ],
       "type": "group",
       "children": [
@@ -270,14 +249,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-model-in",
-          "phase": "enter",
-          "preset": "slide-down",
-          "startFrame": 205,
-          "durationInFrames": 24,
-          "easing": "ease-out"
-        }
+        {"id":"s2-model-in","phase":"enter","startFrame":205,"durationInFrames":24,"easing":"ease-out","preset":"fade-and-move","direction":"top-to-bottom","travelDistance":53.333}
       ],
       "type": "rectangle",
       "fill": "#12315B",
@@ -324,14 +296,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-context-in",
-          "phase": "enter",
-          "preset": "slide-down",
-          "startFrame": 260,
-          "durationInFrames": 24,
-          "easing": "ease-out"
-        }
+        {"id":"s2-context-in","phase":"enter","startFrame":260,"durationInFrames":24,"easing":"ease-out","preset":"fade-and-move","direction":"top-to-bottom","travelDistance":53.333}
       ],
       "type": "rectangle",
       "fill": "#A7ADB7",
@@ -378,14 +343,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-loop-in",
-          "phase": "enter",
-          "preset": "scale",
-          "startFrame": 280,
-          "durationInFrames": 24,
-          "easing": "ease-out"
-        }
+        {"id":"s2-loop-in","phase":"enter","startFrame":280,"durationInFrames":24,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "circle",
       "fill": "#12315B",
@@ -432,14 +390,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-loop-label-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 292,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s2-loop-label-in","phase":"enter","startFrame":292,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "text",
       "text": "AGENT LOOP",
@@ -476,14 +427,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-tools-in",
-          "phase": "enter",
-          "preset": "slide-left",
-          "startFrame": 305,
-          "durationInFrames": 24,
-          "easing": "ease-out"
-        }
+        {"id":"s2-tools-in","phase":"enter","startFrame":305,"durationInFrames":24,"easing":"ease-out","preset":"fade-and-move","direction":"right-to-left","travelDistance":34.286}
       ],
       "type": "rectangle",
       "fill": "#12315B",
@@ -530,14 +474,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-session-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 330,
-          "durationInFrames": 24,
-          "easing": "ease-out"
-        }
+        {"id":"s2-session-in","phase":"enter","startFrame":330,"durationInFrames":24,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":48.485}
       ],
       "type": "rectangle",
       "fill": "#F5C84C",
@@ -584,14 +521,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-model-arrow-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 225,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s2-model-arrow-in","phase":"enter","startFrame":225,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "arrow",
       "stroke": "#FF7A1A",
@@ -615,14 +545,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-context-arrow-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 270,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s2-context-arrow-in","phase":"enter","startFrame":270,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "arrow",
       "stroke": "#A7ADB7",
@@ -646,14 +569,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s2-foundation-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 485,
-          "durationInFrames": 24,
-          "easing": "ease-out"
-        }
+        {"id":"s2-foundation-in","phase":"enter","startFrame":485,"durationInFrames":24,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "text",
       "text": "不必从 API 与消息格式重新造轮子",

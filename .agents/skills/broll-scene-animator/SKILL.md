@@ -44,15 +44,17 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
    - No animation is the default. Add motion only when a new key object appears, a relationship is established or changed, a process advances, or comprehension requires a focus shift.
    - Before adding an event, ask whether removing it would harm understanding of the principle, structure, or relationship. If not, keep the layer static.
    - A scene may hold the same composition through many subtitle cues and a long explanation. Never add motion merely to avoid monotony or acknowledge each sentence.
-   - `enter` introduces a key element at or shortly before the narration first needs it; it does not require every layer to enter separately.
-   - `emphasis` highlights an already visible element only when returning focus is necessary for comprehension, not whenever narration names it again.
-   - `exit` is optional and should clarify a transition rather than animate everything away by default.
+   - Build In (`enter`) introduces a key element at or shortly before the narration first needs it; it does not require every layer to enter separately.
+   - Action (`emphasis`) changes an already visible element's position, size, or opacity only when the visual model must change or focus must move.
+   - Build Out (`exit`) is optional and should clarify a transition rather than animate everything away by default.
    - Optional visual enrichment should normally remain static or share a restrained entrance with its parent composition; it must not create extra narrative beats.
-   - Allowed presets are `fade`, `slide-up`, `slide-down`, `slide-left`, `slide-right`, and `scale`; allowed easings are `linear`, `ease-in`, `ease-out`, and `ease-in-out`.
+   - Build In only allows `fade-and-move`, with `direction` set to `left-to-right`, `right-to-left`, `top-to-bottom`, or `bottom-to-top`, and `travelDistance` expressed as a percentage of the layer's corresponding axis size.
+   - Action only allows `magic-move`, with relative `translateX` / `translateY`, a uniform animation-only `scale`, and an `opacity` multiplier. The completed action holds its target state.
+   - Build Out only allows `dissolve`. Allowed easings are `linear`, `ease-in`, `ease-out`, and `ease-in-out`.
    - Every animation uses scene-local integer frames, lasts at least one frame, ends within the scene, and reaches its preset final state on its last frame.
    - Each layer has at most one animation per phase. Parent and child animations must remain understandable when composed.
 
-8. **Write complete schema-valid layers.** Include every field required by the current schemas. Keep all layer IDs unique across the scene, top-level `zIndex` values unique, child `zIndex` values unique within each group, and animation IDs unique within each layer. `width` and `height` are the only persisted visual dimensions; do not introduce scale fields.
+8. **Write complete schema-valid layers.** Include every field required by the current schemas. Keep all layer IDs unique across the scene, top-level `zIndex` values unique, child `zIndex` values unique within each group, and animation IDs unique within each layer. `width` and `height` are the only persisted base visual dimensions; `magic-move.scale` is an animation-only relative multiplier and must not be copied into layer geometry.
 
 9. **Validate after every affected batch.** Run:
    ```bash
@@ -80,5 +82,5 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
 - Do not animate every subtitle, sentence, named concept, example, or rhetorical emphasis.
 - Do not add decorative motion solely to prevent a stable composition from feeling static.
 - Do not persist Fabric.js private JSON or Remotion-specific scene data.
-- Do not add unsupported layer types, arbitrary keyframes, expressions, or scale fields.
+- Do not add unsupported layer types, arbitrary keyframes, expressions, or base layer scale fields.
 - Do not modify application source, schemas, adapters, or build configuration.

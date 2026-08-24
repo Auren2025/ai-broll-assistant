@@ -794,6 +794,63 @@ button {
   position: relative;
 }
 
+.magic-move-overlay {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.magic-move-path-line {
+  stroke: #ff5b3d;
+  stroke-width: 2;
+}
+
+.magic-move-path-origin {
+  fill: #fff;
+  stroke: #ff5b3d;
+  stroke-width: 2;
+}
+
+.magic-move-target-outline {
+  fill: rgb(255 91 61 / 8%);
+  stroke: #ff5b3d;
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+}
+
+.magic-move-target-handle {
+  position: absolute;
+  z-index: 5;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid #ff5b3d;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+  cursor: move;
+  touch-action: none;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.magic-move-target-handle::before,
+.magic-move-target-handle::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 2px;
+  background: #ff5b3d;
+  content: "";
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.magic-move-target-handle::after {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
 .preview-mode-badge {
   position: absolute;
   z-index: 10;
@@ -2133,6 +2190,10 @@ button {
   gap: 7px;
 }
 
+.animation-preset-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .animation-preset-grid button {
   position: relative;
   display: grid;
@@ -2197,28 +2258,18 @@ button {
   content: "";
 }
 
-.animation-preset-preview.preset-fade::before {
-  opacity: 0.42;
-}
-
-.animation-preset-preview.preset-slide-up::before {
-  transform: translateY(6px);
-}
-
-.animation-preset-preview.preset-slide-down::before {
-  transform: translateY(-6px);
-}
-
-.animation-preset-preview.preset-slide-left::before {
+.animation-preset-preview.preset-fade-and-move::before {
+  opacity: 0.58;
   transform: translateX(7px);
 }
 
-.animation-preset-preview.preset-slide-right::before {
-  transform: translateX(-7px);
+.animation-preset-preview.preset-magic-move::before {
+  opacity: 0.72;
+  transform: translate(7px, -3px) scale(0.72);
 }
 
-.animation-preset-preview.preset-scale::before {
-  transform: scale(0.65);
+.animation-preset-preview.preset-dissolve::before {
+  opacity: 0.35;
 }
 
 .animation-event-editor {
@@ -2301,6 +2352,44 @@ button {
   height: 4px;
   accent-color: #6857e5;
   cursor: pointer;
+}
+
+.animation-vector-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.animation-vector-inputs label {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  color: #716c75;
+  font-size: 10px;
+}
+
+.animation-vector-inputs input {
+  width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 24px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #302d34;
+  background: #f0eff1;
+  outline: none;
+  font-size: 11px;
+}
+
+.animation-vector-inputs i {
+  position: absolute;
+  right: 8px;
+  color: #8e8992;
+  font-size: 9px;
+  font-style: normal;
+  pointer-events: none;
 }
 
 .animation-select-row {

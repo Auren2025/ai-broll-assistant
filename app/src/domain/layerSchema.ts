@@ -21,10 +21,12 @@ export const StrokePositionSchema = z.literal('inside')
 //   there is no implicit default.
 // - Per-layer refinement (see superRefine below) enforces:
 //   * animation ids are unique inside the same layer;
-//   * at most one enter / one emphasis / one exit animation per layer.
+//   * at most one Build In / one Action / one Build Out animation per layer.
 // - Time-window enforcement against the parent Scene duration is done in
 //   SceneSchema.superRefine; the layer itself only knows local frame
 //   numbers.
+// - Magic Move translation, uniform scale, and opacity are animation-only
+//   deltas relative to the layer's base state and persist after the action.
 // - Group and child transforms/animations compose hierarchically. Opacity is
 //   multiplicative and child zIndex values are local to their group.
 

@@ -22,12 +22,16 @@ export const AnimationPhaseSchema = z.enum([
 ]);
 
 export const AnimationPresetSchema = z.enum([
-  "fade",
-  "slide-up",
-  "slide-down",
-  "slide-left",
-  "slide-right",
-  "scale",
+  "fade-and-move",
+  "magic-move",
+  "dissolve",
+]);
+
+export const FadeAndMoveDirectionSchema = z.enum([
+  "left-to-right",
+  "right-to-left",
+  "top-to-bottom",
+  "bottom-to-top",
 ]);
 
 export const AnimationEasingSchema = z.enum([
@@ -37,22 +41,53 @@ export const AnimationEasingSchema = z.enum([
   "ease-in-out",
 ])
 
-export const LayerAnimationSchema = z
-  .object({
-    id: z.string().min(1),
-    phase: AnimationPhaseSchema,
-    preset: AnimationPresetSchema,
-    startFrame: z.number().int().min(0),
-    durationInFrames: z.number().int().min(1),
-    easing: AnimationEasingSchema,
-  })
-  .strict();
+const AnimationTimingSchema = z.object({
+  id: z.string().min(1),
+  startFrame: z.number().int().min(0),
+  durationInFrames: z.number().int().min(1),
+  easing: AnimationEasingSchema,
+});
+
+export const FadeAndMoveAnimationSchema = AnimationTimingSchema.extend({
+  phase: z.literal("enter"),
+  preset: z.literal("fade-and-move"),
+  direction: FadeAndMoveDirectionSchema,
+  travelDistance: z.number().finite().min(0).max(400),
+}).strict();
+
+export const MagicMoveAnimationSchema = AnimationTimingSchema.extend({
+  phase: z.literal("emphasis"),
+  preset: z.literal("magic-move"),
+  translateX: z.number().finite(),
+  translateY: z.number().finite(),
+  scale: z.number().finite().positive().max(10),
+  opacity: z.number().finite().min(0).max(1),
+}).strict();
+
+export const DissolveAnimationSchema = AnimationTimingSchema.extend({
+  phase: z.literal("exit"),
+  preset: z.literal("dissolve"),
+}).strict();
+
+export const LayerAnimationSchema = z.discriminatedUnion("preset", [
+  FadeAndMoveAnimationSchema,
+  MagicMoveAnimationSchema,
+  DissolveAnimationSchema,
+]);
 
 export type AnimationPhase = z.infer<typeof AnimationPhaseSchema>;
 
 export type AnimationPreset = z.infer<typeof AnimationPresetSchema>;
 
 export type AnimationEasing = z.infer<typeof AnimationEasingSchema>;
+
+export type FadeAndMoveDirection = z.infer<typeof FadeAndMoveDirectionSchema>;
+
+export type FadeAndMoveAnimation = z.infer<typeof FadeAndMoveAnimationSchema>;
+
+export type MagicMoveAnimation = z.infer<typeof MagicMoveAnimationSchema>;
+
+export type DissolveAnimation = z.infer<typeof DissolveAnimationSchema>;
 
 export type LayerAnimation = z.infer<typeof LayerAnimationSchema>;
 

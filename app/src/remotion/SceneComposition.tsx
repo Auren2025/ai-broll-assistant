@@ -255,7 +255,10 @@ function LayerView({
 }) {
   if (!layer.visible) return null;
 
-  const animationStyle = getLayerAnimationStyle(layer.animations, frame);
+  const animationStyle = getLayerAnimationStyle(layer.animations, frame, {
+    width: layer.width,
+    height: layer.height,
+  });
   const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${animationStyle.scale})`;
   const style: CSSProperties = {
     ...getLayerBaseStyle(layer),

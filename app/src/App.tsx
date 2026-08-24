@@ -1591,20 +1591,7 @@ function App() {
       let changed = false;
       const updatedLayers = updateLayerById(scene.layers, layerId, (layer) => {
         const isSame =
-          layer.animations.length === animations.length &&
-          layer.animations.every((animation, index) => {
-            const candidate = animations[index];
-
-            return (
-              candidate !== undefined &&
-              animation.id === candidate.id &&
-              animation.phase === candidate.phase &&
-              animation.preset === candidate.preset &&
-              animation.startFrame === candidate.startFrame &&
-              animation.durationInFrames === candidate.durationInFrames &&
-              animation.easing === candidate.easing
-            );
-          });
+          JSON.stringify(layer.animations) === JSON.stringify(animations);
 
         if (isSame) {
           return layer;
@@ -1719,6 +1706,27 @@ function App() {
         layerId,
         layer.animations.map((animation) =>
           animation.id === animationId ? { ...animation, ...patch } : animation,
+        ),
+      );
+    },
+    [handleLayerAnimationsChange, scene],
+  );
+
+  const handleMagicMoveTranslationCommit = useCallback(
+    (
+      layerId: string,
+      animationId: string,
+      translateX: number,
+      translateY: number,
+    ) => {
+      const layer = scene ? findLayerById(scene.layers, layerId) : null;
+      if (!layer) return;
+      handleLayerAnimationsChange(
+        layerId,
+        layer.animations.map((animation) =>
+          animation.id === animationId && animation.preset === "magic-move"
+            ? { ...animation, translateX, translateY }
+            : animation,
         ),
       );
     },
@@ -2139,6 +2147,12 @@ function App() {
                     onHoveredLayerIdChange={setHoveredLayerId}
                     onContextMenuRequest={openLayerContextMenu}
                     selectedLayerIds={selectedLayerIds}
+                    selectedAnimationId={
+                      inspectorTab === "animate" ? selectedAnimationId : null
+                    }
+                    onMagicMoveTranslationCommit={
+                      handleMagicMoveTranslationCommit
+                    }
                     pendingTextEditLayerId={pendingTextEditLayerId}
                     onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
                     onTextLayerChange={handleTextLayerChange}

@@ -135,10 +135,12 @@ test("grouping removes the original layer animations", () => {
   const animation = {
     id: "enter-1",
     phase: "enter",
-    preset: "fade",
+    preset: "fade-and-move",
     startFrame: 0,
     durationInFrames: 20,
     easing: "ease-out",
+    direction: "bottom-to-top",
+    travelDistance: 0,
   } as const;
   const first = { ...rect("rectangle-1", 0, 0, 0), animations: [animation] };
   const second = { ...rect("rectangle-2", 200, 0, 1), animations: [animation] };
@@ -177,10 +179,12 @@ test("animated groups require explicit animation removal before ungrouping", () 
     animations: [{
       id: "group-enter",
       phase: "enter",
-      preset: "scale",
+      preset: "fade-and-move",
       startFrame: 0,
       durationInFrames: 20,
       easing: "ease-out",
+      direction: "bottom-to-top",
+      travelDistance: 0,
     }],
     children: [rect("rectangle-1", 0, 0, 0), rect("rectangle-2", 200, 0, 1)],
   } as const;

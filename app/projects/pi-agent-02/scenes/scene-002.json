@@ -20,7 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s2-pi-in", "phase": "enter", "preset": "slide-right", "startFrame": 0, "durationInFrames": 20, "easing": "ease-out"}
+        {"id":"s2-pi-in","phase":"enter","startFrame":0,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"left-to-right","travelDistance":16.216}
       ],
       "type": "group",
       "children": [
@@ -39,7 +39,7 @@
           "visible": true,
           "locked": false,
           "animations": [
-            {"id": "s2-minimal-in", "phase": "enter", "preset": "slide-up", "startFrame": 102, "durationInFrames": 20, "easing": "ease-out"}
+            {"id":"s2-minimal-in","phase":"enter","startFrame":102,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":53.333}
           ],
           "type": "text",
           "text": "极简",
@@ -136,7 +136,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s2-claude-in", "phase": "enter", "preset": "slide-left", "startFrame": 0, "durationInFrames": 22, "easing": "ease-out"}
+        {"id":"s2-claude-in","phase":"enter","startFrame":0,"durationInFrames":22,"easing":"ease-out","preset":"fade-and-move","direction":"right-to-left","travelDistance":25.532}
       ],
       "type": "group",
       "children": [
@@ -215,7 +215,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s2-codex-in", "phase": "enter", "preset": "slide-left", "startFrame": 0, "durationInFrames": 22, "easing": "ease-out"}
+        {"id":"s2-codex-in","phase":"enter","startFrame":0,"durationInFrames":22,"easing":"ease-out","preset":"fade-and-move","direction":"right-to-left","travelDistance":27.273}
       ],
       "type": "group",
       "children": [

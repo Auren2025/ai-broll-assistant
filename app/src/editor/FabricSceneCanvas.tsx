@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   ActiveSelection,
   Canvas,
@@ -13,11 +19,16 @@ import {
 import type { AtomicLayer } from "../domain/atomicLayerSchema";
 import type { GroupLayer } from "../domain/groupLayerSchema";
 import { scaleGroupChildren } from "../domain/groupOperations";
+import type { MagicMoveAnimation } from "../domain/layerAnimationSchema";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import { getShapeTextContentBox } from "../domain/shapeTextLayout";
 import type { ShapeText } from "../domain/shapeTextSchema";
 import { createDimensionResizeControls } from "./fabricDimensionControls";
 import { resolveDragTarget } from "./fabricTargetResolution";
+import {
+  getMagicMovePath,
+  getMagicMoveTranslationForEndpoint,
+} from "./magicMoveGeometry";
 import {
   MIN_TEXT_WIDTH,
   applyTextCase,
@@ -583,6 +594,13 @@ interface FabricSceneCanvasProps {
   onHoveredLayerIdChange: (layerId: string | null) => void;
   onContextMenuRequest: (x: number, y: number) => void;
   selectedLayerIds: readonly string[];
+  selectedAnimationId?: string | null;
+  onMagicMoveTranslationCommit?: (
+    layerId: string,
+    animationId: string,
+    translateX: number,
+    translateY: number,
+  ) => void;
   pendingTextEditLayerId?: string | null;
   onPendingTextEditConsumed?: () => void;
   onTextLayerChange?: (
@@ -627,6 +645,29 @@ function findParentGroupLayer(
     }
   }
   return null;
+}
+
+interface MagicMoveContext {
+  layer: Layer;
+  parentGroup: GroupLayer | null;
+  animation: MagicMoveAnimation;
+}
+
+function resolveMagicMoveContext(
+  scene: Scene,
+  selectedLayerIds: readonly string[],
+  selectedAnimationId: string | null | undefined,
+): MagicMoveContext | null {
+  if (selectedLayerIds.length !== 1 || !selectedAnimationId) return null;
+  const layer = findLayerByIdOrChild(scene, selectedLayerIds[0]);
+  if (!layer || layer.locked || !layer.visible) return null;
+  const parentGroup = findParentGroupLayer(scene, layer.id);
+  if (parentGroup && (parentGroup.locked || !parentGroup.visible)) return null;
+  const animation = layer.animations.find(
+    (candidate): candidate is MagicMoveAnimation =>
+      candidate.id === selectedAnimationId && candidate.preset === "magic-move",
+  );
+  return animation ? { layer, parentGroup, animation } : null;
 }
 
 function sortChildrenByZIndex(
@@ -1154,6 +1195,8 @@ export function FabricSceneCanvas({
   onHoveredLayerIdChange,
   onContextMenuRequest,
   selectedLayerIds,
+  selectedAnimationId,
+  onMagicMoveTranslationCommit,
   pendingTextEditLayerId,
   onPendingTextEditConsumed,
   onTextLayerChange,
@@ -1182,6 +1225,26 @@ export function FabricSceneCanvas({
     ((layerId: string, text: string, width: number, height: number) => void) |
       undefined
   >(undefined);
+  const [viewportTransform, setViewportTransform] = useState({
+    scale: displayScale,
+    panX: 0,
+    panY: 0,
+  });
+  const [magicMoveDraft, setMagicMoveDraft] = useState<{
+    layerId: string;
+    animationId: string;
+    translateX: number;
+    translateY: number;
+  } | null>(null);
+  const magicMoveDraftRef = useRef(magicMoveDraft);
+  const magicMoveDragRef = useRef<{
+    pointerId: number;
+    layerId: string;
+    animationId: string;
+  } | null>(null);
+  const magicMoveRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   selectedLayerIdsRef.current = selectedLayerIds;
 
@@ -1210,6 +1273,31 @@ export function FabricSceneCanvas({
   useEffect(() => {
     onTextLayerChangeRef.current = onTextLayerChange;
   }, [onTextLayerChange]);
+
+  useEffect(() => {
+    if (magicMoveRestoreTimerRef.current !== null) {
+      clearTimeout(magicMoveRestoreTimerRef.current);
+      magicMoveRestoreTimerRef.current = null;
+    }
+    const canvas = fabricCanvasRef.current;
+    if (canvas) {
+      canvas.upperCanvasEl.style.pointerEvents = "";
+      canvas._currentTransform = null;
+      canvas.selection = true;
+      canvas.skipTargetFind = false;
+      isApplyingSelectionRef.current = true;
+      applySelectionToCanvas(
+        canvas,
+        selectedLayerIdsRef.current,
+        layerIdToObjectRef.current,
+      );
+      canvas.requestRenderAll();
+      isApplyingSelectionRef.current = false;
+    }
+    magicMoveDraftRef.current = null;
+    magicMoveDragRef.current = null;
+    setMagicMoveDraft(null);
+  }, [scene.id, selectedAnimationId, selectedLayerIds]);
 
   const syncObjectsToScene = useCallback(
     (objects: readonly FabricObject[]): void => {
@@ -1386,6 +1474,7 @@ export function FabricSceneCanvas({
     });
 
     canvas.setViewportTransform([displayScale, 0, 0, displayScale, 0, 0]);
+    setViewportTransform({ scale: displayScale, panX: 0, panY: 0 });
     fabricCanvasRef.current = canvas;
     const objectToLayerId = objectToLayerIdRef.current;
     const layerIdToObject = layerIdToObjectRef.current;
@@ -1776,6 +1865,12 @@ export function FabricSceneCanvas({
 
     return () => {
       hoveredObjectRef.current = null;
+      magicMoveDraftRef.current = null;
+      magicMoveDragRef.current = null;
+      if (magicMoveRestoreTimerRef.current !== null) {
+        clearTimeout(magicMoveRestoreTimerRef.current);
+        magicMoveRestoreTimerRef.current = null;
+      }
       onHoveredLayerIdChange(null);
       canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
       void canvas.dispose();
@@ -1828,6 +1923,7 @@ export function FabricSceneCanvas({
     }
 
     canvas.setViewportTransform([scale, 0, 0, scale, panX, panY]);
+    setViewportTransform({ scale, panX, panY });
     canvas.requestRenderAll();
   }, [
     displayScale,
@@ -2038,15 +2134,231 @@ export function FabricSceneCanvas({
     }
   }, [addFabricObject, onHoveredLayerIdChange, scene, selectedLayerIds]);
 
+  const magicMoveContext = resolveMagicMoveContext(
+    scene,
+    selectedLayerIds,
+    selectedAnimationId,
+  );
+  const activeMagicMoveDraft =
+    magicMoveContext &&
+    magicMoveDraft?.layerId === magicMoveContext.layer.id &&
+    magicMoveDraft.animationId === magicMoveContext.animation.id
+      ? magicMoveDraft
+      : null;
+  const magicMoveTranslation = magicMoveContext
+    ? {
+        x:
+          activeMagicMoveDraft?.translateX ??
+          magicMoveContext.animation.translateX,
+        y:
+          activeMagicMoveDraft?.translateY ??
+          magicMoveContext.animation.translateY,
+      }
+    : null;
+  const magicMovePath =
+    magicMoveContext && magicMoveTranslation
+      ? getMagicMovePath(
+          magicMoveContext.layer,
+          magicMoveTranslation,
+          magicMoveContext.parentGroup ?? undefined,
+        )
+      : null;
+  const canvasWidth = projectWidth * displayScale * zoom;
+  const canvasHeight = projectHeight * displayScale * zoom;
+  const toViewport = (point: { x: number; y: number }) => ({
+    x: point.x * viewportTransform.scale + viewportTransform.panX,
+    y: point.y * viewportTransform.scale + viewportTransform.panY,
+  });
+  const viewportPath = magicMovePath
+    ? {
+        start: toViewport(magicMovePath.start),
+        end: toViewport(magicMovePath.end),
+      }
+    : null;
+
+  function updateMagicMoveEndpoint(
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
+    const drag = magicMoveDragRef.current;
+    const canvas = fabricCanvasRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !canvas) return;
+    const currentScene = sceneRef.current;
+    const layer = findLayerByIdOrChild(currentScene, drag.layerId);
+    if (!layer) return;
+    const parentGroup = findParentGroupLayer(currentScene, drag.layerId);
+    const bounds = canvas.upperCanvasEl.getBoundingClientRect();
+    const transform = canvas.viewportTransform;
+    const endpoint = {
+      x: (event.clientX - bounds.left - transform[4]) / transform[0],
+      y: (event.clientY - bounds.top - transform[5]) / transform[3],
+    };
+    const translation = getMagicMoveTranslationForEndpoint(
+      layer,
+      endpoint,
+      parentGroup ?? undefined,
+    );
+    const draft = {
+      layerId: drag.layerId,
+      animationId: drag.animationId,
+      translateX: roundNumber(translation.x),
+      translateY: roundNumber(translation.y),
+    };
+    magicMoveDraftRef.current = draft;
+    setMagicMoveDraft(draft);
+  }
+
+  function finishMagicMoveDrag(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    commit: boolean,
+  ): void {
+    const drag = magicMoveDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const draft = magicMoveDraftRef.current;
+    magicMoveDragRef.current = null;
+    magicMoveDraftRef.current = null;
+    setMagicMoveDraft(null);
+    if (
+      commit &&
+      draft &&
+      draft.layerId === drag.layerId &&
+      draft.animationId === drag.animationId
+    ) {
+      onMagicMoveTranslationCommit?.(
+        drag.layerId,
+        drag.animationId,
+        draft.translateX,
+        draft.translateY,
+      );
+    }
+    if (magicMoveRestoreTimerRef.current !== null) {
+      clearTimeout(magicMoveRestoreTimerRef.current);
+    }
+    magicMoveRestoreTimerRef.current = setTimeout(() => {
+      const canvas = fabricCanvasRef.current;
+      if (canvas) {
+        canvas.upperCanvasEl.style.pointerEvents = "";
+        canvas._currentTransform = null;
+        canvas.selection = true;
+        canvas.skipTargetFind = false;
+        applySelectionToCanvas(
+          canvas,
+          selectedLayerIdsRef.current,
+          layerIdToObjectRef.current,
+        );
+        canvas.requestRenderAll();
+      }
+      isApplyingSelectionRef.current = false;
+      magicMoveRestoreTimerRef.current = null;
+    }, 100);
+  }
+
   return (
     <div
       style={{
-        width: "max-content",
+        position: "relative",
+        width: canvasWidth,
+        height: canvasHeight,
         overflow: "hidden",
         background: scene.backgroundColor ?? "#000000",
       }}
     >
       <canvas ref={canvasElementRef} />
+      {magicMoveContext && viewportPath ? (
+        <>
+          <svg
+            className="magic-move-overlay"
+            width={canvasWidth}
+            height={canvasHeight}
+            aria-hidden="true"
+          >
+            <line
+              x1={viewportPath.start.x}
+              y1={viewportPath.start.y}
+              x2={viewportPath.end.x}
+              y2={viewportPath.end.y}
+              className="magic-move-path-line"
+            />
+            <circle
+              cx={viewportPath.start.x}
+              cy={viewportPath.start.y}
+              r={5}
+              className="magic-move-path-origin"
+            />
+            <rect
+              x={
+                viewportPath.end.x -
+                (magicMoveContext.layer.width *
+                  magicMoveContext.animation.scale *
+                  viewportTransform.scale) /
+                  2
+              }
+              y={
+                viewportPath.end.y -
+                (magicMoveContext.layer.height *
+                  magicMoveContext.animation.scale *
+                  viewportTransform.scale) /
+                  2
+              }
+              width={
+                magicMoveContext.layer.width *
+                magicMoveContext.animation.scale *
+                viewportTransform.scale
+              }
+              height={
+                magicMoveContext.layer.height *
+                magicMoveContext.animation.scale *
+                viewportTransform.scale
+              }
+              transform={`rotate(${magicMoveContext.layer.rotation + (magicMoveContext.parentGroup?.rotation ?? 0)} ${viewportPath.end.x} ${viewportPath.end.y})`}
+              className="magic-move-target-outline"
+            />
+          </svg>
+          <button
+            type="button"
+            className="magic-move-target-handle"
+            aria-label="Drag Magic Move target"
+            title="Drag to set the Magic Move endpoint"
+            style={{
+              left: viewportPath.end.x,
+              top: viewportPath.end.y,
+            }}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const canvas = fabricCanvasRef.current;
+              if (canvas) {
+                if (magicMoveRestoreTimerRef.current !== null) {
+                  clearTimeout(magicMoveRestoreTimerRef.current);
+                  magicMoveRestoreTimerRef.current = null;
+                }
+                isApplyingSelectionRef.current = true;
+                canvas._currentTransform = null;
+                canvas.selection = false;
+                canvas.skipTargetFind = true;
+                canvas.discardActiveObject();
+                canvas.upperCanvasEl.style.pointerEvents = "none";
+                canvas.requestRenderAll();
+              }
+              event.currentTarget.setPointerCapture(event.pointerId);
+              magicMoveDragRef.current = {
+                pointerId: event.pointerId,
+                layerId: magicMoveContext.layer.id,
+                animationId: magicMoveContext.animation.id,
+              };
+            }}
+            onPointerMove={updateMagicMoveEndpoint}
+            onPointerUp={(event) => finishMagicMoveDrag(event, true)}
+            onPointerCancel={(event) => finishMagicMoveDrag(event, false)}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

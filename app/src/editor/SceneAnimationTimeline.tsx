@@ -60,6 +60,17 @@ function phaseLabel(phase: LayerAnimation["phase"]): string {
   }
 }
 
+function animationLabel(animation: LayerAnimation): string {
+  switch (animation.preset) {
+    case "fade-and-move":
+      return "Fade and Move";
+    case "magic-move":
+      return "Magic Move";
+    case "dissolve":
+      return "Dissolve";
+  }
+}
+
 export function SceneAnimationTimeline({
   scene,
   fps,
@@ -311,7 +322,7 @@ export function SceneAnimationTimeline({
                 >
                   <span>{index + 1}</span>
                   <strong>{layer.name}</strong>
-                  <small>{phaseLabel(animation.phase)} · {animation.preset}</small>
+                  <small>{phaseLabel(animation.phase)} · {animationLabel(animation)}</small>
                 </button>
                 <div className="animation-timeline-track">
                   {ticks

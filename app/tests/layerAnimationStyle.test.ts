@@ -3,56 +3,124 @@ import { test } from "node:test";
 import type { LayerAnimation } from "../src/domain/layerAnimationSchema";
 import { getLayerAnimationStyle } from "../src/remotion/layerAnimationStyle";
 
-function animation(
-  phase: LayerAnimation["phase"],
-  startFrame: number,
-  durationInFrames: number,
-): LayerAnimation {
+const dimensions = { width: 200, height: 100 };
+
+function style(
+  animations: readonly LayerAnimation[],
+  frame: number,
+) {
+  return getLayerAnimationStyle(animations, frame, dimensions);
+}
+
+function fadeAndMove(
+  direction: Extract<LayerAnimation, { preset: "fade-and-move" }>["direction"],
+  durationInFrames = 5,
+): Extract<LayerAnimation, { preset: "fade-and-move" }> {
   return {
-    id: `${phase}-animation`,
-    phase,
-    preset: "fade",
-    startFrame,
+    id: "build-in",
+    phase: "enter",
+    preset: "fade-and-move",
+    startFrame: 10,
     durationInFrames,
     easing: "linear",
+    direction,
+    travelDistance: 50,
   };
 }
 
-test("enter animation reaches its final state on the last included frame", () => {
-  const entry = animation("enter", 10, 4);
-  assert.equal(getLayerAnimationStyle([entry], 9).opacityMultiplier, 0);
-  assert.equal(getLayerAnimationStyle([entry], 10).opacityMultiplier, 0);
-  assert.equal(getLayerAnimationStyle([entry], 13).opacityMultiplier, 1);
-  assert.equal(getLayerAnimationStyle([entry], 14).opacityMultiplier, 1);
+const magicMove: Extract<LayerAnimation, { preset: "magic-move" }> = {
+  id: "action",
+  phase: "emphasis",
+  preset: "magic-move",
+  startFrame: 20,
+  durationInFrames: 5,
+  easing: "linear",
+  translateX: 120,
+  translateY: -60,
+  scale: 1.5,
+  opacity: 0.4,
+};
+
+const dissolve: Extract<LayerAnimation, { preset: "dissolve" }> = {
+  id: "build-out",
+  phase: "exit",
+  preset: "dissolve",
+  startFrame: 30,
+  durationInFrames: 5,
+  easing: "linear",
+};
+
+test("Fade and Move combines directional travel with a fade", () => {
+  assert.deepEqual(style([fadeAndMove("right-to-left")], 10), {
+    opacityMultiplier: 0,
+    translateX: 100,
+    translateY: 0,
+    scale: 1,
+  });
+  assert.deepEqual(style([fadeAndMove("left-to-right")], 10), {
+    opacityMultiplier: 0,
+    translateX: -100,
+    translateY: 0,
+    scale: 1,
+  });
+  assert.deepEqual(style([fadeAndMove("top-to-bottom")], 10), {
+    opacityMultiplier: 0,
+    translateX: 0,
+    translateY: -50,
+    scale: 1,
+  });
+  assert.deepEqual(style([fadeAndMove("bottom-to-top")], 14), {
+    opacityMultiplier: 1,
+    translateX: 0,
+    translateY: 0,
+    scale: 1,
+  });
 });
 
-test("exit animation reaches its final state on the last included frame", () => {
-  const exit = animation("exit", 10, 4);
-  assert.equal(getLayerAnimationStyle([exit], 9).opacityMultiplier, 1);
-  assert.equal(getLayerAnimationStyle([exit], 10).opacityMultiplier, 1);
-  assert.equal(getLayerAnimationStyle([exit], 13).opacityMultiplier, 0);
-  assert.equal(getLayerAnimationStyle([exit], 14).opacityMultiplier, 0);
+test("Magic Move reaches and holds its relative target state", () => {
+  assert.deepEqual(style([magicMove], 19), {
+    opacityMultiplier: 1,
+    translateX: 0,
+    translateY: 0,
+    scale: 1,
+  });
+  assert.deepEqual(style([magicMove], 22), {
+    opacityMultiplier: 0.7,
+    translateX: 60,
+    translateY: -30,
+    scale: 1.25,
+  });
+  assert.deepEqual(style([magicMove], 25), {
+    opacityMultiplier: 0.4,
+    translateX: 120,
+    translateY: -60,
+    scale: 1.5,
+  });
+});
+
+test("Dissolve reaches zero opacity on its final included frame", () => {
+  assert.equal(style([dissolve], 29).opacityMultiplier, 1);
+  assert.equal(style([dissolve], 30).opacityMultiplier, 1);
+  assert.equal(style([dissolve], 34).opacityMultiplier, 0);
+  assert.equal(style([dissolve], 35).opacityMultiplier, 0);
+});
+
+test("Build In, completed Magic Move, and Build Out compose", () => {
+  const result = style([fadeAndMove("right-to-left"), magicMove, dissolve], 32);
+  assert.deepEqual(result, {
+    opacityMultiplier: 0.2,
+    translateX: 120,
+    translateY: -60,
+    scale: 1.5,
+  });
 });
 
 test("one-frame animations deterministically use their final state", () => {
+  const buildIn = fadeAndMove("bottom-to-top", 1);
+  assert.equal(style([buildIn], 9).opacityMultiplier, 0);
+  assert.equal(style([buildIn], 10).opacityMultiplier, 1);
   assert.equal(
-    getLayerAnimationStyle([animation("enter", 10, 1)], 9).opacityMultiplier,
-    0,
-  );
-  assert.equal(
-    getLayerAnimationStyle([animation("enter", 10, 1)], 10).opacityMultiplier,
-    1,
-  );
-  assert.equal(
-    getLayerAnimationStyle([animation("exit", 10, 1)], 10).opacityMultiplier,
-    0,
-  );
-  assert.equal(
-    getLayerAnimationStyle([animation("exit", 10, 1)], 9).opacityMultiplier,
-    1,
-  );
-  assert.equal(
-    getLayerAnimationStyle([animation("exit", 10, 1)], 11).opacityMultiplier,
+    style([{ ...dissolve, durationInFrames: 1 }], 30).opacityMultiplier,
     0,
   );
 });

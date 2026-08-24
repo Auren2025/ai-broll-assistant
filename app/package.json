@@ -14,6 +14,7 @@
     "render:project": "tsx scripts/renderProject.ts",
     "export:html": "tsx scripts/exportHtmlPresentation.ts",
     "parse:srt": "tsx scripts/parseSrt.ts",
+    "migrate:animations": "tsx scripts/migrateAnimations.ts",
     "scaffold": "tsx scripts/scaffoldProject.ts",
     "skeleton": "tsx scripts/buildSceneSkeleton.ts",
     "validate:srt": "tsx scripts/validateSrt.ts",

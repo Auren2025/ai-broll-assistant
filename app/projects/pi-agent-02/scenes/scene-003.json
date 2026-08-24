@@ -20,7 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s3-title-in", "phase": "enter", "preset": "fade", "startFrame": 0, "durationInFrames": 18, "easing": "ease-out"}
+        {"id":"s3-title-in","phase":"enter","startFrame":0,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "text",
       "text": "基础能力",
@@ -57,7 +57,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s3-pi-in", "phase": "enter", "preset": "fade", "startFrame": 0, "durationInFrames": 20, "easing": "ease-out"}
+        {"id":"s3-pi-in","phase":"enter","startFrame":0,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "group",
       "children": [
@@ -136,7 +136,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s3-read-in", "phase": "enter", "preset": "slide-right", "startFrame": 82, "durationInFrames": 20, "easing": "ease-out"}
+        {"id":"s3-read-in","phase":"enter","startFrame":82,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"left-to-right","travelDistance":26.667}
       ],
       "type": "text",
       "text": "读取文件",
@@ -173,7 +173,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s3-write-in", "phase": "enter", "preset": "slide-left", "startFrame": 82, "durationInFrames": 20, "easing": "ease-out"}
+        {"id":"s3-write-in","phase":"enter","startFrame":82,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"right-to-left","travelDistance":26.667}
       ],
       "type": "text",
       "text": "写入文件",
@@ -210,7 +210,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {"id": "s3-command-in", "phase": "enter", "preset": "slide-up", "startFrame": 82, "durationInFrames": 20, "easing": "ease-out"}
+        {"id":"s3-command-in","phase":"enter","startFrame":82,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":72.727}
       ],
       "type": "text",
       "text": "执行命令",

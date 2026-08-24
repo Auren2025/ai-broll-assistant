@@ -9,13 +9,32 @@ function animation(
   startFrame: number,
   durationInFrames = 20,
 ) {
-  return {
+  const timing = {
     id,
-    phase,
-    preset: "fade",
     startFrame,
     durationInFrames,
-    easing: "ease-in",
+    easing: "ease-in" as const,
+  };
+  if (phase === "enter") {
+    return {
+      ...timing,
+      phase,
+      preset: "fade-and-move",
+      direction: "bottom-to-top",
+      travelDistance: 40,
+    } as const;
+  }
+  if (phase === "exit") {
+    return { ...timing, phase, preset: "dissolve" } as const;
+  }
+  return {
+    ...timing,
+    phase,
+    preset: "magic-move",
+    translateX: 0,
+    translateY: 0,
+    scale: 1.1,
+    opacity: 1,
   } as const;
 }
 

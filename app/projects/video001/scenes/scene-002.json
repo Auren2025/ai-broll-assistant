@@ -20,14 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "rectangle-1-enter",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 0,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
+        {"id":"rectangle-1-enter","phase":"enter","startFrame":0,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":33.333}
       ],
       "type": "rectangle",
       "fill": "#6b7280",
@@ -54,14 +47,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "circle-1-enter",
-          "phase": "enter",
-          "preset": "slide-down",
-          "startFrame": 0,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
+        {"id":"circle-1-enter","phase":"enter","startFrame":0,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"top-to-bottom","travelDistance":60.196}
       ],
       "type": "circle",
       "fill": "#6b7280",

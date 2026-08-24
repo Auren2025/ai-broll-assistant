@@ -20,14 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-skill-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 45,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-skill-in","phase":"enter","startFrame":45,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":53.333}
       ],
       "type": "rectangle",
       "fill": "#F7F7F5",
@@ -74,14 +67,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-mcp-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 65,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-mcp-in","phase":"enter","startFrame":65,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":53.333}
       ],
       "type": "rectangle",
       "fill": "#A7ADB7",
@@ -128,14 +114,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-subagent-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 85,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-subagent-in","phase":"enter","startFrame":85,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":53.333}
       ],
       "type": "rectangle",
       "fill": "#F5C84C",
@@ -182,14 +161,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-context-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 105,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-context-in","phase":"enter","startFrame":105,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":48.485}
       ],
       "type": "rectangle",
       "fill": "#12315B",
@@ -236,14 +208,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-harness-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 145,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-harness-in","phase":"enter","startFrame":145,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":48.485}
       ],
       "type": "rectangle",
       "fill": "#FF7A1A",
@@ -290,14 +255,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-divider-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 260,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-divider-in","phase":"enter","startFrame":260,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "rectangle",
       "fill": "#A7ADB7",
@@ -344,14 +302,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s1t-question-in",
-          "phase": "enter",
-          "preset": "slide-up",
-          "startFrame": 270,
-          "durationInFrames": 22,
-          "easing": "ease-out"
-        }
+        {"id":"s1t-question-in","phase":"enter","startFrame":270,"durationInFrames":22,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":72.727}
       ],
       "type": "text",
       "text": "它们如何组合，又如何运行？",

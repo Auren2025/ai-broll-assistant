@@ -20,14 +20,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s4-core-in",
-          "phase": "enter",
-          "preset": "slide-right",
-          "startFrame": 0,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s4-core-in","phase":"enter","startFrame":0,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"left-to-right","travelDistance":14.634}
       ],
       "type": "group",
       "children": [
@@ -211,14 +204,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s4-arrow-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 14,
-          "durationInFrames": 16,
-          "easing": "ease-out"
-        }
+        {"id":"s4-arrow-in","phase":"enter","startFrame":14,"durationInFrames":16,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "arrow",
       "stroke": "#FF8A00",
@@ -242,14 +228,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s4-extension-in",
-          "phase": "enter",
-          "preset": "slide-left",
-          "startFrame": 20,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
+        {"id":"s4-extension-in","phase":"enter","startFrame":20,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"right-to-left","travelDistance":18.462}
       ],
       "type": "text",
       "text": "Extension",
@@ -286,14 +265,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s4-skill-in",
-          "phase": "enter",
-          "preset": "slide-left",
-          "startFrame": 28,
-          "durationInFrames": 20,
-          "easing": "ease-out"
-        }
+        {"id":"s4-skill-in","phase":"enter","startFrame":28,"durationInFrames":20,"easing":"ease-out","preset":"fade-and-move","direction":"right-to-left","travelDistance":18.462}
       ],
       "type": "text",
       "text": "Skill",
@@ -330,14 +302,7 @@
       "visible": true,
       "locked": false,
       "animations": [
-        {
-          "id": "s4-caption-in",
-          "phase": "enter",
-          "preset": "fade",
-          "startFrame": 40,
-          "durationInFrames": 18,
-          "easing": "ease-out"
-        }
+        {"id":"s4-caption-in","phase":"enter","startFrame":40,"durationInFrames":18,"easing":"ease-out","preset":"fade-and-move","direction":"bottom-to-top","travelDistance":0}
       ],
       "type": "text",
       "text": "自行扩展",

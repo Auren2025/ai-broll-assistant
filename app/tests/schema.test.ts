@@ -145,12 +145,74 @@ test("parseScene rejects an animation past the scene duration", () => {
             {
               id: "a",
               phase: "enter",
-              preset: "fade",
+              preset: "fade-and-move",
               startFrame: 0,
               durationInFrames: 20,
               easing: "ease-out",
+              direction: "bottom-to-top",
+              travelDistance: 40,
             },
           ],
+        },
+      ],
+    }),
+  );
+});
+
+test("parseScene enforces one preset and parameter shape per animation phase", () => {
+  const baseScene = {
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+  } as const;
+  const validAnimations = [
+    {
+      id: "in",
+      phase: "enter",
+      preset: "fade-and-move",
+      startFrame: 0,
+      durationInFrames: 20,
+      easing: "ease-out",
+      direction: "right-to-left",
+      travelDistance: 40,
+    },
+    {
+      id: "action",
+      phase: "emphasis",
+      preset: "magic-move",
+      startFrame: 30,
+      durationInFrames: 20,
+      easing: "ease-in-out",
+      translateX: 120,
+      translateY: -40,
+      scale: 1.2,
+      opacity: 0.6,
+    },
+    {
+      id: "out",
+      phase: "exit",
+      preset: "dissolve",
+      startFrame: 80,
+      durationInFrames: 20,
+      easing: "ease-in-out",
+    },
+  ] as const;
+
+  assert.doesNotThrow(() =>
+    parseScene({
+      ...baseScene,
+      layers: [{ ...rectLayer("rectangle-1", 0), animations: validAnimations }],
+    }),
+  );
+  assert.throws(() =>
+    parseScene({
+      ...baseScene,
+      layers: [
+        {
+          ...rectLayer("rectangle-1", 0),
+          animations: [{ ...validAnimations[0], phase: "exit" }],
         },
       ],
     }),

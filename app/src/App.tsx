@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent as ReactChangeEvent,
@@ -229,16 +230,30 @@ function App() {
     setHasSaveConflict(false);
   }, [documentVersions]);
 
-  const historyController = useHistoryController({
-    refs: {
+  // The `refs` and `setters` objects are passed straight through to
+  // `useHistoryController`, where every callback reads them as a dependency.
+  // If we let them be fresh object literals on every render, the callbacks
+  // produced by that hook (and therefore `handleSceneChange`,
+  // `syncObjectsToScene`, and the entire Fabric.js canvas-setup effect that
+  // depends on the latter) would all churn every time *any* parent state
+  // changes — including the lightweight `setHoveredLayerId` that fires on
+  // every mouse move over the canvas. That churn tears the canvas down and
+  // rebuilds it on each frame, which shows up as several visual flickers
+  // per hover. Memoize both objects so their identities stay stable; all of
+  // the members they carry are already stable refs/state setters.
+  const historyControllerRefs = useMemo(
+    () => ({
       projectRef,
       sceneRef,
       scenesByIdRef,
       documentVersions,
       isApplyingHistoryRef,
       isSceneLoadingRef,
-    },
-    setters: {
+    }),
+    [documentVersions],
+  );
+  const historyControllerSetters = useMemo(
+    () => ({
       setProject,
       setScene,
       setScenesById,
@@ -254,7 +269,12 @@ function App() {
       markCurrentStateSaved,
       updateDirtyState,
       getErrorMessage,
-    },
+    }),
+    [markCurrentStateSaved, updateDirtyState],
+  );
+  const historyController = useHistoryController({
+    refs: historyControllerRefs,
+    setters: historyControllerSetters,
   });
   const recordHistory = historyController.controls.record;
   const clearHistory = historyController.controls.clear;
@@ -1547,10 +1567,6 @@ function App() {
           <div className="app-logo">B</div>
           <div>
             <h1>{project.name}</h1>
-            <p>
-              {scene.topic} · {project.width} × {project.height} · {project.fps}{" "}
-              fps
-            </p>
           </div>
         </div>
 

@@ -173,6 +173,11 @@ export function FabricSceneCanvas({
     onTextLayerChangeRef.current = onTextLayerChange;
   }, [onTextLayerChange]);
 
+  // Effect: when the scene or the active animation changes, reset the canvas
+  // to its normal editing state and cancel any in-flight magic-move handle
+  // drag. This is the only place we should null `_currentTransform`, because
+  // a scene/animation change means the user has left the previous editing
+  // context and any leftover drag state would be stale.
   useEffect(() => {
     if (magicMoveRestoreTimerRef.current !== null) {
       clearTimeout(magicMoveRestoreTimerRef.current);
@@ -196,7 +201,24 @@ export function FabricSceneCanvas({
     magicMoveDraftRef.current = null;
     magicMoveDragRef.current = null;
     setMagicMoveDraft(null);
-  }, [scene.id, selectedAnimationId, selectedLayerIds]);
+  }, [scene.id, selectedAnimationId]);
+
+  // Effect: when the user selects a different layer, only cancel any
+  // in-flight magic-move handle drag state. Do NOT touch the canvas
+  // internals (`_currentTransform`, selection, skipTargetFind, ...):
+  // `mouse:down` has just set up a drag via `_setupCurrentTransform`,
+  // and nulling `_currentTransform` here would silently cancel the drag,
+  // making the freshly-selected layer look selected but un-draggable.
+  // The heavy sync effect already reapplies selection on this change.
+  useEffect(() => {
+    if (magicMoveRestoreTimerRef.current !== null) {
+      clearTimeout(magicMoveRestoreTimerRef.current);
+      magicMoveRestoreTimerRef.current = null;
+    }
+    magicMoveDraftRef.current = null;
+    magicMoveDragRef.current = null;
+    setMagicMoveDraft(null);
+  }, [selectedLayerIds]);
 
   const syncObjectsToScene = useCallback(
     (objects: readonly FabricObject[]): void => {

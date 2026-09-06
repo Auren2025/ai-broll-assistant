@@ -10,6 +10,7 @@ import { parseScene } from "../src/domain/sceneSchema";
 import { makeProjectFixture } from "./helpers/projectFixture";
 
 const EDITOR_ORIGIN = "http://127.0.0.1:5174";
+const RENDER_ORIGIN = "http://localhost:3003";
 
 async function responseObject(response: Response): Promise<Record<string, unknown>> {
   const body: unknown = await response.json();
@@ -301,6 +302,24 @@ test("same-origin writes still succeed and the editor's origin receives CORS hea
   assert.equal(response.headers.get("Access-Control-Allow-Origin"), EDITOR_ORIGIN);
   assert.equal(response.headers.get("Vary"), "Origin");
   assert.equal((await f.readProject()).name, "Same-origin");
+});
+
+test("the Remotion render origin can read projects but cannot write them", async (t) => {
+  const f = await fixture(t);
+  const readResponse = await f.request(f.projectUrl, {
+    headers: { Origin: RENDER_ORIGIN },
+  });
+  assert.equal(readResponse.status, 200);
+  assert.equal(readResponse.headers.get("Access-Control-Allow-Origin"), RENDER_ORIGIN);
+
+  const writeResponse = await f.request(f.projectUrl, {
+    method: "PUT",
+    headers: { Origin: RENDER_ORIGIN, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...f.project, name: "Render write" }),
+  });
+  assert.equal(writeResponse.status, 403);
+  assert.equal(await responseError(writeResponse), "Origin not allowed");
+  assert.deepEqual(await f.readProject(), f.project);
 });
 
 test("non-browser callers without an Origin header still reach the write handlers", async (t) => {

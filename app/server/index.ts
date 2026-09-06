@@ -40,6 +40,10 @@ const ALLOWED_BROWSER_ORIGINS = new Set([
   'http://127.0.0.1:3001',
   'http://localhost:3001',
 ])
+const ALLOWED_READ_ONLY_BROWSER_ORIGINS = new Set([
+  'http://127.0.0.1:3003',
+  'http://localhost:3003',
+])
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -750,8 +754,11 @@ function isWriteMethod(method: string): boolean {
   return method === 'PUT' || method === 'POST' || method === 'DELETE'
 }
 
-function isRequestOriginAllowed(origin: unknown): origin is string {
-  return typeof origin === 'string' && ALLOWED_BROWSER_ORIGINS.has(origin)
+function isRequestOriginAllowed(origin: unknown, method: string): origin is string {
+  return typeof origin === 'string' && (
+    ALLOWED_BROWSER_ORIGINS.has(origin)
+    || (!isWriteMethod(method) && ALLOWED_READ_ONLY_BROWSER_ORIGINS.has(origin))
+  )
 }
 
 async function readExistingSceneEndFrames(
@@ -931,7 +938,7 @@ const server = http.createServer((req, res) => {
   const origin = req.headers.origin
 
   if (typeof origin === 'string') {
-    if (isRequestOriginAllowed(origin)) {
+    if (isRequestOriginAllowed(origin, method)) {
       res.setHeader('Access-Control-Allow-Origin', origin)
       res.setHeader('Vary', 'Origin')
     } else {

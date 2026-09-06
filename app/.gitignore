@@ -7,11 +7,7 @@ coverage/
 .env
 .env.*.local
 
-# Local generated outputs and visual inspection screenshots.
-projects/*/renders/*
-!projects/*/renders/.gitkeep
-projects/*/exports/*
-projects/*/snapshots/
+# Local generated outputs and logs
 *.log
 npm-debug.log*
 

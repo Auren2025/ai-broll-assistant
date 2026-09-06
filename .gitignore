@@ -1,6 +1,13 @@
+# Operating-system files
 .DS_Store
+
+# Dependencies
 /node_modules/
 
-# Local conversation exports; keep archive documentation tracked.
-/archive/sessions/
+# Local project data
+# Project JSON, subtitles, assets, audio and renders are all local-only.
+/app/projects/
+
+# Local conversation exports
 /session-*.md
+/archive/sessions/

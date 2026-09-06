@@ -16,6 +16,17 @@ export interface AnimationLayerDimensions {
   height: number;
 }
 
+export interface LineDrawAnimationState {
+  progress: number;
+  contentOpacity: number;
+  direction: Extract<LayerAnimation, { preset: "line-draw" }>["direction"];
+}
+
+export interface WipeAnimationState {
+  progress: number;
+  direction: Extract<LayerAnimation, { preset: "wipe" }>["direction"];
+}
+
 const NEUTRAL_ANIMATION_STYLE: LayerAnimationStyle = {
   opacityMultiplier: 1,
   translateX: 0,
@@ -61,6 +72,38 @@ function getAnimationProgress(
   );
 }
 
+export function getLineDrawAnimationState(
+  animations: readonly LayerAnimation[],
+  frame: number,
+): LineDrawAnimationState | null {
+  const animation = animations.find(
+    (candidate): candidate is Extract<LayerAnimation, { preset: "line-draw" }> =>
+      candidate.preset === "line-draw",
+  );
+  if (!animation) return null;
+
+  const progress = getAnimationProgress(animation, frame);
+  return {
+    progress,
+    contentOpacity:
+      progress >= 1 ? 1 : Math.max(0, (progress - 0.8) / 0.2),
+    direction: animation.direction,
+  };
+}
+
+export function getWipeAnimationState(
+  animations: readonly LayerAnimation[],
+  frame: number,
+): WipeAnimationState | null {
+  const animation = animations.find(
+    (candidate): candidate is Extract<LayerAnimation, { preset: "wipe" }> =>
+      candidate.preset === "wipe",
+  );
+  return animation
+    ? { progress: getAnimationProgress(animation, frame), direction: animation.direction }
+    : null;
+}
+
 function getFadeAndMoveStyle(
   animation: Extract<LayerAnimation, { preset: "fade-and-move" }>,
   frame: number,
@@ -94,6 +137,73 @@ function getFadeAndMoveStyle(
   };
 }
 
+function getDissolveInStyle(
+  animation: Extract<LayerAnimation, { preset: "dissolve-in" }>,
+  frame: number,
+): LayerAnimationStyle {
+  return {
+    ...NEUTRAL_ANIMATION_STYLE,
+    opacityMultiplier: getAnimationProgress(animation, frame),
+  };
+}
+
+function getScaleInStyle(
+  animation: Extract<LayerAnimation, { preset: "scale-in" }>,
+  frame: number,
+): LayerAnimationStyle {
+  const progress = getAnimationProgress(animation, frame);
+  const startScale = animation.direction === "up" ? 0 : 1.5;
+  let scale = startScale + (1 - startScale) * progress;
+
+  if (animation.bounce) {
+    const bounceAt = 0.75;
+    const bounceScale = animation.direction === "up" ? 1.08 : 0.94;
+    scale =
+      progress < bounceAt
+        ? startScale + (bounceScale - startScale) * (progress / bounceAt)
+        : bounceScale +
+          (1 - bounceScale) * ((progress - bounceAt) / (1 - bounceAt));
+  }
+
+  return {
+    ...NEUTRAL_ANIMATION_STYLE,
+    opacityMultiplier: progress,
+    scale: progress >= 1 ? 1 : scale,
+  };
+}
+
+function getScaleBigStyle(
+  animation: Extract<LayerAnimation, { preset: "scale-big" }>,
+  frame: number,
+): LayerAnimationStyle {
+  const progress = getAnimationProgress(animation, frame);
+  return {
+    ...NEUTRAL_ANIMATION_STYLE,
+    opacityMultiplier: progress,
+    scale: 4 - 3 * progress,
+  };
+}
+
+function getBuildInStyle(
+  animation: Extract<LayerAnimation, { phase: "enter" }>,
+  frame: number,
+  dimensions: AnimationLayerDimensions,
+): LayerAnimationStyle {
+  switch (animation.preset) {
+    case "fade-and-move":
+      return getFadeAndMoveStyle(animation, frame, dimensions);
+    case "dissolve-in":
+      return getDissolveInStyle(animation, frame);
+    case "scale-in":
+      return getScaleInStyle(animation, frame);
+    case "scale-big":
+      return getScaleBigStyle(animation, frame);
+    case "line-draw":
+    case "wipe":
+      return NEUTRAL_ANIMATION_STYLE;
+  }
+}
+
 function getMagicMoveStyle(
   animation: Extract<LayerAnimation, { preset: "magic-move" }>,
   frame: number,
@@ -124,8 +234,8 @@ export function getLayerAnimationStyle(
   dimensions: AnimationLayerDimensions,
 ): LayerAnimationStyle {
   const buildIn = animations.find(
-    (animation): animation is Extract<LayerAnimation, { preset: "fade-and-move" }> =>
-      animation.preset === "fade-and-move",
+    (animation): animation is Extract<LayerAnimation, { phase: "enter" }> =>
+      animation.phase === "enter",
   );
   const action = animations.find(
     (animation): animation is Extract<LayerAnimation, { preset: "magic-move" }> =>
@@ -136,7 +246,7 @@ export function getLayerAnimationStyle(
       animation.preset === "dissolve",
   );
   const buildInStyle = buildIn
-    ? getFadeAndMoveStyle(buildIn, frame, dimensions)
+    ? getBuildInStyle(buildIn, frame, dimensions)
     : NEUTRAL_ANIMATION_STYLE;
   const actionStyle = action
     ? getMagicMoveStyle(action, frame)
@@ -152,6 +262,6 @@ export function getLayerAnimationStyle(
       buildOutStyle.opacityMultiplier,
     translateX: buildInStyle.translateX + actionStyle.translateX,
     translateY: buildInStyle.translateY + actionStyle.translateY,
-    scale: actionStyle.scale,
+    scale: buildInStyle.scale * actionStyle.scale,
   };
 }

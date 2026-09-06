@@ -5,6 +5,7 @@ import {
   ALPHA_PRORES_RENDER_ARGS,
   buildFinalRenderProps,
 } from "../src/remotion/renderPolicy";
+import { DEFAULT_PROJECT_ID } from "../src/projectSelection";
 import { assertLocalServerIsHealthy } from "./localServerHealth";
 import { validateProjectDirectory } from "./projectValidation";
 
@@ -13,7 +14,7 @@ const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 async function main(): Promise<void> {
   const projectId = process.argv[2];
   if (!projectId || !ID_PATTERN.test(projectId)) {
-    throw new Error("Usage: npm run render:project -- <project-id>");
+    throw new Error("Usage: pnpm render:project <project-id>");
   }
 
   const projectDirectory = resolve("projects", projectId);
@@ -28,7 +29,7 @@ async function main(): Promise<void> {
     [
       "render",
       resolve("src/remotion/Studio.tsx"),
-      "Video001",
+      DEFAULT_PROJECT_ID,
       resolve(rendersDir, `${projectId}.mov`),
       ...ALPHA_PRORES_RENDER_ARGS,
       `--props=${JSON.stringify(buildFinalRenderProps(projectId))}`,

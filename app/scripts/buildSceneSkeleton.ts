@@ -46,7 +46,7 @@ const gapMs =
     : DEFAULT_GAP_MS;
 
 if (!projectId) {
-  console.error("Usage: npm run skeleton -- <project-id> [gap-ms]");
+  console.error("Usage: pnpm skeleton <project-id> [gap-ms]");
   process.exitCode = 1;
 } else {
   printCandidates(projectId, gapMs).catch((error: unknown) => {

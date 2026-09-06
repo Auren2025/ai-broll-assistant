@@ -145,7 +145,7 @@ async function exportHtmlPresentation(projectId: string): Promise<void> {
 const projectId = process.argv[2];
 
 if (!projectId) {
-  console.error("Usage: npm run export:html -- <project-id>");
+  console.error("Usage: pnpm export:html <project-id>");
   process.exitCode = 1;
 } else {
   exportHtmlPresentation(projectId).catch((error: unknown) => {

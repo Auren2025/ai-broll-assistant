@@ -39,6 +39,11 @@ function migrateAnimation(animation: JsonObject, layer: JsonObject): JsonObject 
   const preset = String(animation.preset);
   if (
     preset === "fade-and-move" ||
+    preset === "line-draw" ||
+    preset === "wipe" ||
+    preset === "dissolve-in" ||
+    preset === "scale-in" ||
+    preset === "scale-big" ||
     preset === "magic-move" ||
     preset === "dissolve"
   ) {
@@ -144,7 +149,7 @@ function migrateProject(projectDirectory: string): void {
 const projectDirectory = process.argv[2];
 
 if (!projectDirectory) {
-  console.error("Usage: npm run migrate:animations -- projects/<project-id>");
+  console.error("Usage: pnpm migrate:animations projects/<project-id>");
   process.exitCode = 1;
 } else {
   try {

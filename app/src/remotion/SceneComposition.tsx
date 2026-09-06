@@ -1,18 +1,22 @@
 import type { CSSProperties } from "react";
 import { AbsoluteFill, Img, useCurrentFrame } from "remotion";
+import { resolveAssetUrl } from "../assetUrl";
 import type { Layer, Scene } from "../domain/sceneSchema";
-import { buildAssetUrl } from "../api/localService";
 import { applyTextCase } from "../domain/textCase";
 import { getShapeTextContentBox } from "../domain/shapeTextLayout";
 import type { ShapeText } from "../domain/shapeTextSchema";
-import { getLayerAnimationStyle } from "./layerAnimationStyle";
+import {
+  getLayerAnimationStyle,
+  getLineDrawAnimationState,
+  getWipeAnimationState,
+} from "./layerAnimationStyle";
 import { resolveSceneBackground } from "./renderPolicy";
 import { getTextRenderLayout } from "./textRenderLayout";
+import { getWipeClipPath } from "./wipeClipPath";
 
 export interface SceneCompositionProps {
   scene: Scene;
-  projectId: string;
-  assetBaseUrl?: string;
+  assetBaseUrl: string;
   previewBackdrop?: boolean;
 }
 
@@ -194,10 +198,12 @@ function ShapeTextView({
   shapeText,
   width,
   height,
+  opacity = 1,
 }: {
   shapeText: ShapeText;
   width: number;
   height: number;
+  opacity?: number;
 }) {
   if (shapeText.text.length === 0) return null;
   const box = getShapeTextContentBox(width, height, shapeText.padding);
@@ -218,6 +224,7 @@ function ShapeTextView({
               ? "flex-end"
               : "center",
         overflow: "hidden",
+        opacity,
         boxSizing: "border-box",
         color: shapeText.fillEnabled ? shapeText.fill : "transparent",
         fontFamily: shapeText.fontFamily,
@@ -245,13 +252,11 @@ function ShapeTextView({
 function LayerView({
   layer,
   frame,
-  projectId,
   assetBaseUrl,
 }: {
   layer: Layer;
   frame: number;
-  projectId: string;
-  assetBaseUrl?: string;
+  assetBaseUrl: string;
 }) {
   if (!layer.visible) return null;
 
@@ -259,6 +264,18 @@ function LayerView({
     width: layer.width,
     height: layer.height,
   });
+  const lineDraw = getLineDrawAnimationState(layer.animations, frame);
+  const wipe = getWipeAnimationState(layer.animations, frame);
+  const lineDrawStroke = lineDraw
+    ? {
+        pathLength: 1,
+        strokeDasharray: 1,
+        strokeDashoffset:
+          lineDraw.direction === "counterclockwise"
+            ? lineDraw.progress - 1
+            : 1 - lineDraw.progress,
+      }
+    : {};
   const transform = `translate(${animationStyle.translateX}px, ${animationStyle.translateY}px) rotate(${layer.rotation}deg) scale(${animationStyle.scale})`;
   const style: CSSProperties = {
     ...getLayerBaseStyle(layer),
@@ -267,6 +284,7 @@ function LayerView({
       animationStyle.opacityMultiplier,
     mixBlendMode: layer.blendMode,
     transform,
+    clipPath: wipe ? getWipeClipPath(wipe.direction, wipe.progress) : undefined,
   };
 
   if (layer.type === "group") {
@@ -279,7 +297,6 @@ function LayerView({
               key={child.id}
               layer={child}
               frame={frame}
-              projectId={projectId}
               assetBaseUrl={assetBaseUrl}
             />
           ))}
@@ -309,6 +326,7 @@ function LayerView({
                 <path
                   d={roundedRectanglePath(layer.width, layer.height, cornerRadii)}
                   fill={layer.fillEnabled ? layer.fill : "none"}
+                  opacity={lineDraw?.contentOpacity ?? 1}
                 />
                 <path
                   d={roundedRectanglePath(
@@ -320,9 +338,10 @@ function LayerView({
                   fill="none"
                   stroke={layer.stroke ?? "none"}
                   strokeWidth={layer.strokeWidth}
+                  {...lineDrawStroke}
                 />
               </svg>
-              <ShapeTextView shapeText={layer.shapeText} width={layer.width} height={layer.height} />
+              <ShapeTextView shapeText={layer.shapeText} width={layer.width} height={layer.height} opacity={lineDraw?.contentOpacity} />
             </div>
     );
   }
@@ -347,6 +366,7 @@ function LayerView({
                   )}
                   fill={layer.fillEnabled ? layer.fill : "none"}
                   fillRule="evenodd"
+                  opacity={lineDraw?.contentOpacity ?? 1}
                 />
                 <path
                   d={ellipseSectorPath(
@@ -360,10 +380,11 @@ function LayerView({
                   fill="none"
                   stroke={layer.stroke ?? "none"}
                   strokeWidth={layer.strokeWidth}
+                  {...lineDrawStroke}
                 />
               </svg>
               {layer.donut === 0 && layer.sweep === 360 ? (
-                <ShapeTextView shapeText={layer.shapeText} width={layer.width} height={layer.height} />
+                <ShapeTextView shapeText={layer.shapeText} width={layer.width} height={layer.height} opacity={lineDraw?.contentOpacity} />
               ) : null}
             </div>
     );
@@ -392,6 +413,7 @@ function LayerView({
                 <path
                   d={trianglePath}
                   fill={layer.fillEnabled ? layer.fill : "none"}
+                  opacity={lineDraw?.contentOpacity ?? 1}
                 />
                 <path
                   d={trianglePath}
@@ -399,6 +421,7 @@ function LayerView({
                   stroke={layer.stroke ?? "none"}
                   strokeWidth={layer.strokeWidth * 2}
                   clipPath={`url(#${clipId})`}
+                  {...lineDrawStroke}
                 />
               </svg>
             </div>
@@ -417,6 +440,9 @@ function LayerView({
             0,
             layer.width - startInset - endInset,
           );
+          const drawClipId = `arrow-line-draw-${layer.id}`;
+          const drawFromEnd = lineDraw?.direction === "end-to-start";
+          const drawProgress = lineDraw?.progress ?? 1;
 
     return (
             <div style={style}>
@@ -426,7 +452,23 @@ function LayerView({
                 viewBox={`0 0 ${layer.width} ${layer.height}`}
                 overflow="visible"
               >
-                <g transform={`translate(${layer.width / 2} ${layer.height / 2})`}>
+                <defs>
+                  <clipPath id={drawClipId}>
+                    <rect
+                      x={
+                        -layer.width / 2 +
+                        (drawFromEnd ? layer.width * (1 - drawProgress) : 0)
+                      }
+                      y={-layer.height / 2}
+                      width={layer.width * drawProgress}
+                      height={layer.height}
+                    />
+                  </clipPath>
+                </defs>
+                <g
+                  clipPath={lineDraw ? `url(#${drawClipId})` : undefined}
+                  transform={`translate(${layer.width / 2} ${layer.height / 2})`}
+                >
                   {shaftWidth > 0 ? (
                     <rect
                       x={-layer.width / 2 + startInset}
@@ -451,9 +493,7 @@ function LayerView({
   if (layer.type === "image") {
     const imageUrl = layer.src === null
       ? null
-      : assetBaseUrl
-        ? `${assetBaseUrl.replace(/\/$/, "")}/${layer.src}`
-        : buildAssetUrl(projectId, layer.src);
+      : resolveAssetUrl(assetBaseUrl, layer.src);
     const maximum = Math.max(0, Math.min(layer.width, layer.height) / 2);
     const cornerRadius = Math.max(0, Math.min(layer.cornerRadius, maximum));
     return (
@@ -462,7 +502,7 @@ function LayerView({
           ...style,
           overflow: "hidden",
           borderRadius: cornerRadius,
-          backgroundColor: imageUrl === null ? "#d1d5db" : undefined,
+          backgroundColor: imageUrl === null ? layer.placeholderColor : undefined,
           border:
             layer.stroke && layer.strokeWidth > 0
               ? `${layer.strokeWidth}px solid ${layer.stroke}`
@@ -534,7 +574,6 @@ function LayerView({
 
 export function SceneComposition({
   scene,
-  projectId,
   assetBaseUrl,
   previewBackdrop = false,
 }: SceneCompositionProps) {
@@ -559,7 +598,6 @@ export function SceneComposition({
           key={layer.id}
           layer={layer}
           frame={frame}
-          projectId={projectId}
           assetBaseUrl={assetBaseUrl}
         />
       ))}

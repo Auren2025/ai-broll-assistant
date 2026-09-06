@@ -17,7 +17,7 @@ function validateSrt(filePath: string): void {
 const filePath = process.argv[2];
 
 if (!filePath) {
-  console.error("Usage: npm run validate:srt -- projects/<project-id>/source.srt");
+  console.error("Usage: pnpm validate:srt projects/<project-id>/source.srt");
   process.exitCode = 1;
 } else {
   try {

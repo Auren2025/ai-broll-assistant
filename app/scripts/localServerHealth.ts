@@ -15,7 +15,7 @@ export async function assertLocalServerIsHealthy(
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Local project server is required for rendering but ${healthUrl} is not ` +
-        `healthy (${detail}). Start it with "npm run dev:server" and retry.`,
+        `healthy (${detail}). Start it with "pnpm dev:server" and retry.`,
     );
   }
 }

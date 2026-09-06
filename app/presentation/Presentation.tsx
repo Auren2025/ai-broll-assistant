@@ -76,7 +76,6 @@ export function Presentation({ data }: { data: PresentationData }) {
             component={SceneComposition}
             inputProps={{
               scene,
-              projectId: project.id,
               assetBaseUrl: ".",
               previewBackdrop: true,
             }}

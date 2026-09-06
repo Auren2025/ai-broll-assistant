@@ -4,30 +4,40 @@ import {
   type AnyZodObject,
   type CalculateMetadataFunction,
 } from "remotion";
-import { LOCAL_API_BASE } from "../api/localService";
+import {
+  buildProjectAssetBaseUrl,
+  LOCAL_API_BASE,
+} from "../api/localService";
 import { parseProject, type Project } from "../domain/projectSchema";
 import { parseScene, type Scene } from "../domain/sceneSchema";
+import {
+  DEFAULT_PROJECT_ID,
+  PROJECT_ID_PATTERN,
+  resolveProjectId,
+} from "../projectSelection";
 import { ProjectComposition } from "./ProjectComposition";
 import { resolveInteractivePlaybackPolicy } from "./renderPolicy";
 
-const DEFAULT_PROJECT_ID = "video001";
-const COMPOSITION_ID = "Video001";
-const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const COMPOSITION_ID =
+  typeof window === "undefined"
+    ? DEFAULT_PROJECT_ID
+    : resolveProjectId("", window.location.pathname);
 
 interface StudioProps extends Record<string, unknown> {
   projectId: string;
   project: Project;
   scenes: Scene[];
+  assetBaseUrl: string;
   includeAudio: boolean;
   previewBackdrop: boolean;
 }
 
-function resolveProjectId(): string {
+function resolveStudioProjectId(): string {
   if (typeof window !== "undefined") {
-    const param = new URLSearchParams(window.location.search).get("project");
-    if (param && ID_PATTERN.test(param)) {
-      return param;
-    }
+    return resolveProjectId(
+      window.location.search,
+      window.location.pathname,
+    );
   }
   return DEFAULT_PROJECT_ID;
 }
@@ -77,9 +87,9 @@ async function loadProjectFromLocalApi(
 const studioCalculateMetadata: CalculateMetadataFunction<StudioProps> =
   async ({ props }) => {
     const projectId =
-      typeof props.projectId === "string" && ID_PATTERN.test(props.projectId)
+      typeof props.projectId === "string" && PROJECT_ID_PATTERN.test(props.projectId)
         ? props.projectId
-        : resolveProjectId();
+        : resolveStudioProjectId();
     const { project, scenes } = await loadProjectFromLocalApi(projectId);
     const playbackPolicy = resolveInteractivePlaybackPolicy(props);
 
@@ -88,6 +98,7 @@ const studioCalculateMetadata: CalculateMetadataFunction<StudioProps> =
         projectId,
         project,
         scenes,
+        assetBaseUrl: buildProjectAssetBaseUrl(projectId),
         ...playbackPolicy,
       },
       width: project.width,
@@ -113,6 +124,7 @@ const defaultProps: StudioProps = {
     scenes: [],
   },
   scenes: [],
+  assetBaseUrl: ".",
   includeAudio: true,
   previewBackdrop: true,
 };

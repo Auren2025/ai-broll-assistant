@@ -64,7 +64,6 @@ async function scaffold(projectId: string): Promise<void> {
   await Promise.all([
     mkdir(resolve(projectDir, "scenes"), { recursive: true }),
     mkdir(resolve(projectDir, "assets"), { recursive: true }),
-    mkdir(resolve(projectDir, "audio"), { recursive: true }),
     mkdir(resolve(projectDir, "renders"), { recursive: true }),
   ]);
 
@@ -104,7 +103,7 @@ async function scaffold(projectId: string): Promise<void> {
 const projectId = process.argv[2];
 
 if (!projectId) {
-  console.error("Usage: npm run scaffold -- <project-id>");
+  console.error("Usage: pnpm scaffold <project-id>");
   process.exitCode = 1;
 } else {
   scaffold(projectId).catch((error: unknown) => {

@@ -15,6 +15,6 @@ test("render health check gives an actionable server failure", async () => {
     assertLocalServerIsHealthy(async () => {
       throw new Error("connection refused");
     }),
-    /required for rendering.*npm run dev:server/is,
+    /required for rendering.*pnpm dev:server/is,
   );
 });

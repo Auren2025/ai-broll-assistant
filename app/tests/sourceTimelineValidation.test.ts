@@ -29,6 +29,30 @@ test("source validation allows transparent gaps and cue-aligned scenes", () => {
   assert.deepEqual(issues, []);
 });
 
+test("source validation allows only the first scene to align to audio frame zero", () => {
+  const firstSceneIssues = validateScenesAgainstSource(
+    [
+      { id: "a", startFrame: 0, durationInFrames: 10 },
+      { id: "b", startFrame: 45, durationInFrames: 16 },
+    ],
+    cues,
+    30,
+  );
+  assert.deepEqual(firstSceneIssues, []);
+
+  const laterSceneIssues = validateScenesAgainstSource(
+    [
+      { id: "a", startFrame: 1, durationInFrames: 10 },
+      { id: "b", startFrame: 0, durationInFrames: 10 },
+    ],
+    cues,
+    30,
+  );
+  assert.ok(
+    laterSceneIssues.some((issue) => /cue start boundary/i.test(issue.message)),
+  );
+});
+
 test("source validation rejects non-cue starts and scenes past SRT duration", () => {
   const issues = validateScenesAgainstSource(
     [{ id: "bad", startFrame: 2, durationInFrames: 60 }],

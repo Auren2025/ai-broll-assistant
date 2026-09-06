@@ -74,6 +74,33 @@ test("project validation accepts cue-aligned scenes within source duration", () 
   }
 });
 
+test("project validation accepts audio in the project root", () => {
+  const projectDirectory = makeProjectDirectory(
+    "1\n00:00:00,000 --> 00:00:01,000\nValidation cue\n",
+  );
+  try {
+    writeFileSync(resolve(projectDirectory, "voiceover.mp3"), "audio");
+    writeFileSync(
+      resolve(projectDirectory, "project.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "validation-test",
+        name: "Validation test",
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        audioFile: "voiceover.mp3",
+        scenes: [{ id: "scene-001", file: "scenes/scene-001.json" }],
+      }),
+    );
+
+    const result = validateProjectDirectory(projectDirectory);
+    assert.equal(result.project.audioFile, "voiceover.mp3");
+  } finally {
+    rmSync(projectDirectory, { recursive: true, force: true });
+  }
+});
+
 test("project validation accepts an unfilled image placeholder", () => {
   const projectDirectory = makeProjectDirectory(
     "1\n00:00:00,000 --> 00:00:01,000\nValidation cue\n",

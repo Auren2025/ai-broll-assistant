@@ -4,8 +4,11 @@ import { parseScene, type Layer, type Scene } from "../src/domain/sceneSchema";
 import {
   canFlattenGroup,
   cloneLayersToTop,
+  deleteLayers,
   duplicateSelectedLayers,
+  insertLayerIntoGroup,
   makeGroup,
+  moveLayerTo,
   reorderSelectedLayersZIndex,
   ungroupLayer,
 } from "../src/domain/groupOperations";
@@ -158,6 +161,302 @@ test("grouping removes the original layer animations", () => {
   const group = next.layers[0];
   assert.ok(group?.type === "group");
   assert.deepEqual(group.children.map((child) => child.animations), [[], []]);
+});
+
+test("a group remains valid with one child", () => {
+  const scene = sceneWith({
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    x: 100,
+    y: 100,
+    width: 100,
+    height: 60,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: [rect("rectangle-1", 0, 0, 0)],
+  });
+
+  assert.equal(scene.layers[0]?.type, "group");
+  assert.equal(deleteLayers(scene, ["missing"]).layers[0]?.type, "group");
+});
+
+test("deleting a child preserves a singleton group", () => {
+  const scene = sceneWith({
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    x: 100,
+    y: 100,
+    width: 210,
+    height: 60,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: [rect("rectangle-1", 0, 0, 0), rect("rectangle-2", 110, 0, 1)],
+  });
+  const next = deleteLayers(scene, ["rectangle-2"]);
+  parseScene(next);
+  const group = next.layers[0];
+  assert.ok(group?.type === "group");
+  assert.deepEqual(group.children.map((child) => child.id), ["rectangle-1"]);
+});
+
+test("inserting a new child centers it in the group", () => {
+  const scene = sceneWith({
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    x: 100,
+    y: 100,
+    width: 300,
+    height: 200,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: [rect("rectangle-1", 0, 0, 0)],
+  });
+  const childToInsert = sceneWith(rect("rectangle-2", 0, 0, 0)).layers[0];
+  assert.ok(childToInsert?.type !== "group");
+  const next = insertLayerIntoGroup(scene, "group-1", childToInsert);
+  assert.ok(next);
+  parseScene(next);
+  const group = next.layers[0];
+  assert.ok(group?.type === "group");
+  const child = group.children.find((candidate) => candidate.id === "rectangle-2");
+  assert.equal(child?.x, 100);
+  assert.equal(child?.y, 70);
+  assert.equal(child?.zIndex, 1);
+});
+
+test("moving a layer into and out of a group preserves geometry and clears animations", () => {
+  const animation = {
+    id: "enter-1",
+    phase: "enter",
+    preset: "fade-and-move",
+    startFrame: 0,
+    durationInFrames: 20,
+    easing: "ease-out",
+    direction: "bottom-to-top",
+    travelDistance: 40,
+  } as const;
+  const scene = sceneWith(
+    {
+      id: "group-1",
+      name: "Group 1",
+      type: "group",
+      x: 100,
+      y: 100,
+      width: 300,
+      height: 200,
+      rotation: 0,
+      opacity: 1,
+      opacityEnabled: true,
+      blendMode: "normal",
+      zIndex: 0,
+      visible: true,
+      locked: false,
+      animations: [],
+      children: [rect("rectangle-1", 0, 0, 0)],
+    },
+    { ...rect("rectangle-2", 150, 140, 1), animations: [animation] },
+  );
+
+  const grouped = moveLayerTo(scene, "rectangle-2", {
+    parentGroupId: "group-1",
+    beforeLayerId: "rectangle-1",
+  });
+  assert.ok(grouped);
+  parseScene(grouped);
+  const group = grouped.layers.find((layer) => layer.id === "group-1");
+  assert.ok(group?.type === "group");
+  const child = group.children.find((candidate) => candidate.id === "rectangle-2");
+  assert.equal(child?.x, 50);
+  assert.equal(child?.y, 40);
+  assert.deepEqual(child?.animations, []);
+
+  const ungrouped = moveLayerTo(grouped, "rectangle-2", {
+    parentGroupId: null,
+    beforeLayerId: null,
+  });
+  assert.ok(ungrouped);
+  parseScene(ungrouped);
+  const moved = ungrouped.layers.find((layer) => layer.id === "rectangle-2");
+  assert.equal(moved?.x, 150);
+  assert.equal(moved?.y, 140);
+  assert.deepEqual(moved?.animations, []);
+});
+
+test("moving the only child out removes the empty group", () => {
+  const scene = sceneWith({
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    x: 100,
+    y: 100,
+    width: 100,
+    height: 60,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: [rect("rectangle-1", 0, 0, 0)],
+  });
+  const next = moveLayerTo(scene, "rectangle-1", {
+    parentGroupId: null,
+    beforeLayerId: "group-1",
+  });
+  assert.ok(next);
+  parseScene(next);
+  assert.deepEqual(next.layers.map((layer) => layer.id), ["rectangle-1"]);
+  assert.equal(next.layers[0]?.x, 100);
+  assert.equal(next.layers[0]?.y, 100);
+});
+
+test("moving between rotated groups preserves world geometry", () => {
+  const scene = sceneWith(
+    {
+      id: "group-1",
+      name: "Group 1",
+      type: "group",
+      x: 100,
+      y: 80,
+      width: 300,
+      height: 200,
+      rotation: 30,
+      opacity: 1,
+      opacityEnabled: true,
+      blendMode: "normal",
+      zIndex: 0,
+      visible: true,
+      locked: false,
+      animations: [],
+      children: [rect("rectangle-1", 40, 30, 0)],
+    },
+    {
+      id: "group-2",
+      name: "Group 2",
+      type: "group",
+      x: 600,
+      y: 300,
+      width: 260,
+      height: 180,
+      rotation: -20,
+      opacity: 1,
+      opacityEnabled: true,
+      blendMode: "normal",
+      zIndex: 1,
+      visible: true,
+      locked: false,
+      animations: [],
+      children: [rect("rectangle-2", 0, 0, 0)],
+    },
+  );
+  const movedBetween = moveLayerTo(scene, "rectangle-1", {
+    parentGroupId: "group-2",
+    beforeLayerId: "rectangle-2",
+  });
+  assert.ok(movedBetween);
+  const movedOut = moveLayerTo(movedBetween, "rectangle-1", {
+    parentGroupId: null,
+    beforeLayerId: null,
+  });
+  assert.ok(movedOut);
+  parseScene(movedOut);
+  const layer = movedOut.layers.find((candidate) => candidate.id === "rectangle-1");
+  assert.ok(layer);
+  assert.ok(Math.abs(layer.x - 168.038) < 0.002);
+  assert.ok(Math.abs(layer.y - 85.359) < 0.002);
+  assert.equal(layer.rotation, 30);
+});
+
+test("dropping before a sibling applies front-to-back panel order", () => {
+  const animation = {
+    id: "back-enter",
+    phase: "enter",
+    preset: "fade-and-move",
+    startFrame: 0,
+    durationInFrames: 20,
+    easing: "ease-out",
+    direction: "bottom-to-top",
+    travelDistance: 40,
+  } as const;
+  const scene = sceneWith(
+    { ...rect("back", 0, 0, 0), animations: [animation] },
+    rect("middle", 0, 0, 1),
+    rect("front", 0, 0, 2),
+  );
+  const next = moveLayerTo(scene, "back", {
+    parentGroupId: null,
+    beforeLayerId: "front",
+  });
+  assert.ok(next);
+  parseScene(next);
+  assert.deepEqual(
+    [...next.layers]
+      .sort((first, second) => second.zIndex - first.zIndex)
+      .map((layer) => layer.id),
+    ["back", "front", "middle"],
+  );
+  assert.deepEqual(
+    next.layers.find((layer) => layer.id === "back")?.animations,
+    [animation],
+  );
+});
+
+test("ungrouping clears legacy child animations", () => {
+  const legacyAnimation = {
+    id: "legacy-enter",
+    phase: "enter",
+    preset: "fade-and-move",
+    startFrame: 0,
+    durationInFrames: 20,
+    easing: "ease-out",
+    direction: "bottom-to-top",
+    travelDistance: 40,
+  } as const;
+  const scene = sceneWith({
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    x: 100,
+    y: 100,
+    width: 100,
+    height: 60,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: [{ ...rect("rectangle-1", 0, 0, 0), animations: [legacyAnimation] }],
+  });
+  const next = ungroupLayer(scene, "group-1");
+  assert.ok(next);
+  parseScene(next);
+  assert.deepEqual(next.layers[0]?.animations, []);
 });
 
 test("animated groups require explicit animation removal before ungrouping", () => {

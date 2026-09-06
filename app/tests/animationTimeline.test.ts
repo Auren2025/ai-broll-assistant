@@ -157,4 +157,5 @@ test("group children order follows zIndex within the group, after the group's ow
     ["g", "childHigh", "childLow"],
   );
   assert.deepEqual(events.map((e) => e.depth), [0, 1, 1]);
+  assert.deepEqual(events.map((e) => e.editable), [true, false, false]);
 });

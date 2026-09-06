@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseProject } from "../src/domain/projectSchema";
 import { parseScene } from "../src/domain/sceneSchema";
 import { DEFAULT_SHAPE_TEXT } from "../src/domain/shapeTextSchema";
+import { LayerAnimationSchema } from "../src/domain/layerAnimationSchema";
 
 function rectLayer(id: string, zIndex: number) {
   return {
@@ -219,6 +220,125 @@ test("parseScene enforces one preset and parameter shape per animation phase", (
   );
 });
 
+test("parseScene accepts Line Draw only on shapes with an effective stroke", () => {
+  const lineDraw = {
+    id: "line-draw",
+    phase: "enter",
+    preset: "line-draw",
+    startFrame: 0,
+    durationInFrames: 20,
+    easing: "ease-out",
+    direction: "clockwise",
+  } as const;
+  const scene = {
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+  } as const;
+
+  assert.doesNotThrow(() =>
+    parseScene({
+      ...scene,
+      layers: [
+        {
+          ...rectLayer("rectangle-1", 0),
+          stroke: "#ffffff",
+          strokeWidth: 2,
+          animations: [lineDraw],
+        },
+      ],
+    }),
+  );
+  assert.throws(
+    () =>
+      parseScene({
+        ...scene,
+        layers: [
+          { ...rectLayer("rectangle-1", 0), animations: [lineDraw] },
+        ],
+      }),
+    /requires an effective shape stroke/,
+  );
+  assert.throws(
+    () =>
+      parseScene({
+        ...scene,
+        layers: [
+          {
+            ...rectLayer("rectangle-1", 0),
+            stroke: "#ffffff",
+            strokeWidth: 2,
+            animations: [{ ...lineDraw, direction: "start-to-end" }],
+          },
+        ],
+      }),
+    /invalid Line Draw direction/,
+  );
+});
+
+test("Build In presets use strict, phase-specific parameter shapes", () => {
+  const timing = {
+    id: "build-in",
+    phase: "enter",
+    startFrame: 0,
+    durationInFrames: 20,
+    easing: "ease-out",
+  } as const;
+  const wipeDirections = [
+    "left-to-right",
+    "right-to-left",
+    "top-to-bottom",
+    "bottom-to-top",
+    "top-left-to-bottom-right",
+    "top-right-to-bottom-left",
+    "bottom-left-to-top-right",
+    "bottom-right-to-top-left",
+  ] as const;
+
+  for (const direction of wipeDirections) {
+    assert.doesNotThrow(() =>
+      LayerAnimationSchema.parse({ ...timing, preset: "wipe", direction }),
+    );
+  }
+  assert.doesNotThrow(() =>
+    LayerAnimationSchema.parse({ ...timing, preset: "dissolve-in" }),
+  );
+  assert.doesNotThrow(() =>
+    LayerAnimationSchema.parse({
+      ...timing,
+      preset: "scale-in",
+      direction: "up",
+      bounce: false,
+    }),
+  );
+  assert.doesNotThrow(() =>
+    LayerAnimationSchema.parse({ ...timing, preset: "scale-big" }),
+  );
+  assert.throws(() =>
+    LayerAnimationSchema.parse({
+      ...timing,
+      preset: "scale-in",
+      direction: "up",
+    }),
+  );
+  assert.throws(() =>
+    LayerAnimationSchema.parse({
+      ...timing,
+      preset: "dissolve-in",
+      phase: "exit",
+    }),
+  );
+  assert.throws(() =>
+    LayerAnimationSchema.parse({
+      ...timing,
+      preset: "wipe",
+      direction: "clockwise",
+    }),
+  );
+});
+
 test("parseScene accepts an unfilled image placeholder", () => {
   const scene = parseScene({
     schemaVersion: 1,
@@ -248,6 +368,36 @@ test("parseScene keeps legacy image stretching when fit is absent", () => {
   assert.equal(layer.type, "image");
   if (layer.type !== "image") return;
   assert.equal(layer.fit, "fill");
+});
+
+test("parseScene defaults the image placeholder color to light gray", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [imageLayer(null)],
+  });
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "image");
+  if (layer.type !== "image") return;
+  assert.equal(layer.placeholderColor, "#d1d5db");
+});
+
+test("parseScene accepts a custom image placeholder color", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [{ ...imageLayer(null), placeholderColor: "#3366ff" }],
+  });
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "image");
+  if (layer.type !== "image") return;
+  assert.equal(layer.placeholderColor, "#3366ff");
 });
 
 test("parseScene rejects an image source outside assets", () => {
@@ -304,7 +454,35 @@ test("parseProject accepts an absent or null audioFile", () => {
   assert.equal(parseProject({ ...base, audioFile: null }).audioFile, null);
 });
 
-test("parseProject rejects an audioFile outside audio/", () => {
+test("parseProject accepts a project-root audio filename", () => {
+  const project = parseProject({
+    schemaVersion: 1,
+    id: "p1",
+    name: "P1",
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    scenes: [{ id: "scene-001", file: "scenes/scene-001.json" }],
+    audioFile: "voiceover.mp3",
+  });
+  assert.equal(project.audioFile, "voiceover.mp3");
+});
+
+test("parseProject accepts a legacy audio/ path", () => {
+  const project = parseProject({
+    schemaVersion: 1,
+    id: "p1",
+    name: "P1",
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    scenes: [{ id: "scene-001", file: "scenes/scene-001.json" }],
+    audioFile: "audio/voiceover.mp3",
+  });
+  assert.equal(project.audioFile, "audio/voiceover.mp3");
+});
+
+test("parseProject rejects an audioFile in another directory", () => {
   assert.throws(() =>
     parseProject({
       schemaVersion: 1,
@@ -314,7 +492,7 @@ test("parseProject rejects an audioFile outside audio/", () => {
       height: 1080,
       fps: 30,
       scenes: [{ id: "scene-001", file: "scenes/scene-001.json" }],
-      audioFile: "voiceover.mp3",
+      audioFile: "media/voiceover.mp3",
     }),
   );
 });

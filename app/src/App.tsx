@@ -12,32 +12,23 @@ import "./App.css";
 import {
   createScene,
   deleteScene as deleteSceneRequest,
-  ExternalChangeConflictError,
   fetchProject,
   fetchScene,
-  saveProject,
-  saveScene,
   uploadImageAsset,
 } from "./api/projectApi";
 import type { LayerAnimation } from "./domain/layerAnimationSchema";
+import { isLineDrawEligible } from "./domain/lineDraw";
 import type { Project } from "./domain/projectSchema";
 import type { Layer, Scene } from "./domain/sceneSchema";
-import { DEFAULT_SHAPE_TEXT } from "./domain/shapeTextSchema";
 import {
   canFlattenGroup,
-  cloneLayersToTop,
-  deleteLayers,
-  duplicateSelectedLayers,
   findLayerById,
-  getAllLayers,
-  makeGroup,
-  reorderSelectedLayersZIndex,
+  moveLayerTo,
   scaleGroupChildren,
-  ungroupLayer,
   updateLayerById,
   type ZOrderAction,
 } from "./domain/groupOperations";
-import { alignSceneLayers, type AlignmentAction } from "./editor/alignment";
+import { type AlignmentAction } from "./editor/alignment";
 import { EditorToolbar } from "./editor/EditorToolbar";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
 import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
@@ -46,26 +37,39 @@ import { SceneAnimationTimeline } from "./editor/SceneAnimationTimeline";
 import {
   LayerPropertiesPanel,
   MultiLayerPropertiesPanel,
-  type EditableLayerPatch,
 } from "./editor/LayerPropertiesPanel";
-import { SceneLayerTree } from "./editor/SceneLayerTree";
+import type { EditableLayerPatch } from "./editor/layerEditing";
+import {
+  SceneLayerTree,
+  type LayerMoveRequest,
+} from "./editor/SceneLayerTree";
 import { ScenePropertiesPanel } from "./editor/ScenePropertiesPanel";
 import {
   PREVIEW_CHANNEL_NAME,
   type PreviewStateMessage,
   type PreviewSyncMessage,
 } from "./preview/previewChannel";
-import { computeTextBoxSize, measureNaturalTextSize } from "./editor/textMetrics";
+import { computeTextBoxSize } from "./editor/textMetrics";
+import { resolveProjectId } from "./projectSelection";
 
-const DEFAULT_PROJECT_ID = "video001";
-const PROJECT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+import {
+  useHistoryController,
+  useHistorySnapshotCapture,
+} from "./editor/historyController";
+import { useLayerCommands, type AddableLayerType } from "./editor/layerCommands";
+import {
+  useSaveController,
+  useSaveControllerLoop,
+} from "./editor/saveController";
+import {
+  createDocumentVersionTracker,
+  type DocumentVersionTracker,
+} from "./editor/versionTracker";
 
-function resolveProjectIdFromUrl(): string {
-  const param = new URLSearchParams(window.location.search).get("project");
-  return param && PROJECT_ID_PATTERN.test(param) ? param : DEFAULT_PROJECT_ID;
-}
-
-const PROJECT_ID = resolveProjectIdFromUrl();
+const PROJECT_ID = resolveProjectId(
+  window.location.search,
+  window.location.pathname,
+);
 const DEFAULT_TIMELINE_HEIGHT = 224;
 const MIN_TIMELINE_HEIGHT = 120;
 const MIN_CANVAS_HEIGHT = 240;
@@ -74,19 +78,6 @@ const EXTERNAL_REFRESH_INTERVAL_MS = 3000;
 
 type InspectorTab = "design" | "animate";
 type InspectorScope = "scene" | "layer";
-type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "arrow";
-
-const DEFAULT_IMAGE_PLACEHOLDER_WIDTH = 640;
-const DEFAULT_IMAGE_PLACEHOLDER_HEIGHT = 360;
-
-interface EditorSnapshot {
-  project: Project;
-  scene: Scene;
-  scenesById: Record<string, Scene>;
-  selectedLayerIds: string[];
-  inspectorScope: InspectorScope;
-  isDirty: boolean;
-}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -95,59 +86,6 @@ function getErrorMessage(error: unknown): string {
 function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
-
-function buildImagePlaceholderLayer(
-  project: Project,
-  scene: Scene,
-  id: string,
-): Layer {
-  const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
-  const width = Math.min(DEFAULT_IMAGE_PLACEHOLDER_WIDTH, project.width);
-  const height = Math.min(DEFAULT_IMAGE_PLACEHOLDER_HEIGHT, project.height);
-  return {
-    id,
-    name: "Image placeholder",
-    type: "image",
-    x: (project.width - width) / 2,
-    y: (project.height - height) / 2,
-    width,
-    height,
-    rotation: 0,
-    opacity: 1,
-    opacityEnabled: true,
-    blendMode: "normal",
-    zIndex,
-    visible: true,
-    locked: false,
-    animations: [],
-    src: null,
-    fit: "contain",
-    cornerRadius: 0,
-    stroke: null,
-    strokeWidth: 0,
-    strokePosition: "inside",
-  };
-}
-
-function measureTextBounds(
-  text: string,
-  fontFamily: string,
-  fontSize: number,
-  fontWeight: number,
-  fontStyle: "normal" | "italic",
-  lineHeight: number,
-  letterSpacing: number,
-): { width: number; height: number } {
-  return measureNaturalTextSize(text, {
-    fontFamily,
-    fontSize,
-    fontWeight,
-    fontStyle,
-    lineHeight,
-    letterSpacing,
-  });
-}
-
 
 function hasSameLayerIds(
   first: readonly string[],
@@ -167,46 +105,6 @@ function findParentGroup(layers: readonly Layer[], layerId: string) {
   );
 }
 
-function nextIdForType(usedIds: ReadonlySet<string>, type: string): string {
-  const pattern = new RegExp(`^${type}-(\\d+)$`);
-  let sequence = 0;
-
-  for (const id of usedIds) {
-    const match = pattern.exec(id);
-    if (match) sequence = Math.max(sequence, Number(match[1]));
-  }
-
-  let candidate = `${type}-${sequence + 1}`;
-
-  while (usedIds.has(candidate)) {
-    sequence += 1;
-    candidate = `${type}-${sequence + 1}`;
-  }
-
-  return candidate;
-}
-
-function getNextLayerId(
-  layers: readonly Layer[],
-  type: AddableLayerType | "image" | "group",
-): string {
-  const usedIds = new Set(getAllLayers(layers).map((layer) => layer.id));
-  return nextIdForType(usedIds, type);
-}
-
-function makeLayerIdGenerator(
-  layers: readonly Layer[],
-): (original: Layer) => string {
-  const usedIds = new Set(getAllLayers(layers).map((layer) => layer.id));
-
-  return (original: Layer): string => {
-    const type = original.type === "group" ? "group" : original.type;
-    const id = nextIdForType(usedIds, type);
-    usedIds.add(id);
-    return id;
-  };
-}
-
 function App() {
   const [project, setProject] = useState<Project | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -221,6 +119,9 @@ function App() {
   const [isSceneLoading, setIsSceneLoading] = useState(false);
   const [isCreatingScene, setIsCreatingScene] = useState(false);
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
+  const [activeInsertionGroupId, setActiveInsertionGroupId] = useState<
+    string | null
+  >(null);
   const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
   const [selectedAnimationId, setSelectedAnimationId] = useState<string | null>(
     null,
@@ -230,7 +131,6 @@ function App() {
   );
   const [isTimelineResizing, setIsTimelineResizing] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [previewFrame, setPreviewFrame] = useState(0);
   const [canvasZoom, setCanvasZoom] = useState(1);
   const BASE_CANVAS_SCALE = 0.5;
   const MIN_CANVAS_ZOOM = 0.5;
@@ -270,19 +170,19 @@ function App() {
   const previewChannelRef = useRef<BroadcastChannel | null>(null);
   const previewWindowRef = useRef<Window | null>(null);
   const previewStateRef = useRef<PreviewStateMessage | null>(null);
-  const editorSnapshotRef = useRef<EditorSnapshot | null>(null);
-  const undoStackRef = useRef<EditorSnapshot[]>([]);
-  const redoStackRef = useRef<EditorSnapshot[]>([]);
   const isApplyingHistoryRef = useRef(false);
+  const isSceneLoadingRef = useRef(false);
   const projectRef = useRef<Project | null>(null);
   const sceneRef = useRef<Scene | null>(null);
-  const projectChangeVersionRef = useRef(0);
-  const sceneChangeVersionRef = useRef(0);
-  const savedProjectVersionRef = useRef(0);
-  const savedSceneVersionRef = useRef(0);
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const versionTracker = useRef<DocumentVersionTracker | null>(null);
+  if (versionTracker.current === null) {
+    versionTracker.current = createDocumentVersionTracker();
+  }
+  const documentVersions = versionTracker.current;
   const activeSaveCountRef = useRef(0);
   const externalRefreshRunningRef = useRef(false);
+  const sceneOperationRunningRef = useRef(false);
+  const scenesByIdRef = useRef<Record<string, Scene>>({});
   const timelineResizeRef = useRef<{
     pointerId: number;
     startY: number;
@@ -294,33 +194,121 @@ function App() {
 
   projectRef.current = project;
   sceneRef.current = scene;
+  sceneOperationRunningRef.current = isSceneLoading || isCreatingScene;
+  scenesByIdRef.current = scenesById;
+  isSceneLoadingRef.current = isSceneLoading;
+
+  useEffect(() => {
+    setActiveInsertionGroupId((current) => {
+      if (!current || !scene) return null;
+      const group = findLayerById(scene.layers, current);
+      return group?.type === "group" && !group.locked ? current : null;
+    });
+  }, [scene]);
 
   const updateDirtyState = useCallback(() => {
-    setIsDirty(
-      projectChangeVersionRef.current > savedProjectVersionRef.current ||
-        sceneChangeVersionRef.current > savedSceneVersionRef.current,
-    );
-  }, []);
+    setIsDirty(documentVersions.isDirty());
+  }, [documentVersions]);
 
   const markProjectChanged = useCallback(() => {
-    projectChangeVersionRef.current += 1;
+    documentVersions.markProjectChanged();
     setIsDirty(true);
     setSaveError(null);
-  }, []);
+  }, [documentVersions]);
 
   const markSceneChanged = useCallback(() => {
-    sceneChangeVersionRef.current += 1;
+    documentVersions.markSceneChanged();
     setIsDirty(true);
     setSaveError(null);
-  }, []);
+  }, [documentVersions]);
 
   const markCurrentStateSaved = useCallback(() => {
-    savedProjectVersionRef.current = projectChangeVersionRef.current;
-    savedSceneVersionRef.current = sceneChangeVersionRef.current;
+    documentVersions.markCurrentStateSaved();
     setIsDirty(false);
     setSaveError(null);
     setHasSaveConflict(false);
-  }, []);
+  }, [documentVersions]);
+
+  const historyController = useHistoryController({
+    refs: {
+      projectRef,
+      sceneRef,
+      scenesByIdRef,
+      documentVersions,
+      isApplyingHistoryRef,
+      isSceneLoadingRef,
+    },
+    setters: {
+      setProject,
+      setScene,
+      setScenesById,
+      setSelectedLayerIds,
+      setActiveInsertionGroupId,
+      setSelectedAnimationId,
+      setInspectorScope,
+      setHistoryCanUndo,
+      setHistoryCanRedo,
+      setSaveError,
+      setHasSaveConflict,
+      setSceneError,
+      markCurrentStateSaved,
+      updateDirtyState,
+      getErrorMessage,
+    },
+  });
+  const recordHistory = historyController.controls.record;
+  const clearHistory = historyController.controls.clear;
+  const handleUndo = historyController.controls.undo;
+  const handleRedo = historyController.controls.redo;
+
+  const handleSceneChange = useCallback((updatedScene: Scene) => {
+    if (sceneOperationRunningRef.current || isApplyingHistoryRef.current) return;
+    recordHistory();
+    setScene(updatedScene);
+    markSceneChanged();
+  }, [markSceneChanged, recordHistory]);
+
+  const handleProjectChange = useCallback((updatedProject: Project) => {
+    if (sceneOperationRunningRef.current || isApplyingHistoryRef.current) return;
+    recordHistory();
+    setProject(updatedProject);
+    markProjectChanged();
+  }, [markProjectChanged, recordHistory]);
+
+  const layerCommands = useLayerCommands({
+    state: {
+      selection: {
+        scene,
+        selectedLayerIds,
+        inspectorScope,
+        activeInsertionGroupId,
+      },
+      project,
+      isUploadingImage,
+      sceneOperationRunning: sceneOperationRunningRef.current,
+      isApplyingHistory: isApplyingHistoryRef.current,
+    },
+    refs: {
+      clipboardLayersRef,
+      replaceImageTargetIdRef,
+      sceneRef,
+    },
+    setters: {
+      setSelectedLayerIds,
+      setSelectedAnimationId,
+      setInspectorScope,
+      setActiveInsertionGroupId,
+      setContextMenu,
+      setSceneError,
+      setPendingTextEditLayerId,
+      setImageUploadError,
+    },
+    handlers: {
+      handleSceneChange,
+      handleProjectChange,
+      getErrorMessage,
+    },
+  });
 
   function clampTimelineHeight(value: number, maximumHeight: number): number {
     return Math.min(Math.max(value, MIN_TIMELINE_HEIGHT), maximumHeight);
@@ -404,7 +392,8 @@ function App() {
         }
       : null;
 
-  editorSnapshotRef.current =
+  useHistorySnapshotCapture(
+    historyController,
     project && scene
       ? {
           project,
@@ -414,17 +403,22 @@ function App() {
           inspectorScope,
           isDirty,
         }
-      : null;
+      : null,
+  );
 
   useEffect(() => {
-    let cancelled = false;
+    const abortController = new AbortController();
 
     async function loadProject(): Promise<void> {
       try {
-        const loadedProject = await fetchProject(PROJECT_ID);
+        const loadedProject = await fetchProject(PROJECT_ID, {
+          signal: abortController.signal,
+        });
         const loadedScenes = await Promise.all(
           loadedProject.scenes.map((sceneReference) =>
-            fetchScene(loadedProject.id, sceneReference.id),
+            fetchScene(loadedProject.id, sceneReference.id, {
+              signal: abortController.signal,
+            }),
           ),
         );
         const loadedScene = loadedScenes[0];
@@ -433,7 +427,7 @@ function App() {
           throw new Error("Project contains no scenes");
         }
 
-        if (!cancelled) {
+        if (!abortController.signal.aborted) {
           setProject(loadedProject);
           setScene(loadedScene);
           setScenesById(
@@ -441,16 +435,13 @@ function App() {
               loadedScenes.map((candidate) => [candidate.id, candidate]),
             ),
           );
-          projectChangeVersionRef.current = 0;
-          sceneChangeVersionRef.current = 0;
-          savedProjectVersionRef.current = 0;
-          savedSceneVersionRef.current = 0;
+          documentVersions.resetAll();
           setSelectedLayerIds([]);
           setIsDirty(false);
           setHasSaveConflict(false);
         }
       } catch (error: unknown) {
-        if (!cancelled) {
+        if (!abortController.signal.aborted) {
           setLoadError(getErrorMessage(error));
         }
       }
@@ -459,9 +450,9 @@ function App() {
     void loadProject();
 
     return () => {
-      cancelled = true;
+      abortController.abort();
     };
-  }, []);
+  }, [documentVersions]);
 
   useEffect(() => {
     const channel = new BroadcastChannel(PREVIEW_CHANNEL_NAME);
@@ -492,125 +483,72 @@ function App() {
     } satisfies PreviewStateMessage);
   }, [isDirty, project, scene]);
 
-  const recordHistory = useCallback(() => {
-    if (isApplyingHistoryRef.current || !editorSnapshotRef.current) {
-      return;
-    }
-
-    undoStackRef.current.push(editorSnapshotRef.current);
-    if (undoStackRef.current.length > 100) undoStackRef.current.shift();
-    redoStackRef.current = [];
-    setHistoryCanUndo(true);
-    setHistoryCanRedo(false);
-  }, []);
-
-  const clearHistory = useCallback(() => {
-    undoStackRef.current = [];
-    redoStackRef.current = [];
-    setHistoryCanUndo(false);
-    setHistoryCanRedo(false);
-  }, []);
-
-  const refreshHistoryAvailability = useCallback(() => {
-    setHistoryCanUndo(undoStackRef.current.length > 0);
-    setHistoryCanRedo(redoStackRef.current.length > 0);
-  }, []);
-
-  const queueCurrentSave = useCallback(
-    (force = false): Promise<void> => {
-      const projectSnapshot = projectRef.current;
-      const sceneSnapshot = sceneRef.current;
-      if (!projectSnapshot || !sceneSnapshot) return saveQueueRef.current;
-
-      const projectVersion = projectChangeVersionRef.current;
-      const sceneVersion = sceneChangeVersionRef.current;
-      const needsProjectSave =
-        projectVersion > savedProjectVersionRef.current;
-      const needsSceneSave = sceneVersion > savedSceneVersionRef.current;
-
-      if (!needsProjectSave && !needsSceneSave) {
-        return saveQueueRef.current;
-      }
-
-      const run = saveQueueRef.current.then(async () => {
-        activeSaveCountRef.current += 1;
-        setIsSaving(true);
-        setSaveError(null);
-
-        try {
-          if (
-            needsProjectSave &&
-            projectVersion > savedProjectVersionRef.current
-          ) {
-            await saveProject(projectSnapshot, { force });
-            savedProjectVersionRef.current = Math.max(
-              savedProjectVersionRef.current,
-              projectVersion,
-            );
-          }
-
-          if (needsSceneSave && sceneVersion > savedSceneVersionRef.current) {
-            await saveScene(projectSnapshot.id, sceneSnapshot, { force });
-            savedSceneVersionRef.current = Math.max(
-              savedSceneVersionRef.current,
-              sceneVersion,
-            );
-            setScenesById((current) => ({
-              ...current,
-              [sceneSnapshot.id]: sceneSnapshot,
-            }));
-          }
-
-          setHasSaveConflict(false);
-          updateDirtyState();
-        } catch (error: unknown) {
-          setSaveError(getErrorMessage(error));
-          setHasSaveConflict(error instanceof ExternalChangeConflictError);
-          updateDirtyState();
-          throw error;
-        } finally {
-          activeSaveCountRef.current -= 1;
-          if (activeSaveCountRef.current === 0) setIsSaving(false);
-        }
-      });
-
-      saveQueueRef.current = run.catch(() => undefined);
-      return run;
+  const saveController = useSaveController({
+    hooks: {
+      documentVersions,
+      projectRef,
+      sceneRef,
+      scenesByIdRef,
+      activeSaveCountRef,
+      externalRefreshRunningRef,
+      autoSaveDelayMs: AUTO_SAVE_DELAY_MS,
+      externalRefreshIntervalMs: EXTERNAL_REFRESH_INTERVAL_MS,
     },
-    [updateDirtyState],
+    setters: {
+      setIsSaving,
+      setIsSavePending: () => {},
+      setSaveError,
+      setHasSaveConflict,
+      setIsExternalRefreshRunning: () => {},
+      applyExternalSnapshot: (incomingProject, incomingScenes) => {
+        const nextScenesById = Object.fromEntries(
+          incomingScenes.map((scene) => [scene.id, scene]),
+        );
+        const currentSceneId = sceneRef.current?.id;
+        const loadedScene =
+          (currentSceneId ? nextScenesById[currentSceneId] : undefined) ??
+          incomingScenes[0];
+        if (!loadedScene) return;
+        setProject(incomingProject);
+        setScene(loadedScene);
+        setScenesById(nextScenesById);
+        setSelectedLayerIds([]);
+        setActiveInsertionGroupId(null);
+        setSelectedAnimationId(null);
+        setInspectorScope("scene");
+        documentVersions.markProjectChanged();
+        documentVersions.markSceneChanged();
+        markCurrentStateSaved();
+        clearHistory();
+      },
+      onSceneSaved: (savedScene) => {
+        setScenesById((current) => ({
+          ...current,
+          [savedScene.id]: savedScene,
+        }));
+      },
+      onExternalError: (message) => setSceneError(message),
+      markCurrentStateSaved,
+      clearHistory,
+      resetSelection: () => {},
+    },
+  });
+  const queueCurrentSave = useCallback(
+    (force = false) => saveController.queueSave(force),
+    [saveController],
   );
 
-  const handleSceneChange = useCallback((updatedScene: Scene) => {
-    recordHistory();
-    setScene(updatedScene);
-    markSceneChanged();
-  }, [markSceneChanged, recordHistory]);
-
-  const handleProjectChange = useCallback((updatedProject: Project) => {
-    recordHistory();
-    setProject(updatedProject);
-    markProjectChanged();
-  }, [markProjectChanged, recordHistory]);
-
-  useEffect(() => {
-    if (!isDirty || hasSaveConflict || isSceneLoading || isCreatingScene) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      void queueCurrentSave().catch(() => undefined);
-    }, AUTO_SAVE_DELAY_MS);
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    hasSaveConflict,
-    isCreatingScene,
+  useSaveControllerLoop({
+    controller: saveController,
     isDirty,
+    hasSaveConflict,
     isSceneLoading,
-    project,
-    queueCurrentSave,
-    scene,
-  ]);
+    isCreatingScene,
+    isExternalRefreshRunning: externalRefreshRunningRef.current,
+    isApplyingHistory: isApplyingHistoryRef.current,
+    autoSaveDelayMs: AUTO_SAVE_DELAY_MS,
+    externalRefreshIntervalMs: EXTERNAL_REFRESH_INTERVAL_MS,
+  });
 
   useEffect(() => {
     const warnBeforeClosing = (event: BeforeUnloadEvent): void => {
@@ -646,101 +584,27 @@ function App() {
     setScene(loadedScene);
     setScenesById(nextScenesById);
     setSelectedLayerIds([]);
+    setActiveInsertionGroupId(null);
     setSelectedAnimationId(null);
     setInspectorScope("scene");
-    projectChangeVersionRef.current += 1;
-    sceneChangeVersionRef.current += 1;
+    documentVersions.markProjectChanged();
+    documentVersions.markSceneChanged();
     markCurrentStateSaved();
     clearHistory();
-  }, [clearHistory, markCurrentStateSaved]);
-
-  useEffect(() => {
-    if (
-      isDirty ||
-      isSaving ||
-      isSceneLoading ||
-      isCreatingScene ||
-      hasSaveConflict
-    ) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      if (externalRefreshRunningRef.current) return;
-      externalRefreshRunningRef.current = true;
-
-      const beforeProject = projectRef.current;
-      const beforeScenes = beforeProject
-        ? beforeProject.scenes.map((reference) => scenesById[reference.id])
-        : [];
-
-      void (async () => {
-        try {
-          if (!beforeProject) return;
-          const loadedProject = await fetchProject(beforeProject.id);
-          const loadedScenes = await Promise.all(
-            loadedProject.scenes.map((reference) =>
-              fetchScene(loadedProject.id, reference.id),
-            ),
-          );
-          const projectChanged =
-            JSON.stringify(loadedProject) !== JSON.stringify(beforeProject);
-          const scenesChanged =
-            JSON.stringify(loadedScenes) !== JSON.stringify(beforeScenes);
-
-          if (projectChanged || scenesChanged) {
-            const nextScenesById = Object.fromEntries(
-              loadedScenes.map((candidate) => [candidate.id, candidate]),
-            );
-            const currentSceneId = sceneRef.current?.id;
-            const loadedScene =
-              (currentSceneId ? nextScenesById[currentSceneId] : undefined) ??
-              loadedScenes[0];
-            if (!loadedScene) return;
-            setProject(loadedProject);
-            setScene(loadedScene);
-            setScenesById(nextScenesById);
-            setSelectedLayerIds([]);
-            setSelectedAnimationId(null);
-            setInspectorScope("scene");
-            projectChangeVersionRef.current += 1;
-            sceneChangeVersionRef.current += 1;
-            markCurrentStateSaved();
-            clearHistory();
-          }
-        } catch (error: unknown) {
-          setSceneError(getErrorMessage(error));
-        } finally {
-          externalRefreshRunningRef.current = false;
-        }
-      })();
-    }, EXTERNAL_REFRESH_INTERVAL_MS);
-
-    return () => window.clearInterval(interval);
-  }, [
-    clearHistory,
-    hasSaveConflict,
-    isCreatingScene,
-    isDirty,
-    isSaving,
-    isSceneLoading,
-    markCurrentStateSaved,
-    project,
-    scenesById,
-  ]);
+  }, [clearHistory, documentVersions, markCurrentStateSaved]);
 
   const handleReloadExternalChanges = useCallback(async () => {
     setIsSceneLoading(true);
     setSceneError(null);
     try {
-      await saveQueueRef.current;
+      await saveController.flush();
       await loadAllFromDisk();
     } catch (error: unknown) {
       setSceneError(getErrorMessage(error));
     } finally {
       setIsSceneLoading(false);
     }
-  }, [loadAllFromDisk]);
+  }, [loadAllFromDisk, saveController]);
 
   const handleOverwriteExternalChanges = useCallback(() => {
     setHasSaveConflict(false);
@@ -753,6 +617,33 @@ function App() {
     );
     setSelectedAnimationId(null);
     setInspectorScope(layerIds.length > 0 ? "layer" : "scene");
+    setActiveInsertionGroupId((current) => {
+      if (!current || layerIds.length === 0) return null;
+      const currentScene = sceneRef.current;
+      const group = currentScene
+        ? findLayerById(currentScene.layers, current)
+        : null;
+      if (!group || group.type !== "group") return null;
+      return layerIds.every(
+        (layerId) =>
+          layerId === group.id ||
+          group.children.some((child) => child.id === layerId),
+      )
+        ? current
+        : null;
+    });
+  }, []);
+
+  const handleGroupEditEnter = useCallback((groupId: string) => {
+    const currentScene = sceneRef.current;
+    const group = currentScene
+      ? findLayerById(currentScene.layers, groupId)
+      : null;
+    if (!group || group.type !== "group" || group.locked) return;
+    setActiveInsertionGroupId(groupId);
+    setSelectedLayerIds([groupId]);
+    setSelectedAnimationId(null);
+    setInspectorScope("layer");
   }, []);
 
   const handleLayerStateChange = useCallback(
@@ -774,97 +665,12 @@ function App() {
       } as Scene;
 
       handleSceneChange(updatedScene);
+      if (patch.locked && layerId === activeInsertionGroupId) {
+        setActiveInsertionGroupId(null);
+      }
     },
-    [handleSceneChange, scene],
+    [activeInsertionGroupId, handleSceneChange, scene],
   );
-
-  const applyHistorySnapshot = useCallback(async (snapshot: EditorSnapshot) => {
-    const current = editorSnapshotRef.current;
-    if (!current) return;
-    const projectChanged =
-      JSON.stringify(current.project) !== JSON.stringify(snapshot.project);
-    const sceneChanged =
-      JSON.stringify(current.scene) !== JSON.stringify(snapshot.scene);
-
-    const currentSceneIds = new Set(
-      current.project.scenes.map((reference) => reference.id),
-    );
-    const targetSceneIds = new Set(
-      snapshot.project.scenes.map((reference) => reference.id),
-    );
-    const removedSceneIds = [...currentSceneIds].filter(
-      (sceneId) => !targetSceneIds.has(sceneId),
-    );
-    const restoredSceneIds = [...targetSceneIds].filter(
-      (sceneId) => !currentSceneIds.has(sceneId),
-    );
-
-    if (restoredSceneIds.length > 0) {
-      await saveProject(snapshot.project);
-      for (const sceneId of restoredSceneIds) {
-        const restoredScene = snapshot.scenesById[sceneId];
-        if (!restoredScene) throw new Error(`Missing scene snapshot: ${sceneId}`);
-        await saveScene(snapshot.project.id, restoredScene);
-      }
-    } else if (removedSceneIds.length > 0) {
-      for (const sceneId of removedSceneIds) {
-        await deleteSceneRequest(current.project.id, sceneId);
-      }
-      await saveProject(snapshot.project);
-    }
-
-    setProject(snapshot.project);
-    setScene(snapshot.scene);
-    setScenesById(snapshot.scenesById);
-    setSelectedLayerIds(snapshot.selectedLayerIds);
-    setInspectorScope(snapshot.inspectorScope);
-    if (projectChanged) projectChangeVersionRef.current += 1;
-    if (sceneChanged) sceneChangeVersionRef.current += 1;
-    updateDirtyState();
-    setSaveError(null);
-    setHasSaveConflict(false);
-    setSceneError(null);
-  }, [updateDirtyState]);
-
-  const handleUndo = useCallback(async () => {
-    if (isApplyingHistoryRef.current || isSceneLoading) return;
-    const current = editorSnapshotRef.current;
-    const previous = undoStackRef.current.pop();
-    if (!current || !previous) return;
-
-    isApplyingHistoryRef.current = true;
-    redoStackRef.current.push(current);
-    try {
-      await applyHistorySnapshot(previous);
-    } catch (error: unknown) {
-      redoStackRef.current.pop();
-      undoStackRef.current.push(previous);
-      setSceneError(getErrorMessage(error));
-    } finally {
-      isApplyingHistoryRef.current = false;
-      refreshHistoryAvailability();
-    }
-  }, [applyHistorySnapshot, isSceneLoading, refreshHistoryAvailability]);
-
-  const handleRedo = useCallback(async () => {
-    if (isApplyingHistoryRef.current || isSceneLoading) return;
-    const current = editorSnapshotRef.current;
-    const next = redoStackRef.current.pop();
-    if (!current || !next) return;
-
-    isApplyingHistoryRef.current = true;
-    undoStackRef.current.push(current);
-    try {
-      await applyHistorySnapshot(next);
-    } catch (error: unknown) {
-      undoStackRef.current.pop();
-      redoStackRef.current.push(next);
-      setSceneError(getErrorMessage(error));
-    } finally {
-      isApplyingHistoryRef.current = false;
-      refreshHistoryAvailability();
-    }
-  }, [applyHistorySnapshot, isSceneLoading, refreshHistoryAvailability]);
 
   const handleDeleteSelection = useCallback(async () => {
     if (!project || !scene || isSceneLoading) {
@@ -872,27 +678,7 @@ function App() {
     }
 
     if (inspectorScope === "layer") {
-      if (selectedLayerIds.length === 0) {
-        return;
-      }
-
-      const selectedIds = new Set(selectedLayerIds);
-      const wouldFlattenProtectedGroup = scene.layers.some(
-        (layer) =>
-          layer.type === "group" &&
-          layer.children.filter((child) => !selectedIds.has(child.id)).length === 1 &&
-          !canFlattenGroup(layer),
-      );
-      if (wouldFlattenProtectedGroup) {
-        setSceneError(
-          "Remove the group animation or opacity before deleting this child",
-        );
-        return;
-      }
-      handleSceneChange(deleteLayers(scene, selectedLayerIds));
-      setSelectedLayerIds([]);
-      setSelectedAnimationId(null);
-      setInspectorScope("scene");
+      layerCommands.deleteSelection();
       return;
     }
 
@@ -932,17 +718,18 @@ function App() {
       setSelectedLayerIds([]);
       setSelectedAnimationId(null);
       setInspectorScope("scene");
-      projectChangeVersionRef.current += 1;
-      sceneChangeVersionRef.current += 1;
+      documentVersions.markProjectChanged();
+      documentVersions.markSceneChanged();
       markCurrentStateSaved();
     } catch (error: unknown) {
-      undoStackRef.current.pop();
+      historyController.stacks.undo.current.pop();
       setSceneError(getErrorMessage(error));
     } finally {
       setIsSceneLoading(false);
     }
   }, [
-    handleSceneChange,
+    documentVersions,
+    historyController.stacks.undo,
     inspectorScope,
     isSceneLoading,
     markCurrentStateSaved,
@@ -951,170 +738,34 @@ function App() {
     recordHistory,
     scene,
     scenesById,
-    selectedLayerIds,
+    layerCommands,
   ]);
 
   const handleGroupSelection = useCallback(() => {
-    if (!scene) return;
-    const groupId = getNextLayerId(scene.layers, "group");
-    const groupNumber = Number(groupId.split("-").at(-1)) || 1;
-    const updatedScene = makeGroup(
-      scene,
-      selectedLayerIds,
-      groupId,
-      `Group ${groupNumber}`,
-    );
-    if (!updatedScene) return;
-    handleSceneChange(updatedScene);
-    setSelectedLayerIds([groupId]);
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-    setContextMenu(null);
-  }, [handleSceneChange, scene, selectedLayerIds]);
+    layerCommands.groupSelection();
+  }, [layerCommands]);
 
   const handleUngroupSelection = useCallback(() => {
-    if (!scene || selectedLayerIds.length !== 1) return;
-    const groupId = selectedLayerIds[0];
-    if (!groupId) return;
-    const group = findLayerById(scene.layers, groupId);
-    if (!group || group.type !== "group") return;
-    if (!canFlattenGroup(group, true)) {
-      setSceneError(
-        "Remove the group opacity before ungrouping",
-      );
-      setContextMenu(null);
-      return;
-    }
-    if (
-      group.animations.length > 0 &&
-      !window.confirm("Ungrouping will remove the group animation. Continue?")
-    ) {
-      setContextMenu(null);
-      return;
-    }
-    const updatedScene = ungroupLayer(scene, groupId, true);
-    if (!updatedScene) return;
-    handleSceneChange(updatedScene);
-    setSelectedLayerIds(group.children.map((child) => child.id));
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-    setContextMenu(null);
-  }, [handleSceneChange, scene, selectedLayerIds]);
+    layerCommands.ungroupSelection();
+  }, [layerCommands]);
 
   const handleDuplicateSelection = useCallback(() => {
-    if (!scene || selectedLayerIds.length === 0) {
-      return;
-    }
-
-    const selectedIdSet = new Set(selectedLayerIds);
-    const targets: Layer[] = [];
-
-    for (const layer of scene.layers) {
-      if (selectedIdSet.has(layer.id)) targets.push(layer);
-      if (layer.type === "group") {
-        for (const child of layer.children) {
-          if (selectedIdSet.has(child.id)) targets.push(child);
-        }
-      }
-    }
-
-    if (targets.length !== selectedLayerIds.length) {
-      return;
-    }
-
-    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
-    const idByOriginal = new Map<Layer, string>();
-
-    for (const target of targets) {
-      idByOriginal.set(target, generator(target));
-    }
-
-    const newIdFor = (original: Layer): string =>
-      idByOriginal.get(original) ?? generator(original);
-    const updatedScene = duplicateSelectedLayers(
-      scene,
-      selectedLayerIds,
-      newIdFor,
-    );
-    if (updatedScene === scene) {
-      return;
-    }
-
-    handleSceneChange(updatedScene);
-    const newIds = targets
-      .map((target) => idByOriginal.get(target))
-      .filter((id): id is string => Boolean(id));
-    setSelectedLayerIds(newIds);
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-    setContextMenu(null);
-  }, [handleSceneChange, scene, selectedLayerIds]);
+    layerCommands.duplicateSelection();
+  }, [layerCommands]);
 
   const handleCopySelection = useCallback(() => {
-    if (!scene || selectedLayerIds.length === 0) {
-      return;
-    }
-
-    const selectedIdSet = new Set(selectedLayerIds);
-    const topLevel = scene.layers.filter((layer) =>
-      selectedIdSet.has(layer.id),
-    );
-    if (topLevel.length === 0) {
-      return;
-    }
-
-    clipboardLayersRef.current = JSON.parse(
-      JSON.stringify(topLevel),
-    ) as Layer[];
-    setContextMenu(null);
-  }, [scene, selectedLayerIds]);
+    layerCommands.copySelection();
+  }, [layerCommands]);
 
   const handlePasteSelection = useCallback(() => {
-    const clipboard = clipboardLayersRef.current;
-    if (!scene || !clipboard || clipboard.length === 0) {
-      return;
-    }
-
-    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
-    const idByOriginal = new Map<Layer, string>();
-
-    for (const layer of clipboard) {
-      idByOriginal.set(layer, generator(layer));
-    }
-
-    const newIdFor = (original: Layer): string =>
-      idByOriginal.get(original) ?? generator(original);
-    const updatedScene = cloneLayersToTop(scene, clipboard, newIdFor, 24, 24);
-    if (updatedScene === scene) {
-      return;
-    }
-
-    handleSceneChange(updatedScene);
-    const newIds = clipboard
-      .map((layer) => idByOriginal.get(layer))
-      .filter((id): id is string => Boolean(id));
-    setSelectedLayerIds(newIds);
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-    setContextMenu(null);
-  }, [handleSceneChange, scene]);
+    layerCommands.pasteSelection();
+  }, [layerCommands]);
 
   const handleReorderSelection = useCallback(
     (action: ZOrderAction) => {
-      if (!scene || selectedLayerIds.length === 0) {
-        return;
-      }
-      const updatedScene = reorderSelectedLayersZIndex(
-        scene,
-        selectedLayerIds,
-        action,
-      );
-      if (updatedScene === scene) {
-        return;
-      }
-      handleSceneChange(updatedScene);
+      layerCommands.reorderSelection(action);
     },
-    [handleSceneChange, scene, selectedLayerIds],
+    [layerCommands],
   );
 
   useEffect(() => {
@@ -1124,6 +775,11 @@ function App() {
         target instanceof HTMLElement &&
         target.closest("input, textarea, select, [contenteditable='true']")
       ) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setActiveInsertionGroupId(null);
         return;
       }
 
@@ -1206,226 +862,31 @@ function App() {
 
   const handleAlign = useCallback(
     (action: AlignmentAction) => {
-      if (!scene || !project) {
-        return;
-      }
-
-      const updatedScene = alignSceneLayers(
-        scene,
-        selectedLayerIds,
-        action,
-        project.width,
-        project.height,
-      );
-
-      if (updatedScene !== scene) {
-        handleSceneChange(updatedScene);
-      }
+      layerCommands.align(action);
     },
-    [handleSceneChange, project, scene, selectedLayerIds],
+    [layerCommands],
   );
 
   function handleAddLayer(type: AddableLayerType): void {
-    if (!scene || !project) {
-      return;
-    }
-
-    const id = getNextLayerId(scene.layers, type);
-    const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
-    const layer: Layer = (() => {
-      switch (type) {
-        case "text": {
-          const textDefaults = {
-            text: "Text",
-            fontFamily: "Arial",
-            fontSize: 72,
-            fontWeight: 400,
-            fontStyle: "normal",
-            lineHeight: 1.2,
-            letterSpacing: 0,
-          } as const;
-          const dims = measureTextBounds(
-            textDefaults.text,
-            textDefaults.fontFamily,
-            textDefaults.fontSize,
-            textDefaults.fontWeight,
-            textDefaults.fontStyle,
-            textDefaults.lineHeight,
-            textDefaults.letterSpacing,
-          );
-          return {
-            id,
-            name: "Text",
-            type: "text",
-            x: (project.width - dims.width) / 2,
-            y: (project.height - dims.height) / 2,
-            width: dims.width,
-            height: dims.height,
-            rotation: 0,
-            opacity: 1,
-            opacityEnabled: true,
-            blendMode: "normal",
-            zIndex,
-            visible: true,
-            locked: false,
-            animations: [],
-            text: textDefaults.text,
-            fontFamily: textDefaults.fontFamily,
-            fontSize: textDefaults.fontSize,
-            fontWeight: textDefaults.fontWeight,
-            fontStyle: textDefaults.fontStyle,
-            lineHeight: textDefaults.lineHeight,
-            letterSpacing: textDefaults.letterSpacing,
-            textAlign: "center",
-            verticalAlign: "middle",
-            autoResize: "both",
-            textCase: "normal",
-            kerningPairs: true,
-            ligatures: true,
-            fill: "#ffffff",
-            fillEnabled: true,
-            stroke: null,
-            strokeWidth: 0,
-            strokePosition: "inside",
-          };
-        }
-        case "rectangle":
-          return {
-            id,
-            name: "Rectangle",
-            type: "rectangle",
-            x: (project.width - 400) / 2,
-            y: (project.height - 240) / 2,
-            width: 400,
-            height: 240,
-            rotation: 0,
-            opacity: 1,
-            opacityEnabled: true,
-            blendMode: "normal",
-            zIndex,
-            visible: true,
-            locked: false,
-            animations: [],
-            fill: "#6b7280",
-            fillEnabled: true,
-            stroke: null,
-            strokeWidth: 0,
-            strokePosition: "inside",
-            cornerEnabled: true,
-            cornerRadius: 0,
-            cornerRadii: null,
-            shapeText: { ...DEFAULT_SHAPE_TEXT },
-          };
-        case "circle":
-          return {
-            id,
-            name: "Circle",
-            type: "circle",
-            x: (project.width - 240) / 2,
-            y: (project.height - 240) / 2,
-            width: 240,
-            height: 240,
-            rotation: 0,
-            opacity: 1,
-            opacityEnabled: true,
-            blendMode: "normal",
-            zIndex,
-            visible: true,
-            locked: false,
-            animations: [],
-            fill: "#6b7280",
-            fillEnabled: true,
-            stroke: null,
-            strokeWidth: 0,
-            strokePosition: "inside",
-            donut: 0,
-            sweep: 360,
-            startAngle: 0,
-            shapeText: { ...DEFAULT_SHAPE_TEXT },
-          };
-        case "triangle":
-          return {
-            id,
-            name: "Triangle",
-            type: "triangle",
-            x: (project.width - 280) / 2,
-            y: (project.height - 240) / 2,
-            width: 280,
-            height: 240,
-            rotation: 0,
-            opacity: 1,
-            opacityEnabled: true,
-            blendMode: "normal",
-            zIndex,
-            visible: true,
-            locked: false,
-            animations: [],
-            fill: "#6b7280",
-            fillEnabled: true,
-            stroke: null,
-            strokeWidth: 0,
-            cornerEnabled: true,
-            cornerRadius: 0,
-          };
-        case "arrow":
-          return {
-            id,
-            name: "Arrow",
-            type: "arrow",
-            x: (project.width - 360) / 2,
-            y: (project.height - 24) / 2,
-            width: 360,
-            height: 24,
-            rotation: 0,
-            opacity: 1,
-            opacityEnabled: true,
-            blendMode: "normal",
-            zIndex,
-            visible: true,
-            locked: false,
-            animations: [],
-            stroke: "#1f2937",
-            strokeWidth: 6,
-            arrowHeadSize: 24,
-            arrowStartStyle: "none",
-            arrowEndStyle: "triangle",
-          };
-      }
-    })();
-
-    setSelectedLayerIds([layer.id]);
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-    if (type === "text") {
-      setPendingTextEditLayerId(layer.id);
-    }
-    handleSceneChange({
-      ...scene,
-      layers: [...scene.layers, layer],
-    });
+    layerCommands.addLayer(type);
   }
 
-  const handleAddImage = useCallback(() => {
-    if (!project || !scene || isUploadingImage) {
-      return;
-    }
-    const id = getNextLayerId(scene.layers, "image");
-    const layer = buildImagePlaceholderLayer(project, scene, id);
-    setSelectedLayerIds([layer.id]);
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-    handleSceneChange({
-      ...scene,
-      layers: [...scene.layers, layer],
-    });
-  }, [handleSceneChange, isUploadingImage, project, scene]);
+  function handleAddImage(): void {
+    layerCommands.addImagePlaceholder();
+  }
 
   const handleImageFileChange = useCallback(
     async (event: ReactChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
       const file = input.files?.[0];
       input.value = "";
-      if (!file || !project || !scene) {
+      const initialScene = sceneRef.current;
+      if (!file || !project || !initialScene) {
+        return;
+      }
+
+      if (sceneOperationRunningRef.current || isApplyingHistoryRef.current) {
+        setImageUploadError("Wait for the current scene operation to finish");
         return;
       }
 
@@ -1438,14 +899,23 @@ function App() {
         if (!replaceTargetId) {
           throw new Error("Select an image placeholder before loading an image");
         }
-        const target = findLayerById(scene.layers, replaceTargetId);
+        const target = findLayerById(initialScene.layers, replaceTargetId);
         if (!target || target.type !== "image") {
           setImageUploadError("The selected layer is no longer an image");
           return;
         }
         const asset = await uploadImageAsset(project.id, file, file.name);
+        const latestScene = sceneRef.current;
+        if (sceneOperationRunningRef.current || isApplyingHistoryRef.current) {
+          setImageUploadError("The scene changed before the image finished uploading");
+          return;
+        }
+        if (!latestScene || latestScene.id !== initialScene.id) {
+          setImageUploadError("The scene changed before the image finished uploading");
+          return;
+        }
         const updatedLayers = updateLayerById(
-          scene.layers,
+          latestScene.layers,
           replaceTargetId,
           (layer) => {
             if (layer.type !== "image") {
@@ -1457,7 +927,7 @@ function App() {
             };
           },
         );
-        handleSceneChange({ ...scene, layers: updatedLayers });
+        handleSceneChange({ ...latestScene, layers: updatedLayers });
       } catch (error: unknown) {
         setImageUploadError(getErrorMessage(error));
         setSceneError(getErrorMessage(error));
@@ -1465,11 +935,18 @@ function App() {
         setIsUploadingImage(false);
       }
     },
-    [handleSceneChange, project, scene],
+    [handleSceneChange, project],
   );
 
   const handleReplaceImage = useCallback(() => {
-    if (!project || !scene || isUploadingImage || !selectedLayerId) {
+    if (
+      !project ||
+      !scene ||
+      isUploadingImage ||
+      !selectedLayerId ||
+      sceneOperationRunningRef.current ||
+      isApplyingHistoryRef.current
+    ) {
       return;
     }
     replaceImageTargetIdRef.current = selectedLayerId;
@@ -1561,10 +1038,19 @@ function App() {
           } as Layer;
         }
 
-        return {
+        const merged = {
           ...layer,
           ...patch,
         } as Layer;
+        return !isLineDrawEligible(merged) &&
+          merged.animations.some((animation) => animation.preset === "line-draw")
+          ? {
+              ...merged,
+              animations: merged.animations.filter(
+                (animation) => animation.preset !== "line-draw",
+              ),
+            }
+          : merged;
       });
 
       if (!changed) {
@@ -1586,7 +1072,7 @@ function App() {
       }
       const selected = findLayerById(scene.layers, layerId);
       const parentGroup = findParentGroup(scene.layers, layerId);
-      if (!selected || selected.locked || parentGroup?.locked) return;
+      if (!selected || selected.locked || parentGroup) return;
 
       let changed = false;
       const updatedLayers = updateLayerById(scene.layers, layerId, (layer) => {
@@ -1735,6 +1221,9 @@ function App() {
 
   const handleAnimationSelect = useCallback(
     (layerId: string, animationId: string) => {
+      const currentScene = sceneRef.current;
+      if (currentScene && findParentGroup(currentScene.layers, layerId)) return;
+      setActiveInsertionGroupId(null);
       setSelectedLayerIds([layerId]);
       setSelectedAnimationId(animationId);
       setInspectorScope("layer");
@@ -1747,20 +1236,21 @@ function App() {
     sceneId: string,
     nextSelectedLayerIds: string[] = [],
     nextScope: InspectorScope = "scene",
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!project) {
-      return;
+      return false;
     }
 
     if (sceneId === scene?.id) {
+      setActiveInsertionGroupId(null);
       setSelectedLayerIds(nextSelectedLayerIds);
       setSelectedAnimationId(null);
       setInspectorScope(nextScope);
-      return;
+      return true;
     }
 
     if (isSceneLoading || hasSaveConflict) {
-      return;
+      return false;
     }
 
     setIsSceneLoading(true);
@@ -1776,16 +1266,29 @@ function App() {
         [loadedScene.id]: loadedScene,
       }));
       setSelectedLayerIds(nextSelectedLayerIds);
+      setActiveInsertionGroupId(null);
       setSelectedAnimationId(null);
       setInspectorScope(nextScope);
-      sceneChangeVersionRef.current += 1;
+      documentVersions.markSceneChanged();
       markCurrentStateSaved();
       clearHistory();
+      return true;
     } catch (error: unknown) {
       setSceneError(getErrorMessage(error));
+      return false;
     } finally {
       setIsSceneLoading(false);
     }
+  }
+
+  function handleTreeGroupEditEnter(sceneId: string, groupId: string): void {
+    if (sceneId === scene?.id) {
+      handleGroupEditEnter(groupId);
+      return;
+    }
+    void handleSceneSelect(sceneId, [groupId], "layer").then((didSelect) => {
+      if (didSelect) setActiveInsertionGroupId(groupId);
+    });
   }
 
   function handleTreeLayerSelect(
@@ -1803,6 +1306,16 @@ function App() {
     if (!clickedLayer || clickedLayer.locked || parentGroup?.locked) return;
 
     setSelectedAnimationId(null);
+
+    setActiveInsertionGroupId((current) => {
+      if (!current) return null;
+      const group = findLayerById(scene.layers, current);
+      if (!group || group.type !== "group") return null;
+      return layerId === group.id ||
+        group.children.some((child) => child.id === layerId)
+        ? current
+        : null;
+    });
 
     setSelectedLayerIds((currentLayerIds) => {
       if (!additive) {
@@ -1823,6 +1336,32 @@ function App() {
       return [...normalized, layerId];
     });
     setInspectorScope("layer");
+  }
+
+  function handleTreeLayerMove(
+    sceneId: string,
+    request: LayerMoveRequest,
+  ): void {
+    if (!scene || scene.id !== sceneId) return;
+    const updatedScene = moveLayerTo(scene, request.layerId, {
+      parentGroupId: request.parentGroupId,
+      beforeLayerId: request.beforeLayerId,
+    });
+    if (!updatedScene) {
+      setSceneError("This layer cannot be moved to that position");
+      return;
+    }
+    if (JSON.stringify(updatedScene.layers) === JSON.stringify(scene.layers)) {
+      return;
+    }
+    handleSceneChange(updatedScene);
+    setSelectedLayerIds([request.layerId]);
+    setSelectedAnimationId(null);
+    setInspectorScope("layer");
+    setSceneError(null);
+    setActiveInsertionGroupId((current) =>
+      current && request.parentGroupId === current ? current : null,
+    );
   }
 
   async function handleAddScene(): Promise<void> {
@@ -1849,11 +1388,11 @@ function App() {
       }));
       setSelectedLayerIds([]);
       setInspectorScope("scene");
-      projectChangeVersionRef.current += 1;
-      sceneChangeVersionRef.current += 1;
+      documentVersions.markProjectChanged();
+      documentVersions.markSceneChanged();
       markCurrentStateSaved();
     } catch (error: unknown) {
-      undoStackRef.current.pop();
+      historyController.stacks.undo.current.pop();
       setCreateSceneError(getErrorMessage(error));
     } finally {
       setIsCreatingScene(false);
@@ -1864,13 +1403,9 @@ function App() {
     setIsPreviewMode((current) => !current);
   }, []);
 
-  const handlePreviewFrameChange = useCallback((frame: number) => {
-    setPreviewFrame(frame);
-  }, []);
-
   const handlePreviewSeek = useCallback((frame: number) => {
-    previewPlayerRef.current?.seekTo(frame);
-    setPreviewFrame(frame);
+    const sceneStartFrame = sceneRef.current?.startFrame ?? 0;
+    previewPlayerRef.current?.seekTo(sceneStartFrame + frame);
   }, []);
 
   const handleOpenPreviewWindow = useCallback(() => {
@@ -1928,6 +1463,9 @@ function App() {
 
   const selectedLayer: Layer | null = scene && selectedLayerId
     ? findLayerById(scene.layers, selectedLayerId)
+    : null;
+  const selectedLayerParentGroup = scene && selectedLayerId
+    ? findParentGroup(scene.layers, selectedLayerId) ?? null
     : null;
   const selectedTopLevelLayers = scene
     ? scene.layers.filter((layer) => selectedLayerIds.includes(layer.id))
@@ -2101,12 +1639,15 @@ function App() {
             currentSceneId={scene.id}
             selectedLayerIds={selectedLayerIds}
             hoveredLayerId={hoveredLayerId}
+            activeInsertionGroupId={activeInsertionGroupId}
             inspectorScope={inspectorScope}
             isSceneSwitchDisabled={
               isSceneLoading || isCreatingScene || hasSaveConflict
             }
             onSceneSelect={(sceneId) => void handleSceneSelect(sceneId)}
             onLayerSelect={handleTreeLayerSelect}
+            onGroupEditEnter={handleTreeGroupEditEnter}
+            onLayerMove={handleTreeLayerMove}
             onLayerStateChange={handleLayerStateChange}
           />
         </aside>
@@ -2126,12 +1667,12 @@ function App() {
                     key={scene.id}
                     scene={scene}
                     projectId={project.id}
+                    audioFile={project.audioFile}
                     projectWidth={project.width}
                     projectHeight={project.height}
                     fps={project.fps}
                     displayScale={0.5}
                     playerRef={previewPlayerRef}
-                    onFrameChange={handlePreviewFrameChange}
                   />
                 ) : (
                   <FabricSceneCanvas
@@ -2145,6 +1686,7 @@ function App() {
                     onSceneChange={handleSceneChange}
                     onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
                     onHoveredLayerIdChange={setHoveredLayerId}
+                    onGroupEditEnter={handleGroupEditEnter}
                     onContextMenuRequest={openLayerContextMenu}
                     selectedLayerIds={selectedLayerIds}
                     selectedAnimationId={
@@ -2217,7 +1759,7 @@ function App() {
             selectedLayerId={selectedLayerId}
             selectedAnimationId={selectedAnimationId}
             isPreviewMode={isPreviewMode}
-            currentFrame={previewFrame}
+            playerRef={previewPlayerRef}
             onSeek={handlePreviewSeek}
             onAnimationSelect={handleAnimationSelect}
             onAnimationTimingChange={handleAnimationTimingChange}
@@ -2279,8 +1821,13 @@ function App() {
                 />
               )
             ) : (
-              <LayerAnimationPanel
-                layer={selectedLayerIds.length === 1 ? selectedLayer : null}
+               <LayerAnimationPanel
+                 layer={selectedLayerIds.length === 1 ? selectedLayer : null}
+                 readOnlyReason={
+                   selectedLayerParentGroup
+                     ? "Group members inherit animation from their top-level group."
+                     : null
+                 }
                 fps={project.fps}
                 sceneDurationInFrames={scene.durationInFrames}
                 selectedAnimationId={selectedAnimationId}

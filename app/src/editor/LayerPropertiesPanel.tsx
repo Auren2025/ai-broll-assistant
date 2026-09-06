@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { ZOrderAction } from "../domain/groupOperations";
-import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
 import type { ShapeText } from "../domain/shapeTextSchema";
@@ -11,45 +10,7 @@ import {
   type AlignmentAction,
 } from "./alignment";
 import { BufferedNumberInput } from "./BufferedNumberInput";
-
-export type EditableLayerPatch = Partial<{
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  opacity: number;
-  opacityEnabled: boolean;
-  text: string;
-  fontFamily: string;
-  fontSize: number;
-  fontWeight: number;
-  fontStyle: TextLayer["fontStyle"];
-  lineHeight: number;
-  letterSpacing: number;
-  textAlign: TextLayer["textAlign"];
-  verticalAlign: TextLayer["verticalAlign"];
-  autoResize: TextLayer["autoResize"];
-  textCase: TextLayer["textCase"];
-  kerningPairs: boolean;
-  ligatures: boolean;
-  fill: string;
-  fillEnabled: boolean;
-  stroke: string | null;
-  strokeWidth: number;
-  cornerEnabled: boolean;
-  cornerRadius: number;
-  cornerRadii: RectangleLayer["cornerRadii"];
-  donut: number;
-  sweep: number;
-  startAngle: number;
-  arrowHeadSize: number;
-  arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
-  arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
-  src: string | null;
-  fit: "fill" | "contain";
-  shapeText: ShapeText;
-}>;
+import type { EditableLayerPatch } from "./layerEditing";
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
@@ -338,6 +299,38 @@ function ShapeTextControls({
   );
 }
 
+function LayerNameInput({
+  layer,
+  onPatch,
+}: {
+  layer: Layer;
+  onPatch: (patch: EditableLayerPatch) => void;
+}) {
+  const [input, setInput] = useState(layer.name);
+
+  useEffect(() => {
+    setInput(layer.name);
+  }, [layer.id, layer.name]);
+
+  return (
+    <input
+      className="layer-design-name-input"
+      type="text"
+      aria-label="Layer name"
+      title={`${layer.type} layer`}
+      maxLength={120}
+      value={input}
+      onChange={(event) => {
+        const value = event.currentTarget.value;
+        setInput(value);
+        const name = value.trim();
+        if (name.length > 0) onPatch({ name });
+      }}
+      onBlur={() => setInput(layer.name)}
+    />
+  );
+}
+
 export function LayerPropertiesPanel({
   layer,
   onPatch,
@@ -369,7 +362,7 @@ export function LayerPropertiesPanel({
         <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
           {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "triangle" ? "△" : layer.type === "group" ? "◇" : layer.type === "image" ? "▣" : layer.type === "arrow" ? "→" : "□"}
         </span>
-        <h3>{layer.type.charAt(0).toUpperCase() + layer.type.slice(1)}</h3>
+        <LayerNameInput layer={layer} onPatch={onPatch} />
       </header>
 
       <LayerAlignmentControls selectionCount={1} onAlign={onAlign} />
@@ -504,6 +497,16 @@ export function LayerPropertiesPanel({
               <option value="fill">Fill</option>
             </select>
           </label>
+          {layer.src === null ? (
+            <div className="layer-design-row layer-paint-row">
+              <span>Placeholder color</span>
+              <ColorControl
+                value={layer.placeholderColor}
+                label="Image placeholder color"
+                onChange={(placeholderColor) => onPatch({ placeholderColor })}
+              />
+            </div>
+          ) : null}
           <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src ?? "Not loaded"}</strong></div>
           <button
             type="button"

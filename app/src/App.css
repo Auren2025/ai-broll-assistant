@@ -345,10 +345,8 @@ button {
 
 .tree-children {
   display: grid;
-  gap: 3px;
-  margin: 4px 0 8px 22px;
-  padding-left: 7px;
-  border-left: 1px solid #e1e1e6;
+  gap: 0;
+  margin: 5px 4px 10px;
 }
 
 .tree-children .layer-item {
@@ -420,22 +418,37 @@ button {
   padding: 0;
 }
 
-.group-children .layer-item {
-  padding-left: 22px;
+.layer-toggle-spacer {
+  display: block;
+  width: 18px;
 }
 
-.layer-item.is-group-child::before {
-  background: #d8d3dd;
-  content: "";
-  height: 100%;
-  left: 12px;
-  position: absolute;
-  top: 0;
-  width: 1px;
+.group-children {
+  margin-left: 36px;
 }
 
-.layer-item.is-group-child {
+.layer-drop-zone {
   position: relative;
+  z-index: 2;
+  height: 6px;
+  margin: -3px 4px;
+}
+
+.layer-drop-zone::after {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  left: 3px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+}
+
+.layer-drop-zone.is-active::after {
+  background: #6554e8;
+  box-shadow: 0 0 0 1px rgb(101 84 232 / 14%);
 }
 
 .scene-item {
@@ -526,14 +539,34 @@ button {
 }
 
 .layer-item {
-  grid-template-columns: minmax(0, 1fr) 24px 24px;
+  grid-template-columns: 18px minmax(0, 1fr) 24px 24px;
   gap: 0;
   min-height: 42px;
   padding: 3px 5px;
+  box-shadow: inset 0 -1px #ececf0;
 }
 
 .layer-item.is-group {
   grid-template-columns: 18px minmax(0, 1fr) 24px 24px;
+}
+
+.layer-item[draggable="true"] {
+  cursor: grab;
+}
+
+.layer-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.layer-item.is-insertion-target {
+  background: #e8e4ff;
+  box-shadow: inset 3px 0 #6554e8, inset 0 -1px #d9d3ff;
+}
+
+.layer-item.is-group-drop-target {
+  background: #ded8ff;
+  outline: 2px solid #6554e8;
+  outline-offset: -2px;
 }
 
 .layer-item-main {
@@ -1164,6 +1197,29 @@ button {
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.layer-design-name-input {
+  min-width: 0;
+  height: 28px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 0 6px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+}
+
+.layer-design-name-input:hover {
+  border-color: #d8d5dc;
+}
+
+.layer-design-name-input:focus {
+  border-color: #8b5cf6;
+  outline: none;
+  background: #fff;
 }
 
 .layer-design-type-icon {
@@ -2263,6 +2319,36 @@ button {
   transform: translateX(7px);
 }
 
+.animation-preset-preview.preset-line-draw::before {
+  box-sizing: border-box;
+  border: 3px solid #7565dc;
+  border-left-color: transparent;
+  border-radius: 50%;
+  background: transparent;
+  transform: rotate(-28deg);
+}
+
+.animation-preset-preview.preset-wipe::before {
+  width: 14px;
+  border-radius: 2px;
+  box-shadow: 8px 0 10px rgb(117 101 220 / 55%);
+}
+
+.animation-preset-preview.preset-dissolve-in::before {
+  opacity: 0.45;
+  background: linear-gradient(180deg, #7565dc, #aaa2e7);
+}
+
+.animation-preset-preview.preset-scale-in::before {
+  opacity: 0.75;
+  transform: scale(0.58);
+}
+
+.animation-preset-preview.preset-scale-big::before {
+  opacity: 0.55;
+  transform: scale(1.65);
+}
+
 .animation-preset-preview.preset-magic-move::before {
   opacity: 0.72;
   transform: translate(7px, -3px) scale(0.72);
@@ -2401,6 +2487,24 @@ button {
 
 .animation-select-row select {
   padding: 0 8px;
+}
+
+.animation-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid #ece9ee;
+  color: #3c3840;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.animation-checkbox-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #6857e5;
 }
 
 .animation-remove-button {

@@ -3,16 +3,20 @@ import type { Layer } from "../domain/sceneSchema";
 import type {
   AnimationEasing,
   AnimationPhase,
+  AnimationPreset,
   FadeAndMoveDirection,
   LayerAnimation,
+  LineDrawDirection,
+  ScaleDirection,
+  WipeDirection,
 } from "../domain/layerAnimationSchema";
+import {
+  ANIMATION_PHASE_OPTIONS,
+  createDefaultAnimation,
+  getAnimationPresetLabel,
+  getAnimationPresets,
+} from "./animationCatalog";
 import { BufferedNumberInput } from "./BufferedNumberInput";
-
-const PHASES = [
-  { phase: "enter", label: "Build In" },
-  { phase: "emphasis", label: "Action" },
-  { phase: "exit", label: "Build Out" },
-] as const satisfies readonly { phase: AnimationPhase; label: string }[];
 
 const EASINGS = [
   { value: "linear", label: "None" },
@@ -31,10 +35,37 @@ const DIRECTIONS = [
   label: string;
 }[];
 
+const CLOSED_LINE_DRAW_DIRECTIONS = [
+  { value: "clockwise", label: "Clockwise" },
+  { value: "counterclockwise", label: "Counterclockwise" },
+] as const satisfies readonly { value: LineDrawDirection; label: string }[];
+
+const ARROW_LINE_DRAW_DIRECTIONS = [
+  { value: "start-to-end", label: "Start to End" },
+  { value: "end-to-start", label: "End to Start" },
+] as const satisfies readonly { value: LineDrawDirection; label: string }[];
+
+const WIPE_DIRECTIONS = [
+  { value: "left-to-right", label: "From Left" },
+  { value: "right-to-left", label: "From Right" },
+  { value: "top-to-bottom", label: "From Top" },
+  { value: "bottom-to-top", label: "From Bottom" },
+  { value: "top-left-to-bottom-right", label: "From Top Left" },
+  { value: "top-right-to-bottom-left", label: "From Top Right" },
+  { value: "bottom-left-to-top-right", label: "From Bottom Left" },
+  { value: "bottom-right-to-top-left", label: "From Bottom Right" },
+] as const satisfies readonly { value: WipeDirection; label: string }[];
+
+const SCALE_DIRECTIONS = [
+  { value: "up", label: "Up" },
+  { value: "down", label: "Down" },
+] as const satisfies readonly { value: ScaleDirection; label: string }[];
+
 interface LayerAnimationPanelProps {
   layer: Layer | null;
   fps: number;
   sceneDurationInFrames: number;
+  readOnlyReason?: string | null;
   selectedAnimationId: string | null;
   onAnimationSelect: (animationId: string | null) => void;
   onAnimationsChange: (animations: LayerAnimation[]) => void;
@@ -53,7 +84,12 @@ interface AnimationPatch {
   startFrame?: number;
   durationInFrames?: number;
   easing?: AnimationEasing;
-  direction?: FadeAndMoveDirection;
+  direction?:
+    | FadeAndMoveDirection
+    | LineDrawDirection
+    | WipeDirection
+    | ScaleDirection;
+  bounce?: boolean;
   travelDistance?: number;
   translateX?: number;
   translateY?: number;
@@ -95,100 +131,11 @@ function BufferedRange({
   );
 }
 
-function animationLabel(animation: LayerAnimation): string {
-  switch (animation.preset) {
-    case "fade-and-move":
-      return "Fade and Move";
-    case "magic-move":
-      return "Magic Move";
-    case "dissolve":
-      return "Dissolve";
-  }
-}
-
-function phaseEffectLabel(phase: AnimationPhase): string {
-  switch (phase) {
-    case "enter":
-      return "Fade and Move";
-    case "emphasis":
-      return "Magic Move";
-    case "exit":
-      return "Dissolve";
-  }
-}
-
-function phasePresetClass(phase: AnimationPhase): string {
-  switch (phase) {
-    case "enter":
-      return "fade-and-move";
-    case "emphasis":
-      return "magic-move";
-    case "exit":
-      return "dissolve";
-  }
-}
-
-function makeUniqueAnimationId(layer: Layer, phase: AnimationPhase): string {
-  const existingIds = new Set(layer.animations.map((animation) => animation.id));
-  const baseId = `${layer.id}-${phase}`;
-  if (!existingIds.has(baseId)) return baseId;
-
-  let suffix = 2;
-  while (existingIds.has(`${baseId}-${suffix}`)) suffix += 1;
-  return `${baseId}-${suffix}`;
-}
-
-function defaultAnimation(
-  layer: Layer,
-  phase: AnimationPhase,
-  sceneDurationInFrames: number,
-  fps: number,
-): LayerAnimation {
-  const durationInFrames = Math.min(fps, sceneDurationInFrames);
-  const id = makeUniqueAnimationId(layer, phase);
-
-  if (phase === "enter") {
-    return {
-      id,
-      phase,
-      preset: "fade-and-move",
-      startFrame: 0,
-      durationInFrames,
-      easing: "ease-out",
-      direction: "bottom-to-top",
-      travelDistance: 40,
-    };
-  }
-
-  if (phase === "exit") {
-    return {
-      id,
-      phase,
-      preset: "dissolve",
-      startFrame: sceneDurationInFrames - durationInFrames,
-      durationInFrames,
-      easing: "ease-in-out",
-    };
-  }
-
-  return {
-    id,
-    phase,
-    preset: "magic-move",
-    startFrame: Math.floor((sceneDurationInFrames - durationInFrames) / 2),
-    durationInFrames,
-    easing: "ease-in-out",
-    translateX: 0,
-    translateY: 0,
-    scale: 1,
-    opacity: 1,
-  };
-}
-
 export function LayerAnimationPanel({
   layer,
   fps,
   sceneDurationInFrames,
+  readOnlyReason,
   selectedAnimationId,
   onAnimationSelect,
   onAnimationsChange,
@@ -208,24 +155,39 @@ export function LayerAnimationPanel({
     onAnimationSelect(null);
   }
 
-  function applyPhaseEffect(): void {
+  function applyPreset(preset: AnimationPreset): void {
     if (!layer) return;
     const existing = layer.animations.find(
       (animation) => animation.phase === displayedPhase,
     );
 
-    if (existing) {
+    if (existing?.preset === preset) {
       onAnimationSelect(existing.id);
       return;
     }
 
-    const animation = defaultAnimation(
+    let animation = createDefaultAnimation(
       layer,
-      displayedPhase,
+      preset,
       sceneDurationInFrames,
       fps,
     );
-    onAnimationsChange([...layer.animations, animation]);
+    if (existing) {
+      animation = {
+        ...animation,
+        id: existing.id,
+        startFrame: existing.startFrame,
+        durationInFrames: existing.durationInFrames,
+        easing: existing.easing,
+      } as LayerAnimation;
+    }
+    onAnimationsChange(
+      existing
+        ? layer.animations.map((candidate) =>
+            candidate.id === existing.id ? animation : candidate,
+          )
+        : [...layer.animations, animation],
+    );
     onAnimationSelect(animation.id);
   }
 
@@ -260,10 +222,20 @@ export function LayerAnimationPanel({
     );
   }
 
+  if (readOnlyReason) {
+    return (
+      <section className="animation-inspector-empty">
+        <span className="animation-empty-icon">◇</span>
+        <h3>Animate the group</h3>
+        <p>{readOnlyReason}</p>
+      </section>
+    );
+  }
+
   return (
     <section className="animation-inspector" aria-label="Layer animations">
       <div className="animation-phase-tabs" role="tablist" aria-label="Animation phase">
-        {PHASES.map(({ phase, label }) => (
+        {ANIMATION_PHASE_OPTIONS.map(({ phase, label }) => (
           <button
             type="button"
             role="tab"
@@ -283,7 +255,7 @@ export function LayerAnimationPanel({
             <span className={`animation-preset-preview preset-${selectedAnimation.preset}`} />
             <div>
               <p>{layer.name}</p>
-              <h3>{animationLabel(selectedAnimation)}</h3>
+              <h3>{getAnimationPresetLabel(selectedAnimation.preset)}</h3>
             </div>
           </header>
 
@@ -420,6 +392,85 @@ export function LayerAnimationPanel({
             </>
           ) : null}
 
+          {selectedAnimation.preset === "line-draw" ? (
+            <label className="animation-select-row">
+              <span>Direction</span>
+              <select
+                aria-label="Line Draw direction"
+                value={selectedAnimation.direction}
+                onChange={(event) =>
+                  patchSelectedAnimation({
+                    direction: event.currentTarget.value as LineDrawDirection,
+                  })
+                }
+              >
+                {(layer.type === "arrow"
+                  ? ARROW_LINE_DRAW_DIRECTIONS
+                  : CLOSED_LINE_DRAW_DIRECTIONS
+                ).map((direction) => (
+                  <option key={direction.value} value={direction.value}>
+                    {direction.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {selectedAnimation.preset === "wipe" ? (
+            <label className="animation-select-row">
+              <span>Direction</span>
+              <select
+                aria-label="Wipe direction"
+                value={selectedAnimation.direction}
+                onChange={(event) =>
+                  patchSelectedAnimation({
+                    direction: event.currentTarget.value as WipeDirection,
+                  })
+                }
+              >
+                {WIPE_DIRECTIONS.map((direction) => (
+                  <option key={direction.value} value={direction.value}>
+                    {direction.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {selectedAnimation.preset === "scale-in" ? (
+            <>
+              <label className="animation-select-row">
+                <span>Direction</span>
+                <select
+                  aria-label="Scale direction"
+                  value={selectedAnimation.direction}
+                  onChange={(event) =>
+                    patchSelectedAnimation({
+                      direction: event.currentTarget.value as ScaleDirection,
+                    })
+                  }
+                >
+                  {SCALE_DIRECTIONS.map((direction) => (
+                    <option key={direction.value} value={direction.value}>
+                      {direction.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="animation-checkbox-row">
+                <input
+                  type="checkbox"
+                  aria-label="Scale bounce"
+                  checked={selectedAnimation.bounce}
+                  onChange={(event) =>
+                    patchSelectedAnimation({ bounce: event.currentTarget.checked })
+                  }
+                />
+                <span>Bounce</span>
+              </label>
+            </>
+          ) : null}
+
           {selectedAnimation.preset === "magic-move" ? (
             <>
               <div className="animation-control-section">
@@ -550,29 +601,29 @@ export function LayerAnimationPanel({
             <h3>Choose an animation</h3>
           </header>
           <section className="animation-preset-group">
-            <h4>{PHASES.find(({ phase }) => phase === displayedPhase)?.label}</h4>
-            <div className="animation-preset-grid is-single">
-              <button
-                type="button"
-                className={
-                  layer.animations.some(
-                    (animation) => animation.phase === displayedPhase,
-                  )
-                    ? "is-current"
-                    : ""
-                }
-                onClick={applyPhaseEffect}
-              >
-                <span
-                  className={`animation-preset-preview preset-${phasePresetClass(displayedPhase)}`}
-                />
-                <strong>{phaseEffectLabel(displayedPhase)}</strong>
-                {layer.animations.some(
-                  (animation) => animation.phase === displayedPhase,
-                ) ? (
-                  <small>Current</small>
-                ) : null}
-              </button>
+            <h4>{ANIMATION_PHASE_OPTIONS.find(({ phase }) => phase === displayedPhase)?.label}</h4>
+            <div
+              className={`animation-preset-grid${getAnimationPresets(layer, displayedPhase).length === 1 ? " is-single" : ""}`}
+            >
+              {getAnimationPresets(layer, displayedPhase).map(({ preset, label }) => {
+                const isCurrent = layer.animations.some(
+                  (animation) => animation.preset === preset,
+                );
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={isCurrent ? "is-current" : ""}
+                    onClick={() => applyPreset(preset)}
+                  >
+                    <span
+                      className={`animation-preset-preview preset-${preset}`}
+                    />
+                    <strong>{label}</strong>
+                    {isCurrent ? <small>Current</small> : null}
+                  </button>
+                );
+              })}
             </div>
           </section>
         </div>

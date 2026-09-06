@@ -90,6 +90,7 @@ export function PreviewWindow() {
             key={scene.id}
             scene={scene}
             projectId={project.id}
+            audioFile={project.audioFile}
             projectWidth={project.width}
             projectHeight={project.height}
             fps={project.fps}

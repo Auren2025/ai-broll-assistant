@@ -1,6 +1,17 @@
-import { useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
+import type { PlayerRef } from "@remotion/player";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
 import type { Scene } from "../domain/sceneSchema";
+import {
+  getAnimationPhaseLabel,
+  getAnimationPresetLabel,
+} from "./animationCatalog";
 import { getTimelineEvents, type TimelineEvent } from "./timelineEvents";
 
 type TimingPatch = Pick<LayerAnimation, "startFrame" | "durationInFrames">;
@@ -11,7 +22,7 @@ interface SceneAnimationTimelineProps {
   selectedLayerId: string | null;
   selectedAnimationId: string | null;
   isPreviewMode: boolean;
-  currentFrame: number;
+  playerRef: RefObject<PlayerRef | null>;
   onSeek: (frame: number) => void;
   onAnimationSelect: (layerId: string, animationId: string) => void;
   onAnimationTimingChange: (
@@ -49,44 +60,44 @@ function getTickFrames(durationInFrames: number, fps: number): number[] {
   return [...new Set([...ticks, durationInFrames])];
 }
 
-function phaseLabel(phase: LayerAnimation["phase"]): string {
-  switch (phase) {
-    case "enter":
-      return "Build In";
-    case "emphasis":
-      return "Action";
-    case "exit":
-      return "Build Out";
-  }
-}
-
-function animationLabel(animation: LayerAnimation): string {
-  switch (animation.preset) {
-    case "fade-and-move":
-      return "Fade and Move";
-    case "magic-move":
-      return "Magic Move";
-    case "dissolve":
-      return "Dissolve";
-  }
-}
-
 export function SceneAnimationTimeline({
   scene,
   fps,
   selectedLayerId,
   selectedAnimationId,
   isPreviewMode,
-  currentFrame,
+  playerRef,
   onSeek,
   onAnimationSelect,
   onAnimationTimingChange,
 }: SceneAnimationTimelineProps) {
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+  const [currentFrame, setCurrentFrame] = useState(0);
   const events = getTimelineEvents(scene.layers);
   const ticks = getTickFrames(scene.durationInFrames, fps);
   const maximumFrame = Math.max(0, scene.durationInFrames - 1);
   const playheadLeft = (currentFrame / scene.durationInFrames) * 100;
+
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!isPreviewMode || !player) {
+      setCurrentFrame(0);
+      return;
+    }
+
+    const updateFrame = (absoluteFrame: number): void => {
+      setCurrentFrame(
+        clamp(absoluteFrame - scene.startFrame, 0, maximumFrame),
+      );
+    };
+    const handleFrameUpdate = (event: { detail: { frame: number } }): void => {
+      updateFrame(event.detail.frame);
+    };
+
+    updateFrame(player.getCurrentFrame());
+    player.addEventListener("frameupdate", handleFrameUpdate);
+    return () => player.removeEventListener("frameupdate", handleFrameUpdate);
+  }, [isPreviewMode, maximumFrame, playerRef, scene.id, scene.startFrame]);
 
   function seekFromClientX(clientX: number, ruler: HTMLElement): void {
     const bounds = ruler.getBoundingClientRect();
@@ -132,7 +143,7 @@ export function SceneAnimationTimeline({
     timelineEvent: TimelineEvent,
     mode: DragMode,
   ): void {
-    if (event.button !== 0 || timelineEvent.locked) {
+    if (event.button !== 0 || timelineEvent.locked || !timelineEvent.editable) {
       return;
     }
 
@@ -234,6 +245,7 @@ export function SceneAnimationTimeline({
   ): void {
     if (
       timelineEvent.locked ||
+      !timelineEvent.editable ||
       (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
     ) {
       return;
@@ -318,11 +330,12 @@ export function SceneAnimationTimeline({
                   type="button"
                   className={`animation-event-label${isSelected ? " is-selected" : ""}`}
                   style={{ paddingLeft: `${12 + timelineEvent.depth * 12}px` }}
+                  disabled={!timelineEvent.editable}
                   onClick={() => onAnimationSelect(layer.id, animation.id)}
                 >
                   <span>{index + 1}</span>
                   <strong>{layer.name}</strong>
-                  <small>{phaseLabel(animation.phase)} · {animationLabel(animation)}</small>
+                  <small>{getAnimationPhaseLabel(animation.phase)} · {getAnimationPresetLabel(animation.preset)}</small>
                 </button>
                 <div className="animation-timeline-track">
                   {ticks
@@ -345,7 +358,7 @@ export function SceneAnimationTimeline({
                     type="button"
                     className={`animation-event-bar phase-${animation.phase}${isSelected ? " is-selected" : ""}`}
                     style={{ left: `${left}%`, width: `${width}%` }}
-                    disabled={timelineEvent.locked}
+                    disabled={timelineEvent.locked || !timelineEvent.editable}
                     aria-label={`${layer.name} ${animation.phase}, frame ${preview.startFrame} to ${preview.startFrame + preview.durationInFrames}`}
                     title={`${preview.startFrame}–${preview.startFrame + preview.durationInFrames} frames`}
                     onClick={() => onAnimationSelect(layer.id, animation.id)}

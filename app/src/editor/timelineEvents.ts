@@ -6,6 +6,7 @@ export interface TimelineEvent {
   animation: LayerAnimation;
   depth: number;
   locked: boolean;
+  editable: boolean;
 }
 
 /**
@@ -23,7 +24,13 @@ export function getTimelineEvents(layers: readonly Layer[]): TimelineEvent[] {
     .flatMap((layer) => {
       const groupEvents = [...layer.animations]
         .sort((first, second) => first.startFrame - second.startFrame)
-        .map((animation) => ({ layer, animation, depth: 0, locked: layer.locked }));
+        .map((animation) => ({
+          layer,
+          animation,
+          depth: 0,
+          locked: layer.locked,
+          editable: true,
+        }));
 
       if (layer.type !== "group") {
         return groupEvents;
@@ -39,6 +46,7 @@ export function getTimelineEvents(layers: readonly Layer[]): TimelineEvent[] {
               animation,
               depth: 1,
               locked: layer.locked || child.locked,
+              editable: false,
             })),
         );
 

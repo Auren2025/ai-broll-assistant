@@ -16,6 +16,7 @@ import {
   Textbox,
   classRegistry,
 } from "fabric";
+import { getAssetUrl } from "../api/projectApi";
 import type { AtomicLayer } from "../domain/atomicLayerSchema";
 import type { GroupLayer } from "../domain/groupLayerSchema";
 import { scaleGroupChildren } from "../domain/groupOperations";
@@ -360,6 +361,7 @@ class FabricImageLayerObject extends FabricObject {
   declare imageStrokeWidth: number;
   declare imageCornerRadius: number;
   declare imageFit: "fill" | "contain";
+  declare imagePlaceholderColor: string;
 
   private htmlImage: HTMLImageElement | null = null;
   private imageLoadFailed = false;
@@ -375,6 +377,8 @@ class FabricImageLayerObject extends FabricObject {
       (options.imageCornerRadius as number | undefined) ?? 0;
     this.imageFit =
       (options.imageFit as "fill" | "contain" | undefined) ?? "fill";
+    this.imagePlaceholderColor =
+      (options.imagePlaceholderColor as string | undefined) ?? "#d1d5db";
     this.loadImage();
   }
 
@@ -459,7 +463,7 @@ class FabricImageLayerObject extends FabricObject {
         ctx.drawImage(this.htmlImage, -w / 2, -h / 2, w, h);
       }
     } else if (this.imageLoadFailed) {
-      ctx.fillStyle = "#d1d5db";
+      ctx.fillStyle = this.imageSrc ? "#d1d5db" : this.imagePlaceholderColor;
       ctx.fillRect(-w / 2, -h / 2, w, h);
     } else {
       ctx.fillStyle = "#e5e7eb";
@@ -592,6 +596,7 @@ interface FabricSceneCanvasProps {
   onSceneChange: (scene: Scene) => void;
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
   onHoveredLayerIdChange: (layerId: string | null) => void;
+  onGroupEditEnter?: (groupId: string) => void;
   onContextMenuRequest: (x: number, y: number) => void;
   selectedLayerIds: readonly string[];
   selectedAnimationId?: string | null;
@@ -609,10 +614,6 @@ interface FabricSceneCanvasProps {
     naturalWidth: number,
     naturalHeight: number,
   ) => void;
-}
-
-function buildAssetUrl(projectId: string, src: string): string {
-  return `/api/projects/${encodeURIComponent(projectId)}/${src}`;
 }
 
 function roundNumber(value: number): number {
@@ -1042,7 +1043,7 @@ function applyLayerToFabricObject(
   }
 
   if (layer.type === "image" && object instanceof FabricImageLayerObject) {
-    object.setImageSource(layer.src ? buildAssetUrl(projectId, layer.src) : "");
+    object.setImageSource(layer.src ? getAssetUrl(projectId, layer.src) : "");
     object.set({
       width: layer.width,
       height: layer.height,
@@ -1050,6 +1051,7 @@ function applyLayerToFabricObject(
       imageStrokeWidth: layer.strokeWidth,
       imageCornerRadius: layer.cornerRadius,
       imageFit: layer.fit,
+      imagePlaceholderColor: layer.placeholderColor,
     });
     object.dirty = true;
     object.setCoords();
@@ -1103,8 +1105,9 @@ function createFabricObjectForLayer(
         originX: "center",
         originY: "center",
         objectCaching: false,
-        imageSrc: layer.src ? buildAssetUrl(projectId, layer.src) : "",
+        imageSrc: layer.src ? getAssetUrl(projectId, layer.src) : "",
         imageFit: layer.fit,
+        imagePlaceholderColor: layer.placeholderColor,
       });
       break;
     case "group": {
@@ -1193,6 +1196,7 @@ export function FabricSceneCanvas({
   onSceneChange,
   onSelectedLayerIdsChange,
   onHoveredLayerIdChange,
+  onGroupEditEnter,
   onContextMenuRequest,
   selectedLayerIds,
   selectedAnimationId,
@@ -1215,6 +1219,7 @@ export function FabricSceneCanvas({
   const sceneRef = useRef<Scene>(scene);
   const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
+  const groupEditEnterRef = useRef(onGroupEditEnter);
   const isApplyingSelectionRef = useRef(false);
   const pendingTextEditRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
@@ -1259,6 +1264,10 @@ export function FabricSceneCanvas({
   useEffect(() => {
     contextMenuRequestRef.current = onContextMenuRequest;
   }, [onContextMenuRequest]);
+
+  useEffect(() => {
+    groupEditEnterRef.current = onGroupEditEnter;
+  }, [onGroupEditEnter]);
 
   useEffect(() => {
     pendingTextEditRef.current = pendingTextEditLayerId ?? null;
@@ -1696,10 +1705,27 @@ export function FabricSceneCanvas({
       lockOriginRef.current = null;
     });
     canvas.on("mouse:dblclick", (event) => {
+      const selectedLayerId = selectedLayerIdsRef.current.length === 1
+        ? selectedLayerIdsRef.current[0]
+        : null;
       const selectedObject =
-        selectedLayerIdsRef.current.length === 1
-          ? layerIdToObjectRef.current.get(selectedLayerIdsRef.current[0])
+        selectedLayerId
+          ? layerIdToObjectRef.current.get(selectedLayerId)
           : undefined;
+      const selectedLayer = selectedLayerId
+        ? findLayerByIdOrChild(sceneRef.current, selectedLayerId)
+        : null;
+      if (
+        selectedObject &&
+        selectedLayer?.type === "group" &&
+        selectedObject.containsPoint(event.scenePoint)
+      ) {
+        canvas.setActiveObject(selectedObject);
+        onSelectedLayerIdsChange([selectedLayer.id]);
+        groupEditEnterRef.current?.(selectedLayer.id);
+        canvas.requestRenderAll();
+        return;
+      }
       const selectedChildWasHit =
         selectedObject?.parent instanceof FabricGroup &&
         selectedObject.containsPoint(event.scenePoint);
@@ -1726,6 +1752,13 @@ export function FabricSceneCanvas({
         ? findLayerByIdOrChild(sceneRef.current, childId)
         : undefined;
       if (!child || child.locked) return;
+      if (child.type === "group") {
+        canvas.setActiveObject(mappedObject);
+        onSelectedLayerIdsChange([child.id]);
+        groupEditEnterRef.current?.(child.id);
+        canvas.requestRenderAll();
+        return;
+      }
       const editableText =
         mappedObject instanceof FabricShapeTextObject &&
         (child.type !== "circle" || (child.donut === 0 && child.sweep === 360))

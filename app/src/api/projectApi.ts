@@ -1,7 +1,13 @@
 import { parseProject, type Project } from "../domain/projectSchema";
 import { parseScene, type Scene } from "../domain/sceneSchema";
+import { getImageAssetSizeError } from "../imageAssetPolicy";
 
 const resourceEtags = new Map<string, string>();
+
+export interface FetchedResource<T> {
+  data: T;
+  commitEtag: () => void;
+}
 
 export class ExternalChangeConflictError extends Error {
   constructor() {
@@ -55,7 +61,21 @@ function rememberEtag(url: string, response: Response): void {
   if (etag) resourceEtags.set(url, etag);
 }
 
-function conditionalHeaders(url: string, force: boolean): HeadersInit {
+function fetchedResource<T>(
+  data: T,
+  url: string,
+  response: Response,
+): FetchedResource<T> {
+  return {
+    data,
+    commitEtag: () => rememberEtag(url, response),
+  };
+}
+
+function conditionalHeaders(
+  url: string,
+  force: boolean,
+): Record<string, string> {
   const etag = force ? null : resourceEtags.get(url);
   return {
     "Content-Type": "application/json",
@@ -63,12 +83,22 @@ function conditionalHeaders(url: string, force: boolean): HeadersInit {
   };
 }
 
-export async function fetchProject(projectId: string): Promise<Project> {
+export async function fetchProjectResource(
+  projectId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<FetchedResource<Project>> {
   const url = `/api/projects/${encodeURIComponent(projectId)}`;
-  const { body, response } = await fetchJson(url);
-  rememberEtag(url, response);
+  const { body, response } = await fetchJson(url, { signal: options.signal });
+  return fetchedResource(parseProject(body), url, response);
+}
 
-  return parseProject(body);
+export async function fetchProject(
+  projectId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<Project> {
+  const resource = await fetchProjectResource(projectId, options);
+  resource.commitEtag();
+  return resource.data;
 }
 
 export async function saveProject(
@@ -90,15 +120,24 @@ export async function saveProject(
   return parseProject(body);
 }
 
+export async function fetchSceneResource(
+  projectId: string,
+  sceneId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<FetchedResource<Scene>> {
+  const url = `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`;
+  const { body, response } = await fetchJson(url, { signal: options.signal });
+  return fetchedResource(parseScene(body), url, response);
+}
+
 export async function fetchScene(
   projectId: string,
   sceneId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<Scene> {
-  const url = `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}`;
-  const { body, response } = await fetchJson(url);
-  rememberEtag(url, response);
-
-  return parseScene(body);
+  const resource = await fetchSceneResource(projectId, sceneId, options);
+  resource.commitEtag();
+  return resource.data;
 }
 
 export async function saveScene(
@@ -211,6 +250,11 @@ export async function uploadImageAsset(
   const mimeType = file.type.toLowerCase();
   if (!ALLOWED_ASSET_MIME_TYPES.has(mimeType)) {
     throw new Error(`Unsupported image type: ${file.type || "unknown"}`);
+  }
+
+  const sizeError = getImageAssetSizeError(file.size);
+  if (sizeError) {
+    throw new Error(sizeError);
   }
 
   const extension = ASSET_MIME_EXTENSIONS[mimeType];

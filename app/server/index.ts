@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { createReadStream } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createHash, randomBytes } from 'node:crypto'
@@ -7,9 +8,13 @@ import { parseProject } from '../src/domain/projectSchema.ts'
 import { parseScene } from '../src/domain/sceneSchema.ts'
 import type { Project } from '../src/domain/projectSchema.ts'
 import type { Scene as SceneType } from '../src/domain/sceneSchema.ts'
+import {
+  getImageAssetSizeError,
+  MAX_IMAGE_ASSET_BYTES,
+} from '../src/imageAssetPolicy.ts'
 
 const HOST = '127.0.0.1'
-const PORT = 3001
+const PORT = 3002
 
 const CONTENT_TYPE = 'application/json; charset=utf-8'
 
@@ -17,10 +22,9 @@ const ID_PATTERN = /^[A-Za-z0-9_-]+$/
 const PROJECTS_PREFIX = '/api/projects/'
 const SCENES_PREFIX = 'scenes/'
 const ASSETS_PREFIX = 'assets/'
-const AUDIO_PREFIX = 'audio/'
+const LEGACY_AUDIO_PREFIX = 'audio/'
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 const ALLOWED_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
 const ALLOWED_IMAGE_MIME = new Set([
   'image/png',
@@ -31,13 +35,19 @@ const ALLOWED_IMAGE_MIME = new Set([
 ])
 const FILENAME_PATTERN = /^[A-Za-z0-9_.-]+$/
 const ALLOWED_BROWSER_ORIGINS = new Set([
-  'http://127.0.0.1:5173',
-  'http://localhost:3000',
+  'http://127.0.0.1:5174',
+  'http://localhost:5174',
+  'http://127.0.0.1:3001',
+  'http://localhost:3001',
 ])
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const PROJECTS_ROOT = path.resolve(__dirname, '..', 'projects')
+// Importing this module does not listen or access real project data.
+// Tests inject a temporary root and bind the returned server to a random port.
+export function createLocalServer(
+  PROJECTS_ROOT = path.resolve(__dirname, '..', 'projects'),
+): http.Server {
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   if (res.headersSent || res.writableEnded) {
@@ -78,10 +88,15 @@ async function rejectStaleWrite(
   }
 }
 
-async function readAndParseProject(
+interface ParsedProjectFile {
+  project: Project
+  raw: string
+}
+
+async function readAndParseProjectFile(
   res: http.ServerResponse,
   projectId: string,
-): Promise<Project | null> {
+): Promise<ParsedProjectFile | null> {
   const projectPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
 
   let raw: string
@@ -108,7 +123,7 @@ async function readAndParseProject(
   }
 
   try {
-    return parseProject(json)
+    return { project: parseProject(json), raw }
   } catch (err) {
     console.error(err)
     sendJson(res, 500, { error: 'Invalid project data' })
@@ -116,16 +131,21 @@ async function readAndParseProject(
   }
 }
 
+async function readAndParseProject(
+  res: http.ServerResponse,
+  projectId: string,
+): Promise<Project | null> {
+  return (await readAndParseProjectFile(res, projectId))?.project ?? null
+}
+
 async function handleGetProject(
   res: http.ServerResponse,
   projectId: string,
 ): Promise<void> {
-  const project = await readAndParseProject(res, projectId)
-  if (project !== null) {
-    const projectPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
-    const raw = await fs.readFile(projectPath)
-    res.setHeader('ETag', buildEntityTag(raw))
-    sendJson(res, 200, project)
+  const resource = await readAndParseProjectFile(res, projectId)
+  if (resource !== null) {
+    res.setHeader('ETag', buildEntityTag(resource.raw))
+    sendJson(res, 200, resource.project)
   }
 }
 
@@ -371,8 +391,24 @@ async function handleDeleteScene(
 
   const projectDir = path.join(PROJECTS_ROOT, projectId)
   const projectPath = path.join(projectDir, 'project.json')
-  const tempPath = buildSceneTempPath(projectPath)
 
+  // Unlink the scene file first. If it fails with anything other than ENOENT,
+  // abort before project.json changes so the cross-file references stay
+  // consistent. A successful unlink makes the deletion atomic from the caller's
+  // perspective; a failed one leaves project.json untouched.
+  const scenePath = path.join(projectDir, reference.file)
+  try {
+    await fs.unlink(scenePath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      console.error(err)
+      sendJson(res, 500, { error: 'Failed to delete scene file' })
+      return
+    }
+  }
+
+  const tempPath = buildSceneTempPath(projectPath)
   try {
     await fs.writeFile(
       tempPath,
@@ -383,14 +419,13 @@ async function handleDeleteScene(
   } catch (err) {
     console.error(err)
     await fs.unlink(tempPath).catch(() => {})
+    // The scene file was removed but project.json could not be updated, so the
+    // next read of project.json will reference a missing scene file. Report
+    // the failure; the operator must restore the scene file from version
+    // control or another source.
     sendJson(res, 500, { error: 'Failed to update project' })
     return
   }
-
-  const scenePath = path.join(projectDir, reference.file)
-  await fs.unlink(scenePath).catch((err) => {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error(err)
-  })
 
   sendJson(res, 200, nextProject)
 }
@@ -445,8 +480,8 @@ async function readAssetBytes(
     const onChunk = (chunk: Buffer): void => {
       if (aborted) return
       totalLength += chunk.length
-      if (totalLength > MAX_IMAGE_BYTES) {
-        sendJson(res, 413, { error: 'Image too large' })
+      if (totalLength > MAX_IMAGE_ASSET_BYTES) {
+        sendJson(res, 413, { error: getImageAssetSizeError(totalLength) })
         aborted = true
         req.destroy()
         return
@@ -485,8 +520,11 @@ async function handlePostAsset(
   const contentLengthHeader = req.headers['content-length']
   if (typeof contentLengthHeader === 'string') {
     const contentLength = Number(contentLengthHeader)
-    if (Number.isFinite(contentLength) && contentLength > MAX_IMAGE_BYTES) {
-      sendJson(res, 413, { error: 'Image too large' })
+    if (
+      Number.isFinite(contentLength) &&
+      contentLength > MAX_IMAGE_ASSET_BYTES
+    ) {
+      sendJson(res, 413, { error: getImageAssetSizeError(contentLength) })
       return
     }
   }
@@ -605,29 +643,66 @@ function audioMimeFromExtension(ext: string): string {
   }
 }
 
-async function handleGetAudio(
-  res: http.ServerResponse,
-  projectId: string,
-  filename: string,
-): Promise<void> {
-  if (!FILENAME_PATTERN.test(filename)) {
-    sendJson(res, 400, { error: 'Invalid audio filename' })
-    return
+function audioExtensionFromFilename(filename: string): string | null {
+  const dotIndex = filename.lastIndexOf('.')
+  if (dotIndex <= 0 || dotIndex === filename.length - 1) return null
+  const extension = filename.slice(dotIndex + 1).toLowerCase()
+  return audioMimeFromExtension(extension) === 'application/octet-stream'
+    ? null
+    : extension
+}
+
+function parseByteRange(
+  header: string | undefined,
+  size: number,
+): { start: number; end: number } | 'invalid' | null {
+  if (header === undefined) return null
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header)
+  if (!match || (match[1] === '' && match[2] === '')) return 'invalid'
+
+  if (match[1] === '') {
+    const suffixLength = Number(match[2])
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return 'invalid'
+    return {
+      start: Math.max(0, size - suffixLength),
+      end: size - 1,
+    }
   }
 
-  const projectDir = path.join(PROJECTS_ROOT, projectId)
-  const absolutePath = path.join(projectDir, 'audio', filename)
+  const start = Number(match[1])
+  const requestedEnd = match[2] === '' ? size - 1 : Number(match[2])
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    start >= size ||
+    requestedEnd < start
+  ) {
+    return 'invalid'
+  }
 
-  const resolved = path.resolve(absolutePath)
-  const allowedRoot = path.resolve(projectDir, 'audio') + path.sep
-  if (!resolved.startsWith(allowedRoot)) {
+  return { start, end: Math.min(requestedEnd, size - 1) }
+}
+
+async function handleGetAudio(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  projectId: string,
+  relativePath: string,
+): Promise<void> {
+  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const absolutePath = path.resolve(projectDir, relativePath)
+
+  const allowedRoot = path.resolve(projectDir) + path.sep
+  if (!absolutePath.startsWith(allowedRoot)) {
     sendJson(res, 400, { error: 'Invalid audio path' })
     return
   }
 
-  let bytes: Buffer
+  let size: number
   try {
-    bytes = await fs.readFile(absolutePath)
+    size = (await fs.stat(absolutePath)).size
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (code === 'ENOENT') {
@@ -639,20 +714,44 @@ async function handleGetAudio(
     return
   }
 
-  const dotIndex = filename.lastIndexOf('.')
-  const ext = dotIndex > 0 ? filename.slice(dotIndex + 1).toLowerCase() : ''
+  const dotIndex = relativePath.lastIndexOf('.')
+  const ext = dotIndex > 0 ? relativePath.slice(dotIndex + 1).toLowerCase() : ''
+  const range = parseByteRange(req.headers.range, size)
+
+  if (range === 'invalid') {
+    res.statusCode = 416
+    res.setHeader('Content-Range', `bytes */${size}`)
+    res.setHeader('Accept-Ranges', 'bytes')
+    res.end()
+    return
+  }
+
+  const start = range?.start ?? 0
+  const end = range?.end ?? size - 1
 
   if (res.headersSent || res.writableEnded) return
-  res.statusCode = 200
+  res.statusCode = range === null ? 200 : 206
   res.setHeader('Content-Type', audioMimeFromExtension(ext))
-  res.setHeader('Content-Length', String(bytes.length))
+  res.setHeader('Content-Length', String(end - start + 1))
+  res.setHeader('Accept-Ranges', 'bytes')
+  if (range !== null) {
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`)
+  }
   res.setHeader('Cache-Control', 'no-cache')
-  res.end(bytes)
+  createReadStream(absolutePath, { start, end }).pipe(res)
 }
 
 function buildSceneTempPath(target: string): string {
   const random = Math.random().toString(36).slice(2, 10)
   return `${target}.tmp-${process.pid}-${Date.now()}-${random}`
+}
+
+function isWriteMethod(method: string): boolean {
+  return method === 'PUT' || method === 'POST' || method === 'DELETE'
+}
+
+function isRequestOriginAllowed(origin: unknown): origin is string {
+  return typeof origin === 'string' && ALLOWED_BROWSER_ORIGINS.has(origin)
 }
 
 async function readExistingSceneEndFrames(
@@ -831,9 +930,23 @@ const server = http.createServer((req, res) => {
   const url = req.url ?? ''
   const origin = req.headers.origin
 
-  if (typeof origin === 'string' && ALLOWED_BROWSER_ORIGINS.has(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-    res.setHeader('Vary', 'Origin')
+  if (typeof origin === 'string') {
+    if (isRequestOriginAllowed(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin)
+      res.setHeader('Vary', 'Origin')
+    } else {
+      // CORS browsers must see a deterministic rejection for both reads and
+      // writes; otherwise the missing CORS header can look like success in
+      // callers that key only on the absence of an Allow-Origin value.
+      res.setHeader('Vary', 'Origin')
+      sendJson(res, 403, { error: 'Origin not allowed' })
+      return
+    }
+  } else if (isWriteMethod(method)) {
+    // No Origin header indicates a non-browser caller. Same-origin browser
+    // requests still send Origin; CLI agents may not. Allow them through
+    // because the local service is documented to be reached by editors,
+    // render scripts, and other trusted local processes.
   }
 
   if (method === 'OPTIONS') {
@@ -912,14 +1025,27 @@ const server = http.createServer((req, res) => {
       return
     }
 
-    if (restAfterProject.startsWith(AUDIO_PREFIX)) {
-      const filename = restAfterProject.slice(AUDIO_PREFIX.length)
+    if (restAfterProject.startsWith(LEGACY_AUDIO_PREFIX)) {
+      const filename = restAfterProject.slice(LEGACY_AUDIO_PREFIX.length)
       if (!FILENAME_PATTERN.test(filename)) {
         sendJson(res, 400, { error: 'Invalid audio filename' })
         return
       }
       if (method === 'GET') {
-        void handleGetAudio(res, projectIdPart, filename)
+        void handleGetAudio(req, res, projectIdPart, restAfterProject)
+        return
+      }
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return
+    }
+
+    const audioExtension = audioExtensionFromFilename(restAfterProject)
+    if (
+      FILENAME_PATTERN.test(restAfterProject) &&
+      audioExtension !== null
+    ) {
+      if (method === 'GET') {
+        void handleGetAudio(req, res, projectIdPart, restAfterProject)
         return
       }
       sendJson(res, 405, { error: 'Method not allowed' })
@@ -955,6 +1081,11 @@ const server = http.createServer((req, res) => {
   sendJson(res, 404, { error: 'Not found' })
 })
 
-server.listen(PORT, HOST, () => {
-  console.log(`Local service listening at http://127.0.0.1:3001`)
-})
+return server
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  createLocalServer().listen(PORT, HOST, () => {
+    console.log(`Local service listening at http://127.0.0.1:3002`)
+  })
+}

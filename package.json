@@ -1,0 +1,8 @@
+{
+  "name": "ai-broll-launcher",
+  "private": true,
+  "packageManager": "pnpm@12.0.0",
+  "scripts": {
+    "dev": "pnpm --dir app run dev"
+  }
+}

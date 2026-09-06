@@ -1,0 +1,4 @@
+# Single application package; this file configures pnpm, not a multi-package split.
+allowBuilds:
+  esbuild: true
+  canvas: true

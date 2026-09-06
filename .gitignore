@@ -1,1 +1,6 @@
 .DS_Store
+/node_modules/
+
+# Local conversation exports; keep archive documentation tracked.
+/archive/sessions/
+/session-*.md

@@ -22,9 +22,9 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
    - **Create/adopt:** an SRT exists but `project.json` does not.
    - **Resume planning:** project data exists but scene selection is incomplete.
    - **Resegment:** scene boundaries or selection will replace existing structure. This is destructive and requires explicit confirmation before changing files with manual work.
-   Read `AGENTS.md`, `VISUAL_STYLE.md`, the current project if present, and the schemas under `src/domain/`. Preserve existing IDs and anchors whenever the requested change allows it.
+   Read `AGENTS.md`, `VISUAL_STYLE.md`, the current project if present, and the schemas under `src/domain/`. Consult a relevant available reference using `VISUAL_STYLE.md`'s reference guidance; learn its expression method without copying its content or treating an accepted project as an ideal template. Preserve existing IDs and anchors whenever the requested change allows it.
 
-2. **Confirm the source and editor state.** The canonical source is `projects/<project-id>/source.srt`. If it is absent during create/adopt and exactly one other project-root `.srt` exists, preserve its contents and copy it to `source.srt` before validation or planning. Ask the user if none or multiple candidates exist. Before any project JSON write, confirm the editor is closed or not writing.
+2. **Confirm the source and editor state.** The canonical source is `projects/<project-id>/source.srt`. If it is absent during create/adopt and exactly one other project-root `.srt` exists, preserve its contents and copy it to `source.srt` before validation or planning. Ask the user if none or multiple candidates exist. Before any batch project JSON write, confirm the editor is closed.
 
 3. **Validate and read the complete SRT.** Run:
    ```bash
@@ -36,22 +36,24 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
 4. **Interpret speech by visual function.** Distinguish these categories while reasoning, but never persist them as another data model:
    - content that needs a visual model, such as a principle, structure, relationship, process, comparison, hierarchy, or key evidence;
    - narration that continues to explain the current visual model;
-    - narration that does not need a structured B-roll scene, including setup, transitions, repetition, deliberate whitespace, and product screen demonstrations;
+   - narration that does not need a structured B-roll scene, including setup, transitions, repetition, deliberate whitespace, and product screen demonstrations;
    - optional supporting detail that may enrich an existing composition without introducing another visual proposition.
 
 5. **Select visual propositions, not sentences.** Create a scene only when a structured visual materially improves understanding. Give each scene one stable primary composition that can support an extended explanation. Keep elaboration, examples, rewording, emphasis, and repeated conclusions in that composition without creating new scenes. When narration adds a key object, establishes or changes a relationship, advances a process, or requires a focus shift, plan a progressive reveal inside the same scene. Start a new scene when either the core visual proposition or the primary composition needed to carry it genuinely changes. Do not keep appending an unrelated bottom row, generic card, or secondary diagram merely to avoid a new scene. Subtitle gaps, cue counts, cue boundaries, and fixed durations are timing aids only. Leave intentional transparent gaps where no structured visual is useful.
+
+   Before proposing a composition, choose the simplest sufficient expression using `VISUAL_STYLE.md`: structured text for lists/categories/paths, real media for product identity or interface evidence, diagrams for relationships/state changes, and actual screen recording for continuous operations. Text and meaningful grouping can form a complete visual proposition; do not force a hero image, invented icon set, connector, or bottom conclusion. When a screenshot carries the explanation, identify the essential visible region instead of merely requesting a generic screenshot.
 
 6. **Present a concise narrative map.** Before discussing the first scene, show a short global map containing only narration chapters, candidate visual propositions, and likely transparent intervals. The map proves whole-SRT understanding and establishes direction; it is not a detailed scene proposal and does not ask the user to approve every scene at once.
 
 7. **Discuss exactly one candidate scene.** Work in narration order unless the user names another target. Present only the current candidate and include:
    - its SRT range and the spoken idea it covers;
    - why that idea benefits from visualization;
-   - the stable primary composition and its hero visual object;
-   - the image placeholders likely needed for logos, icons, screenshots, interfaces, or illustrations;
-   - only the progressive reveals required to add an object, establish or change a relationship, advance a process, or move necessary focus;
+   - the simplest suitable expression, stable primary composition, first focal content, and reading order;
+   - only the needed image placeholders, specifying their identification/evidence role and required visible region; no images is a valid choice for structured text;
+   - the opening state and necessary reveals that introduce information, establish/change relationships, advance a process, or guide reading; distinguish whole-group reveals from items that need individual attention;
    - the explanatory passages that intentionally leave the composition unchanged;
    - optional supporting details, clearly separated from required content;
-   - the transparent or held intervals immediately before and after it.
+   - the transparent or held intervals immediately before and after it, and whether an existing visual object should continue from the preceding scene without modifying that completed scene.
    Ask the user to confirm, simplify, skip, or adjust the boundary. Do not expand the response into detailed proposals for later scenes.
 
 8. **Calculate exact timing for the current candidate.** Put every scene start on an SRT cue start, except that the first scene may start at project frame 0 when its visual should align with the narration audio file's beginning. This frame-0 exception applies only to the first scene; later scenes still require exact cue anchors. At project FPS:
@@ -83,9 +85,9 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
 - The complete SRT was read before selection.
 - The global map is concise and detailed review covers only one scene at a time.
 - Every scene has one stable primary composition and one coherent visual proposition.
-- The planned composition has a recognizable hero object and does not rely on title-and-card fallback.
+- The expression suits the information: a text list, semantic container, real screenshot, or relationship diagram is chosen deliberately, not forced into a generic title-and-card or image-heavy template.
 - Explanations, examples, rewording, and repetition do not create scenes by themselves.
-- Progressive reveals are limited to changes that alter the audience's visual model.
+- Progressive reveals support information changes or necessary reading order, not every subtitle or layer; explanatory passages explicitly hold.
 - A long held scene remains long because the same composition genuinely carries the explanation; duration alone does not force a split, but an unexplained extended hold is reviewed rather than accepted automatically.
 - At final audit, every omitted interval is intentional rather than accidentally missed.
 - Time ranges map to the intended narration and do not overlap.

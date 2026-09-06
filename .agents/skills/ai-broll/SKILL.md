@@ -39,7 +39,7 @@ Complete SRT
 -> explicit approval for that scene
 -> canonical scene JSON with layers: []
 -> broll-scene-animator for that scene, including visible asset placeholders when needed
--> validation and draft editor/player review
+-> data validation, Agent visual self-review where accessible, and user draft review
 -> preserve the approved draft scene and repeat with the next candidate
 -> full-project draft audit and optional draft render
 -> user replaces placeholder images and removes the paired asset notes
@@ -48,11 +48,13 @@ Complete SRT
 
 - Read and understand the complete SRT before the first candidate, but never make scene-by-scene collaboration depend on reading only local subtitle excerpts.
 - Keep the initial map brief. It establishes direction and does not require the user to review or approve a detailed all-scenes proposal.
+- Apply `VISUAL_STYLE.md` and its reference guidance before the first design. `my-design` is the primary user-liked manual style reference; the named OpenCode examples contribute specific expression methods, not an all-purpose ideal template. Missing local references must be reported, not reconstructed.
 - Never skip approval for the current candidate and proceed directly from SRT to animation.
 - A correction request means revise the proposal; it is not approval.
 - Approval applies only to the current scene or an explicitly named set; it does not approve unreviewed candidates.
 - By default, complete the approved scene through draft animation and visual review before discussing the next scene, but wait until the full draft video is complete before replacing assets so the user can collect all requirements in one pass. Replace an individual scene's assets earlier only when the user explicitly asks. Use a planning-only batch workflow only when the user explicitly requests it.
 - Treat a completed canonical scene as progress. Do not regenerate or modify it while processing later scenes unless the user explicitly reopens it. This is a workflow rule, not a persisted lock field.
+- After feedback, briefly distinguish the specific correction from any explicitly stated broader preference and apply the latter to subsequent relevant scenes in this conversation. Do not infer that "acceptable" approves every design detail as a permanent preference, silently update rules, or retrofit completed scenes. Persist broader preferences in `VISUAL_STYLE.md` only when the user asks or confirms.
 - Do not persist the unapproved proposal as another file or data model.
 
 ## Operation Modes
@@ -76,4 +78,4 @@ Complete SRT
 
 ## Completion
 
-After each draft vertical slice, report the approved scene ID, hero composition, validation result, draft state, and exact asset follow-up, then present only the next candidate when the user is ready. At full-draft completion, consolidate every placeholder requirement into one asset checklist for the user's replacement pass. Do not treat a visually approved draft as final until its placeholder Images are replaced and asset-note Text layers are removed. At final completion, report the global audit. Do not render or export unless the user requested it.
+After each draft vertical slice, report the approved scene ID, primary composition, data validation result, actual visual review coverage or its unavailable status, draft state, and exact asset follow-up, then present only the next candidate when the user is ready. Data validation alone does not establish visual quality. Follow the animator's self-review procedure before asking for user approval when preview is accessible; if it is not, explicitly request user inspection rather than claiming the scene visually passed. At full-draft completion, consolidate every placeholder requirement into one asset checklist for the user's replacement pass. Do not treat a visually approved draft as final until its placeholder Images are replaced and asset-note Text layers are removed. At final completion, report the global audit. Do not render or export unless the user requested it.

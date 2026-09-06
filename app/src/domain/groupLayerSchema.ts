@@ -4,7 +4,7 @@ import { LayerBaseSchema } from "./layerSchema";
 
 export const GroupLayerSchema = LayerBaseSchema.extend({
   type: z.literal("group"),
-  children: z.array(AtomicLayerSchema).min(2),
+  children: z.array(AtomicLayerSchema).min(1),
 }).strict();
 
 export type GroupLayer = z.infer<typeof GroupLayerSchema>;

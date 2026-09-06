@@ -2,17 +2,15 @@ import { z } from 'zod'
 import { LayerBaseSchema } from './layerSchema'
 
 // Arrow layer rules shared by Fabric.js Adapter and Remotion Adapter:
-// - The arrow always points from left to right inside the
-//   (x, y, width, height) bounding box defined on LayerBase.
-// - The shaft is a horizontal bar at the vertical center of the bounding
-//   box, spanning x in [0, width - arrowHeadSize].
-// - The arrowhead is a triangle anchored at (width - arrowHeadSize, 0)
-//   and (width - arrowHeadSize, height), pointing to (width, height / 2).
-// - stroke is the color of the shaft and arrowhead and is required.
+// - The arrow uses a horizontal axis inside the (x, y, width, height)
+//   bounding box. Rotation on LayerBase controls its final direction.
+// - The shaft runs between the insets required by the configured start and
+//   end heads at the vertical center of the box.
+// - Each end independently supports none, triangle, line, diamond, or circle.
+// - stroke is the color of the shaft and heads and is required.
 // - strokeWidth is the thickness of the shaft in project pixels.
-// - arrowHeadSize is the horizontal extent of the arrowhead in project
-//   pixels; it is clamped at render time to no more than min(width,
-//   height).
+// - arrowHeadSize is the head extent in project pixels and is clamped at
+//   render time to no more than half the layer width.
 
 export const ArrowLayerSchema = LayerBaseSchema.extend({
   type: z.literal('arrow'),

@@ -25,8 +25,9 @@ export function validateScenesAgainstSource(
   );
   const issues: TimelineIssue[] = [];
 
-  for (const scene of scenes) {
-    if (!startFrames.has(scene.startFrame)) {
+  for (const [index, scene] of scenes.entries()) {
+    const startsAtAudioOrigin = index === 0 && scene.startFrame === 0;
+    if (!startsAtAudioOrigin && !startFrames.has(scene.startFrame)) {
       issues.push({
         severity: "error",
         message:

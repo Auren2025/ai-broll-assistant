@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AtomicLayerSchema } from "./atomicLayerSchema";
 import { GroupLayerSchema } from "./groupLayerSchema";
+import { isLineDrawDirectionValid, isLineDrawEligible } from "./lineDraw";
 
 // Scene timeline rules:
 // - startFrame is the scene's starting frame on the full project timeline.
@@ -61,6 +62,22 @@ export const SceneSchema = z
 
       layer.animations.forEach((animation, animationIndex) => {
         const endFrame = animation.startFrame + animation.durationInFrames;
+
+        if (animation.preset === "line-draw") {
+          if (!isLineDrawEligible(layer)) {
+            context.addIssue({
+              code: "custom",
+              message: `Layer "${layer.id}" requires an effective shape stroke for Line Draw.`,
+              path: [...path, "animations", animationIndex, "preset"],
+            });
+          } else if (!isLineDrawDirectionValid(layer, animation.direction)) {
+            context.addIssue({
+              code: "custom",
+              message: `Layer "${layer.id}" has an invalid Line Draw direction.`,
+              path: [...path, "animations", animationIndex, "direction"],
+            });
+          }
+        }
 
         if (endFrame > scene.durationInFrames) {
           context.addIssue({

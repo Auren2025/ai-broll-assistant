@@ -101,6 +101,35 @@ export function updateLayerById(
   });
 }
 
+export function insertLayerIntoGroup(
+  scene: Scene,
+  groupId: string,
+  layer: AtomicLayer,
+): Scene | null {
+  const group = scene.layers.find(
+    (candidate): candidate is GroupLayer =>
+      candidate.id === groupId && candidate.type === "group",
+  );
+  if (!group || group.locked) return null;
+
+  const child: AtomicLayer = {
+    ...layer,
+    x: round((group.width - layer.width) / 2),
+    y: round((group.height - layer.height) / 2),
+    zIndex: Math.max(-1, ...group.children.map((candidate) => candidate.zIndex)) + 1,
+    animations: [],
+  } as AtomicLayer;
+
+  return {
+    ...scene,
+    layers: scene.layers.map((candidate) =>
+      candidate.id === groupId
+        ? { ...group, children: [...group.children, child] }
+        : candidate,
+    ),
+  };
+}
+
 export function makeGroup(
   scene: Scene,
   selectedLayerIds: readonly string[],
@@ -210,6 +239,195 @@ export function transformGroupChildToScene(
   };
 }
 
+function transformChildGeometryToScene(
+  group: GroupLayer,
+  child: AtomicLayer,
+): AtomicLayer {
+  const radians = (group.rotation * Math.PI) / 180;
+  const localCenterX = child.x + child.width / 2 - group.width / 2;
+  const localCenterY = child.y + child.height / 2 - group.height / 2;
+  const worldCenterX =
+    group.x +
+    group.width / 2 +
+    localCenterX * Math.cos(radians) -
+    localCenterY * Math.sin(radians);
+  const worldCenterY =
+    group.y +
+    group.height / 2 +
+    localCenterX * Math.sin(radians) +
+    localCenterY * Math.cos(radians);
+
+  return {
+    ...child,
+    x: round(worldCenterX - child.width / 2),
+    y: round(worldCenterY - child.height / 2),
+    rotation: round(child.rotation + group.rotation),
+  };
+}
+
+function transformSceneLayerToGroup(
+  group: GroupLayer,
+  layer: AtomicLayer,
+): AtomicLayer {
+  const radians = (-group.rotation * Math.PI) / 180;
+  const worldCenterX = layer.x + layer.width / 2;
+  const worldCenterY = layer.y + layer.height / 2;
+  const offsetX = worldCenterX - (group.x + group.width / 2);
+  const offsetY = worldCenterY - (group.y + group.height / 2);
+  const localCenterX =
+    offsetX * Math.cos(radians) - offsetY * Math.sin(radians) + group.width / 2;
+  const localCenterY =
+    offsetX * Math.sin(radians) + offsetY * Math.cos(radians) + group.height / 2;
+
+  return {
+    ...layer,
+    x: round(localCenterX - layer.width / 2),
+    y: round(localCenterY - layer.height / 2),
+    rotation: round(layer.rotation - group.rotation),
+  };
+}
+
+function normalizeFrontToBack<T extends Layer>(layers: readonly T[]): T[] {
+  return layers
+    .map((layer, index) => ({
+      ...layer,
+      zIndex: layers.length - index - 1,
+    }))
+    .reverse() as T[];
+}
+
+export interface LayerDropDestination {
+  parentGroupId: string | null;
+  beforeLayerId: string | null;
+}
+
+export function moveLayerTo(
+  scene: Scene,
+  layerId: string,
+  destination: LayerDropDestination,
+): Scene | null {
+  const sourceParent = scene.layers.find(
+    (candidate): candidate is GroupLayer =>
+      candidate.type === "group" &&
+      candidate.children.some((child) => child.id === layerId),
+  ) ?? null;
+  const source = sourceParent
+    ? sourceParent.children.find((child) => child.id === layerId) ?? null
+    : scene.layers.find((layer) => layer.id === layerId) ?? null;
+  if (!source || source.locked || sourceParent?.locked) return null;
+
+  const destinationParent = destination.parentGroupId
+    ? scene.layers.find(
+        (candidate): candidate is GroupLayer =>
+          candidate.id === destination.parentGroupId && candidate.type === "group",
+      ) ?? null
+    : null;
+  if (destination.parentGroupId && (!destinationParent || destinationParent.locked)) {
+    return null;
+  }
+  if (source.type === "group" && destinationParent) return null;
+
+  const sourceParentId = sourceParent?.id ?? null;
+  if (sourceParentId === destination.parentGroupId) {
+    const siblings = sourceParent
+      ? sourceParent.children
+      : scene.layers;
+    const frontToBack = [...siblings]
+      .sort((first, second) => second.zIndex - first.zIndex)
+      .filter((candidate) => candidate.id !== layerId);
+    const insertionIndex = destination.beforeLayerId
+      ? frontToBack.findIndex((candidate) => candidate.id === destination.beforeLayerId)
+      : frontToBack.length;
+    if (insertionIndex < 0) return null;
+    frontToBack.splice(insertionIndex, 0, source);
+
+    if (sourceParent) {
+      const children = normalizeFrontToBack(frontToBack as AtomicLayer[]);
+      return {
+        ...scene,
+        layers: scene.layers.map((layer) =>
+          layer.id === sourceParent.id ? { ...layer, children } : layer,
+        ),
+      };
+    }
+    return { ...scene, layers: normalizeFrontToBack(frontToBack) };
+  }
+
+  if (destination.beforeLayerId === layerId) return scene;
+
+  const worldLayer = sourceParent
+    ? transformChildGeometryToScene(sourceParent, source as AtomicLayer)
+    : source;
+  const movedLayer: Layer = destinationParent
+    ? transformSceneLayerToGroup(destinationParent, worldLayer as AtomicLayer)
+    : worldLayer;
+  const animationlessLayer = { ...movedLayer, animations: [] } as Layer;
+  let effectiveBeforeLayerId = destination.beforeLayerId;
+  if (
+    !destinationParent &&
+    sourceParent?.children.length === 1 &&
+    effectiveBeforeLayerId === sourceParent.id
+  ) {
+    const originalFrontToBack = [...scene.layers].sort(
+      (first, second) => second.zIndex - first.zIndex,
+    );
+    const sourceGroupIndex = originalFrontToBack.findIndex(
+      (layer) => layer.id === sourceParent.id,
+    );
+    effectiveBeforeLayerId = originalFrontToBack[sourceGroupIndex + 1]?.id ?? null;
+  }
+
+  let rootLayers = scene.layers
+    .filter((layer) => layer.id !== layerId)
+    .map((layer) => {
+      if (layer.type !== "group" || layer.id !== sourceParent?.id) return layer;
+      const children = layer.children.filter((child) => child.id !== layerId);
+      return children.length > 0 ? { ...layer, children } : null;
+    })
+    .filter((layer): layer is Layer => layer !== null);
+
+  if (destinationParent) {
+    const targetGroup = rootLayers.find(
+      (layer): layer is GroupLayer =>
+        layer.id === destinationParent.id && layer.type === "group",
+    );
+    if (!targetGroup || animationlessLayer.type === "group") return null;
+    const frontToBack = [...targetGroup.children]
+      .sort((first, second) => second.zIndex - first.zIndex)
+      .filter((child) => child.id !== layerId);
+    const insertionIndex = effectiveBeforeLayerId
+      ? frontToBack.findIndex((child) => child.id === effectiveBeforeLayerId)
+      : frontToBack.length;
+    if (insertionIndex < 0) return null;
+    frontToBack.splice(insertionIndex, 0, animationlessLayer as AtomicLayer);
+    const children = normalizeFrontToBack(frontToBack);
+    rootLayers = rootLayers.map((layer) =>
+      layer.id === targetGroup.id ? { ...targetGroup, children } : layer,
+    );
+  } else {
+    const frontToBack = [...rootLayers].sort(
+      (first, second) => second.zIndex - first.zIndex,
+    );
+    const insertionIndex = effectiveBeforeLayerId
+      ? frontToBack.findIndex((layer) => layer.id === effectiveBeforeLayerId)
+      : frontToBack.length;
+    if (insertionIndex < 0) return null;
+    frontToBack.splice(insertionIndex, 0, animationlessLayer);
+    rootLayers = normalizeFrontToBack(frontToBack);
+  }
+
+  return {
+    ...scene,
+    layers: destinationParent
+      ? normalizeFrontToBack(
+          [...rootLayers].sort(
+            (first, second) => second.zIndex - first.zIndex,
+          ),
+        )
+      : rootLayers,
+  };
+}
+
 // Flattening (ungroup / group-collapse during delete) is "lossless" under these
 // conditions, because nothing beyond the 3-decimal rounding of `round` can change:
 //   - The group carries no animations (group.animations.length === 0), unless the
@@ -250,7 +468,10 @@ export function ungroupLayer(
 
   const children = [...group.children]
     .sort((a, b) => a.zIndex - b.zIndex)
-    .map((child) => transformGroupChildToScene(group, child));
+    .map((child) => ({
+      ...transformGroupChildToScene(group, child),
+      animations: [],
+    } as AtomicLayer));
   ordered.splice(groupIndex, 1, ...children);
 
   return {
@@ -275,10 +496,8 @@ export function deleteLayers(
     }
 
     const children = layer.children.filter((child) => !selectedIds.has(child.id));
-    if (children.length >= 2) {
+    if (children.length >= 1) {
       next.push({ ...layer, children });
-    } else if (children.length === 1) {
-      next.push(transformGroupChildToScene(layer, children[0]));
     }
   }
 
@@ -387,7 +606,10 @@ function cloneLayer<T extends Layer>(
   newIdFor: (original: Layer) => string,
 ): T {
   if (layer.type === "group") {
-    const children = layer.children.map((child) => cloneLayer(child, newIdFor));
+    const children = layer.children.map((child) => ({
+      ...cloneLayer(child, newIdFor),
+      animations: [],
+    } as AtomicLayer));
     return { ...layer, id: newIdFor(layer), children } as T;
   }
   return { ...layer, id: newIdFor(layer) } as T;
@@ -429,7 +651,10 @@ export function duplicateSelectedLayers(
       for (const child of ordered) {
         result.push(child);
         if (selectedIds.has(child.id)) {
-          result.push(cloneLayer(child, newIdFor));
+          result.push({
+            ...cloneLayer(child, newIdFor),
+            animations: [],
+          } as AtomicLayer);
         }
       }
 

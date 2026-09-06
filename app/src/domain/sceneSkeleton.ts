@@ -31,11 +31,11 @@ export function groupCues(
 }
 
 /**
- * Builds a contiguous, non-overlapping scene skeleton from subtitle cues.
- * Each scene's startFrame is an absolute audio anchor (its first cue's start,
- * except scene-001 which always starts at 0). Each scene's duration spans until
- * the next scene's anchor, absorbing trailing silence; the last scene ends at the
- * final cue's end, so the total timeline equals the SRT duration.
+ * Legacy deterministic helper retained for focused grouping tests. It builds
+ * contiguous pause-based scenes, forces scene-001 to frame 0, absorbs silence,
+ * and derives topics from cue text. This is not the canonical semantic planning
+ * workflow. The `npm run skeleton` CLI uses `groupCues()` only and prints
+ * non-mutating candidates for human/Agent review.
  */
 export function buildSceneSkeleton(
   cues: readonly SubtitleCue[],

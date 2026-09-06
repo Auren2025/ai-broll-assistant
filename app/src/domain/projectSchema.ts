@@ -23,7 +23,10 @@ export const ProjectSchema = z
     fps: z.number().int().positive(),
     audioFile: z
       .string()
-      .regex(/^audio\/[A-Za-z0-9_.-]+$/, "Audio file must match audio/<name>")
+      .regex(
+        /^(?:audio\/)?[A-Za-z0-9_.-]+$/,
+        "Audio file must be a project-root filename or legacy audio/<name>",
+      )
       .nullable()
       .optional(),
     scenes: z.array(SceneReferenceSchema).min(1, "Project must contain at least one scene"),

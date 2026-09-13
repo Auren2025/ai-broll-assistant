@@ -1,72 +1,47 @@
 ---
 name: project-memory
-description: Review and persist AI-Broll discussion memory only after user confirmation. Use when the user asks to remember, runs memory-review, finishes a substantial project discussion, resumes a saved project, or decides whether an idea belongs to one work, product evolution, or AGENTS.md.
+description: 提取、确认并保存创作项目的讨论记忆。用于用户要求记住结论、恢复已有作品、完成重要讨论，或判断内容应写入作品记忆、产品演进还是 AGENTS.md 时。
 ---
 
-# Project Memory
+# 项目讨论记忆
 
-Use this skill to preserve useful discussion context without turning every conversation into a permanent rule.
+本 Skill 保存以后仍有价值的讨论结论，不保存聊天记录，也不替代作品数据和源码。
 
-## Storage
+## 保存位置
 
-- `app/projects/<projectId>/MEMORY.md`: decisions, feedback, unresolved questions, follow-up work, and rejected approaches that apply only to one creative project.
-- `docs/EVOLUTION.md`: candidate improvements, current methods, experiments, outcomes, and superseded approaches that apply across projects.
-- `AGENTS.md`: only the small set of long-term foundational facts explicitly confirmed by the user. Never promote an item here merely because it worked once or appears repeatedly.
+- `app/projects/<project-id>/MEMORY.md`：只影响一个作品的决定、反馈和待办。
+- `docs/BROLL_VISUAL_STYLE.md`：用户确认可跨 B-roll 作品复用的视觉方法。
+- `docs/PRESENTATION_VISUAL_STYLE.md`：用户确认可跨演示作品复用的视觉方法。
+- `docs/EVOLUTION.md`：跨作品的产品、流程和实现改进，以及实验结果。
+- `AGENTS.md`：用户明确确认长期有效的少量根本事实。
 
-Memory files provide discussion context. They do not replace source inputs, Project / Scene data, application code, or current implementation documentation.
+## 读取规则
 
-## Reading Memory
+- 继续具体作品前，按需读取该项目已有的 `MEMORY.md`。
+- 讨论工具级改进时，读取 `docs/EVOLUTION.md` 的相关部分。
+- 新结论与旧记录冲突时，先请用户确认，不自行选择。
 
-- When resuming a named creative project, read its `MEMORY.md` if it exists. Do not load memories from unrelated projects.
-- When discussing or implementing a tool-wide improvement, read the relevant sections of `docs/EVOLUTION.md`.
-- Treat newer confirmed entries that explicitly supersede older entries as current. If two entries conflict without a clear replacement, ask the user rather than choosing silently.
+## 写入前确认
 
-## Review Before Writing
+重要讨论结束后，只提出可能影响未来工作的候选条目。每项说明建议文字和目标文件，并使用以下类别：
 
-At the end of a substantial discussion, or when explicitly requested, extract only information likely to matter in a later session. Present a concise numbered list using these labels:
+- 当前作品决定
+- 当前作品反馈
+- 当前作品待办
+- 跨作品改进候选
+- 实验结果
+- 候选长期偏好
+- 根本事实候选
 
-- `当前作品决定`
-- `当前作品反馈`
-- `当前作品待办`
-- `跨作品改进候选`
-- `实验结果`
-- `候选长期偏好`
-- `根本事实候选`
+用户确认具体条目前不得写入。不要保存秘密、完整聊天、临时调试信息、可直接从当前文件读出的事实，或未经确认的推断偏好。
 
-For every item, state the proposed wording and destination file. Do not write anything until the user confirms the exact items. The user may approve, edit, reject, narrow, or promote each item independently.
+## 写入规则
 
-Do not propose storing:
+- 条目使用 `YYYY-MM-DD` 日期，保持简短并能脱离原对话理解。
+- 更新已有结论，不堆叠互相冲突的记录；必要时标明被替代关系。
+- 不把详细分镜、图层和当前场景状态复制进记忆文件。
+- 具体作品的视觉决定写入该项目记忆；只有明确可复用的视觉方法才写入对应 Style 文档。
+- 新建项目 `MEMORY.md` 时只保留需要的章节：目标与输入、已确认决定、反馈与观察、待办、已否决或被替代。
+- 修改 `AGENTS.md` 必须获得用户对根本事实的明确确认。
 
-- complete chat transcripts or routine progress narration;
-- secrets, credentials, personal sensitive data, or machine-specific transient state;
-- temporary debugging details with no expected future value;
-- facts already obvious from current source files;
-- inferred preferences presented as confirmed decisions.
-
-## Writing Confirmed Memory
-
-Create `app/projects/<projectId>/MEMORY.md` only after at least one project-specific item is confirmed. Use this structure and omit empty sections when practical:
-
-```md
-# Project Memory
-
-## Goal And Inputs
-
-## Confirmed Decisions
-
-## Feedback And Observations
-
-## Open Questions And Follow-up
-
-## Rejected Or Superseded
-```
-
-- Keep entries short, dated with `YYYY-MM-DD`, and understandable without the original conversation.
-- Record scope and rationale when they affect later interpretation.
-- Update or move an existing entry instead of adding a contradictory duplicate.
-- Mark an old decision as superseded rather than silently deleting useful history.
-- Do not copy a detailed storyboard, layer list, or current scene state into memory; those belong in the actual project data.
-- For `docs/EVOLUTION.md`, place the confirmed item in the matching existing section and remove the `目前没有记录。` placeholder when adding the first item.
-- Change `AGENTS.md` only when the user explicitly confirms that an item is a foundational long-term fact.
-
-After writing, report exactly which files changed and summarize the stored entries.
+写入后报告修改了哪些文件以及保存了哪些结论。

@@ -2,7 +2,7 @@
 
 本文保存跨作品的改进想法、实验结果和已确认的非根本工作方法。它不是固定产品规格，也不替代 `AGENTS.md`、应用源码或具体作品数据。
 
-写入任何条目前，先按照 `project-memory` Skill 向用户展示候选记忆并获得确认。只影响一个作品的内容应写入该作品的 `app/projects/<projectId>/MEMORY.md`，不要写在这里。
+写入任何条目前，先按照 `project-memory` Skill 向用户展示候选记忆并获得确认。只影响一个作品的内容应写入该作品的 `app/projects/<project-id>/MEMORY.md`，不要写在这里。
 
 ## 候选改进
 

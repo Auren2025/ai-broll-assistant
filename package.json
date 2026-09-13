@@ -1,8 +1,22 @@
 {
-  "name": "ai-broll-launcher",
+  "name": "ai-broll-assistant-workspace",
   "private": true,
   "packageManager": "pnpm@12.0.0",
   "scripts": {
-    "dev": "pnpm --dir app run dev"
+    "dev": "pnpm --dir app run dev",
+    "dev:editor": "pnpm --dir app run dev:editor",
+    "build": "pnpm --dir app run build",
+    "lint": "pnpm --dir app run lint",
+    "test": "pnpm --dir app run test",
+    "dev:server": "pnpm --dir app run dev:server",
+    "studio": "pnpm --dir app run studio",
+    "render:project": "pnpm --dir app run render:project",
+    "export:html": "pnpm --dir app run export:html",
+    "parse:srt": "pnpm --dir app run parse:srt",
+    "migrate:animations": "pnpm --dir app run migrate:animations",
+    "scaffold": "pnpm --dir app run scaffold",
+    "skeleton": "pnpm --dir app run skeleton",
+    "validate:srt": "pnpm --dir app run validate:srt",
+    "validate:project": "pnpm --dir app run validate:project"
   }
 }

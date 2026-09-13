@@ -1,10 +1,10 @@
 # 演讲演示视觉观察
 
-本文用于记录从实际演讲演示和用户反馈中逐步形成的视觉观察、候选偏好与参考方法。
+本文用于记录从横版 1920 × 1080 或竖版 1080 × 1920 的实际演讲演示和用户反馈中逐步形成的视觉观察、候选偏好与参考方法。
 
 当前尚未形成需要长期遵循的演示视觉方法。不要预先套用 B-roll 的构图、动画或节奏，也不要把一次演示采用的方案自动推广到后续作品。
 
-本文不保存具体演示方案，也不替代实际作品数据。根本事实以 [AGENTS.md](../AGENTS.md) 为准；讨论中形成的新偏好先按 [project-memory Skill](../.agents/skills/project-memory/SKILL.md) 提请确认，确认后再写入本文。
+本文不保存具体演示方案，也不替代实际作品数据。根本事实以 [AGENTS.md](../AGENTS.md) 为准，制作步骤见[演讲演示 Skill](../.agents/skills/presentation-production/SKILL.md)；讨论中形成的新偏好先按 [project-memory Skill](../.agents/skills/project-memory/SKILL.md) 提请确认，确认后再写入本文。
 
 ## 当前观察
 

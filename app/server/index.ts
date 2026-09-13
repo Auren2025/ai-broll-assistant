@@ -634,6 +634,8 @@ function audioMimeFromExtension(ext: string): string {
       return 'audio/wav'
     case 'm4a':
       return 'audio/mp4'
+    case 'mp4':
+      return 'audio/mp4'
     case 'aac':
       return 'audio/aac'
     case 'ogg':

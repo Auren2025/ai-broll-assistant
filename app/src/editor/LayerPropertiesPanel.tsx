@@ -12,6 +12,21 @@ import {
 import { BufferedNumberInput } from "./BufferedNumberInput";
 import type { EditableLayerPatch } from "./layerEditing";
 
+const FONT_OPTIONS: { label: string; options: string[] }[] = [
+  {
+    label: "English Sans-serif",
+    options: ["Inter", "Helvetica", "Arial"],
+  },
+  {
+    label: "Code",
+    options: ["MonaspaceNeonNF-Regular", "MonaspaceRadonNF-Regular"],
+  },
+  {
+    label: "中文",
+    options: ["YouSheBiaoTiYuan", "YouSheBiaoTiHei", "PingFang SC"],
+  },
+];
+
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
   onPatch: (patch: EditableLayerPatch) => void;
@@ -282,7 +297,7 @@ function ShapeTextControls({
     <section className="layer-design-section layer-text-section">
       <h4>Shape Text</h4>
       <label className="layer-design-row"><span>Content</span><textarea aria-label="Shape text content" value={value.text} onChange={(event) => patch({ text: event.currentTarget.value })} /></label>
-      <label className="layer-design-row"><span>Font Family</span><select aria-label="Shape text font family" value={value.fontFamily} onChange={(event) => patch({ fontFamily: event.currentTarget.value })}><option>Arial</option><option>Inter</option><option>Montserrat</option><option>Helvetica</option><option>Georgia</option><option>Courier New</option></select></label>
+      <label className="layer-design-row"><span>Font Family</span><select aria-label="Shape text font family" value={value.fontFamily} onChange={(event) => patch({ fontFamily: event.currentTarget.value })}>{FONT_OPTIONS.map((group) => (<optgroup key={group.label} label={group.label}>{group.options.map((f) => <option key={f} value={f}>{f}</option>)}</optgroup>))}</select></label>
       <label className="layer-design-row"><span>Style</span><select aria-label="Shape text style" value={`${value.fontStyle}-${value.fontWeight}`} onChange={(event) => { const [fontStyle, weight] = event.currentTarget.value.split("-"); patch({ fontStyle: fontStyle as ShapeText["fontStyle"], fontWeight: Number(weight) }); }}><option value="normal-400">Regular 400</option><option value="italic-400">Italic 400</option><option value="normal-500">Medium 500</option><option value="normal-600">Semi Bold 600</option><option value="normal-700">Bold 700</option><option value="normal-800">Extra Bold 800</option></select></label>
       <div className="layer-design-row"><span>Size</span><div className="layer-full-input"><BufferedNumberInput min="1" aria-label="Shape text font size" value={value.fontSize} onValueChange={(fontSize) => patch({ fontSize: Math.max(1, fontSize) })} /></div></div>
       <div className="layer-design-row"><span>Text align</span><SegmentedControl value={value.textAlign} label="Shape text align" options={[{ value: "left", label: "Left aligned", icon: "≡" }, { value: "center", label: "Center aligned", icon: "≡" }, { value: "right", label: "Right aligned", icon: "≡" }]} onChange={(textAlign) => patch({ textAlign })} /></div>
@@ -429,7 +444,7 @@ export function LayerPropertiesPanel({
       {isText ? (
         <section className="layer-design-section layer-text-section">
           <h4>Text</h4>
-          <label className="layer-design-row"><span>Font Family</span><select aria-label="Font family" value={layer.fontFamily} onChange={(event) => onPatch({ fontFamily: event.currentTarget.value })}><option>Arial</option><option>Inter</option><option>Montserrat</option><option>Helvetica</option><option>Georgia</option><option>Courier New</option></select></label>
+          <label className="layer-design-row"><span>Font Family</span><select aria-label="Font family" value={layer.fontFamily} onChange={(event) => onPatch({ fontFamily: event.currentTarget.value })}>{FONT_OPTIONS.map((group) => (<optgroup key={group.label} label={group.label}>{group.options.map((f) => <option key={f} value={f}>{f}</option>)}</optgroup>))}</select></label>
           <label className="layer-design-row"><span>Style</span><select aria-label="Font style" value={`${layer.fontStyle}-${layer.fontWeight}`} onChange={(event) => { const [fontStyle, weight] = event.currentTarget.value.split("-"); onPatch({ fontStyle: fontStyle as TextLayer["fontStyle"], fontWeight: Number(weight) }); }}><option value="normal-400">Regular 400</option><option value="italic-400">Italic 400</option><option value="normal-500">Medium 500</option><option value="normal-600">Semi Bold 600</option><option value="normal-700">Bold 700</option><option value="normal-800">Extra Bold 800</option></select></label>
           <div className="layer-design-row"><span>Size</span><div className="layer-full-input"><BufferedNumberInput min="1" aria-label="Font size" value={layer.fontSize} onValueChange={(value) => onPatch({ fontSize: Math.max(1, value) })} /></div></div>
           <div className="layer-design-row"><span>Text align</span><SegmentedControl value={layer.textAlign} label="Text align" options={[{ value: "left", label: "Left aligned", icon: "≡" }, { value: "center", label: "Center aligned", icon: "≡" }, { value: "right", label: "Right aligned", icon: "≡" }]} onChange={(textAlign) => onPatch({ textAlign })} /></div>

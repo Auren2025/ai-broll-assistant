@@ -7,6 +7,8 @@ description: Turn approved AI-Broll scene JSON into polished schema-valid layers
 
 Use this skill for `approved scene JSON -> visual layers and animations`. Scene selection and timing are inputs, not decisions to redo here.
 
+This is the current default production method, not a fixed visual or technical specification. A user-requested experiment may depart from these defaults when its scope is clear and existing work is protected. After evaluation, use `project-memory` to propose any reusable lesson; do not infer a permanent preference from one accepted scene.
+
 The workspace root contains the agent configuration. Treat `app/` as the application root: paths such as `projects/` and `src/` are relative to `app/`, and all pnpm scripts run with `app/` as the working directory.
 
 ## Persistent Data Boundary
@@ -17,11 +19,11 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
 
 ## Workflow
 
-1. **Inspect before writing.** Read `AGENTS.md`, `VISUAL_STYLE.md`, current schemas under `src/domain/`, `project.json`, all requested scene files, the corresponding SRT cues, and available `assets/`. Use the reference guidance in `VISUAL_STYLE.md` to inspect a relevant existing example and its actual media when available; do not copy its whole scene, old copy, timing, or asset paths. Read the preceding scene when continuity matters, without modifying it. Confirm the editor is closed before batch writes. For an existing scene, preserve valid manual layout, IDs, styles, animation choices, and unrelated layers.
+1. **Inspect before writing.** Read `AGENTS.md`, `docs/BROLL_VISUAL_STYLE.md`, current schemas under `src/domain/`, `project.json`, all requested scene files, the corresponding SRT cues, and available `assets/`. Use the reference guidance in `docs/BROLL_VISUAL_STYLE.md` to inspect a relevant existing example and its actual media when available; do not copy its whole scene, old copy, timing, or asset paths. Read the preceding scene when continuity matters, without modifying it. Confirm the editor is closed before batch writes. For an existing scene, preserve valid manual layout, IDs, styles, animation choices, and unrelated layers.
 
-2. **Confirm the target.** Operate only on approved empty scenes or scene IDs explicitly named by the user. If timing, scene purpose, or boundaries are ambiguous, stop and route the task back to `broll-scene-planner`; do not silently reinterpret the scene plan.
+2. **Confirm the target.** Operate on scenes in the user-authorized complete first draft, an explicitly requested range, or explicitly named scene IDs. Batch-first authorization does not mean final visual approval; it authorizes creating a concrete draft for review. If timing, scene purpose, or boundaries remain materially ambiguous after complete-source planning, route the task back to `broll-scene-planner`; do not silently reinterpret existing manual work.
 
-3. **Choose the simplest sufficient expression.** Translate the approved visual proposition using the semantic choices in `VISUAL_STYLE.md`: product identity, structured text, screenshot explanation, or a relationship/state diagram. A list or comparison can itself be the primary composition; do not force an extra hero image, arrow, title, or conclusion. Use real Images or placeholders where identity or evidence depends on actual media, not for every named product or abstract concept. Before creating layers, determine:
+3. **Choose the simplest sufficient expression.** Translate the approved visual proposition using the semantic choices in `docs/BROLL_VISUAL_STYLE.md`: product identity, structured text, screenshot explanation, or a relationship/state diagram. A list or comparison can itself be the primary composition; do not force an extra hero image, arrow, title, or conclusion. Use real Images or placeholders where identity or evidence depends on actual media, not for every named product or abstract concept. Before creating layers, determine:
    - what the viewer must recognize or understand, and the first visual focus;
    - the minimum content and grouping needed, with a clear reading order;
    - the opening state, each approved information change, what existing content holds/moves/dims/replaces, and the completed state;
@@ -34,9 +36,9 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
    - Keep the primary message readable at preview size and avoid overly long on-screen copy. A short conclusion may be a large visual object instead of a routine top-centered title.
    - Maintain clear contrast between text and its immediate background while preserving transparent output outside designed elements.
    - Avoid unintended overlaps, clipped content, off-canvas layers, and crowded edge placement.
-   - Establish hierarchy through position, size, spacing, and grouping before adding bold weight or color. Apply the typography, container, and color preferences in `VISUAL_STYLE.md`; a semantic outline container is valid, but repeated decorative packaging is not.
+   - Establish hierarchy through position, size, spacing, and grouping before adding bold weight or color. Apply the typography, container, and color observations in `docs/BROLL_VISUAL_STYLE.md`; a semantic outline container is valid, but repeated decorative packaging is not.
    - Remove redundant titles, labels already present in media, unnecessary arrows, and repeated bottom conclusions. Do not compensate for a weak composition with more decoration.
-   - For continuity, match the preceding scene's actual completed appearance where useful, including completed animation transforms; adjust only the current approved scene. Do not introduce cross-scene private state, retime anchors, or make an HTML page depend on having watched the preceding page.
+   - For continuity, match the preceding scene's actual completed appearance where useful, including completed animation transforms; adjust only scenes within the authorized batch or feedback scope. Do not introduce cross-scene private state, retime anchors, or make an HTML page depend on having watched the preceding page.
    - Create a group only when at least two children should transform together; an existing group may retain one child after deletion or removal, and an empty group must be removed. Children use group-local coordinates and groups may not nest.
 
 5. **Use the draft-first asset workflow.** Image layers with loaded media may reference only confirmed files already under the target project's `assets/`. Never invent a filename, use an absolute path, or auto-download an asset unless the user separately authorizes an asset-search or download task.
@@ -77,7 +79,7 @@ The workspace root contains the agent configuration. Treat `app/` as the applica
    ```
    Fix schema, missing-asset, overlap, ordering, and animation-window errors before reporting completion. Transparent timeline gaps are valid.
 
-10. **Perform visual self-review before user approval.** After data validation, use an accessible editor/Remotion preview to inspect the opening, before and after each key reveal, intermediate motion, the completed frame, and relevant adjacent-scene transitions. Inspect at ordinary reduced preview size and play the sequence, with narration when available. Check focus, readable text and screenshot regions, spacing, motion settling, unintended overlaps, and the alignment of highlights and asset notes. Compare with the applicable reference method in `VISUAL_STYLE.md`, not its exact layout.
+10. **Perform visual self-review before user approval.** After data validation, use an accessible editor/Remotion preview to inspect the opening, before and after each key reveal, intermediate motion, the completed frame, and relevant adjacent-scene transitions. Inspect at ordinary reduced preview size and play the sequence, with narration when available. Check focus, readable text and screenshot regions, spacing, motion settling, unintended overlaps, and the alignment of highlights and asset notes. Compare with the applicable reference method in `docs/BROLL_VISUAL_STYLE.md`, not its exact layout.
     - Fix issues within the approved scope before asking the user to judge the result. Close the editor before further batch JSON writes, revalidate, then preview again. Do not modify data through browser/editor memory or revise unrelated scenes.
     - Report data validation and visual review separately: state what was actually previewed, any remaining concerns, draft/final state, and missing assets. If no preview is accessible, explicitly report visual review as incomplete and ask for user inspection or screenshots; never claim visual success from JSON alone.
     - User approval remains required. Review failures do not authorize replanning or retiming; route those changes to the planner for approval. Render video or export HTML only when explicitly requested; preview inspection is not permission for either.

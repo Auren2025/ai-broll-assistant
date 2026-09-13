@@ -32,6 +32,7 @@ async function main(): Promise<void> {
       DEFAULT_PROJECT_ID,
       resolve(rendersDir, `${projectId}.mov`),
       ...ALPHA_PRORES_RENDER_ARGS,
+      "--port=3003",
       `--props=${JSON.stringify(buildFinalRenderProps(projectId))}`,
     ],
     { stdio: "inherit" },

@@ -14,6 +14,7 @@ test("final render policy preserves alpha ProRes 4444 and excludes preview media
     "--pixel-format=yuva444p10le",
     "--codec=prores",
     "--prores-profile=4444",
+    "--muted",
   ]);
   assert.deepEqual(FINAL_RENDER_PROPS, {
     includeAudio: false,

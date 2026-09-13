@@ -3,6 +3,7 @@ export const ALPHA_PRORES_RENDER_ARGS = [
   "--pixel-format=yuva444p10le",
   "--codec=prores",
   "--prores-profile=4444",
+  "--muted",
 ] as const;
 
 export const FINAL_RENDER_PROPS = {

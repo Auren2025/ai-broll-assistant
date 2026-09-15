@@ -70,7 +70,7 @@ app/projects/<project-id>/
 - 创建 `text`、`image`、`rectangle`、`circle`、`triangle`、`arrow` 和非嵌套 `group` 图层。
 - 移动、缩放、旋转、多选、对齐、贴靠、分布、调整层级、复制和组合图层。
 - 编辑文字、形状、图片适配、箭头样式，以及 Build In、Action、Build Out 动画。
-- 在 Fabric 编辑和 Remotion 预览之间切换；配置音频时可同步播放口播。
+- 在 Fabric 编辑和 Remotion 预览之间切换；配置音频时可同步播放口播；支持的浏览器会将独立预览显示为置顶画中画窗口，其他浏览器回退为普通弹窗。
 - 修改后约 600 ms 自动保存，并通过 ETag 检测外部修改冲突。
 - 撤销与重做保留最近 100 个内存快照；切换场景或接受外部更新时清空历史。
 

@@ -11,17 +11,23 @@ interface ViewportSize {
   height: number;
 }
 
-function getViewportSize(): ViewportSize {
+interface PreviewWindowProps {
+  hostWindow?: Window;
+}
+
+function getViewportSize(hostWindow: Window): ViewportSize {
   return {
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: hostWindow.innerWidth,
+    height: hostWindow.innerHeight,
   };
 }
 
-export function PreviewWindow() {
+export function PreviewWindow({ hostWindow = window }: PreviewWindowProps) {
   const [previewState, setPreviewState] =
     useState<PreviewStateMessage | null>(null);
-  const [viewportSize, setViewportSize] = useState(getViewportSize);
+  const [viewportSize, setViewportSize] = useState(() =>
+    getViewportSize(hostWindow),
+  );
 
   useEffect(() => {
     const channel = new BroadcastChannel(PREVIEW_CHANNEL_NAME);
@@ -41,15 +47,15 @@ export function PreviewWindow() {
 
   useEffect(() => {
     const handleResize = (): void => {
-      setViewportSize(getViewportSize());
+      setViewportSize(getViewportSize(hostWindow));
     };
 
-    window.addEventListener("resize", handleResize);
+    hostWindow.addEventListener("resize", handleResize);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      hostWindow.removeEventListener("resize", handleResize);
     };
-  }, []);
+  }, [hostWindow]);
 
   if (!previewState) {
     return (

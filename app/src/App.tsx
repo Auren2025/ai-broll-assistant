@@ -8,6 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createRoot } from "react-dom/client";
 import type { PlayerRef } from "@remotion/player";
 import "./App.css";
 import {
@@ -50,6 +51,7 @@ import {
   type PreviewStateMessage,
   type PreviewSyncMessage,
 } from "./preview/previewChannel";
+import { PreviewWindow } from "./preview/PreviewWindow";
 import { computeTextBoxSize } from "./editor/textMetrics";
 import { resolveProjectId } from "./projectSelection";
 
@@ -79,6 +81,43 @@ const EXTERNAL_REFRESH_INTERVAL_MS = 3000;
 
 type InspectorTab = "design" | "animate";
 type InspectorScope = "scene" | "layer";
+
+interface DocumentPictureInPictureApi {
+  readonly window: Window | null;
+  requestWindow(options?: { width?: number; height?: number }): Promise<Window>;
+}
+
+function getDocumentPictureInPicture():
+  | DocumentPictureInPictureApi
+  | undefined {
+  return (
+    window as Window & {
+      documentPictureInPicture?: DocumentPictureInPictureApi;
+    }
+  ).documentPictureInPicture;
+}
+
+function copyStyleSheets(targetDocument: Document): void {
+  for (const styleSheet of document.styleSheets) {
+    try {
+      const style = targetDocument.createElement("style");
+      style.textContent = Array.from(styleSheet.cssRules, (rule) => rule.cssText).join(
+        "\n",
+      );
+      targetDocument.head.append(style);
+    } catch {
+      if (!styleSheet.href) {
+        continue;
+      }
+
+      const link = targetDocument.createElement("link");
+      link.rel = "stylesheet";
+      link.href = styleSheet.href;
+      link.media = styleSheet.media.mediaText;
+      targetDocument.head.append(link);
+    }
+  }
+}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -1441,14 +1480,52 @@ function App() {
       return;
     }
 
-    const previewWindow = window.open(
-      "/preview",
-      "ai-broll-preview",
-      "popup=yes,width=960,height=600,resizable=yes",
-    );
+    const openPopup = (): void => {
+      const previewWindow = window.open(
+        "/preview",
+        "ai-broll-preview",
+        "popup=yes,width=960,height=600,resizable=yes",
+      );
 
-    previewWindowRef.current = previewWindow;
-    previewWindow?.focus();
+      previewWindowRef.current = previewWindow;
+      previewWindow?.focus();
+    };
+
+    const documentPictureInPicture = getDocumentPictureInPicture();
+
+    if (!documentPictureInPicture) {
+      openPopup();
+      return;
+    }
+
+    void documentPictureInPicture
+      .requestWindow({ width: 960, height: 600 })
+      .then((previewWindow) => {
+        previewWindowRef.current = previewWindow;
+        previewWindow.document.title = "AI-Broll Preview";
+        copyStyleSheets(previewWindow.document);
+
+        const rootElement = previewWindow.document.createElement("div");
+        rootElement.id = "root";
+        previewWindow.document.body.style.margin = "0";
+        previewWindow.document.body.append(rootElement);
+
+        const previewRoot = createRoot(rootElement);
+        previewRoot.render(<PreviewWindow hostWindow={previewWindow} />);
+
+        previewWindow.addEventListener(
+          "pagehide",
+          () => {
+            if (previewWindowRef.current === previewWindow) {
+              previewWindowRef.current = null;
+            }
+            previewRoot.unmount();
+          },
+          { once: true },
+        );
+        previewWindow.focus();
+      })
+      .catch(openPopup);
   }, []);
 
   const isPreviewModeRef = useRef(false);

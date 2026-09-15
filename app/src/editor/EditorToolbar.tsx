@@ -152,8 +152,8 @@ export function EditorToolbar({
         <button
           className="editor-tool editor-tool-icon"
           type="button"
-          title="Open preview in a separate window"
-          aria-label="Open preview in a separate window"
+          title="Open always-on-top preview window"
+          aria-label="Open always-on-top preview window"
           onClick={onOpenPreviewWindow}
         >
           <span className="tool-symbol">↗</span>

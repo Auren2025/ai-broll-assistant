@@ -56,6 +56,14 @@ import { computeTextBoxSize } from "./textMetrics";
 
 registerFabricObjectClasses();
 
+/**
+ * Pointer travel (CSS px) within a single press that counts as a drag. A
+ * press that moves less than this is a click. Used to tell a true
+ * double-click apart from drag-then-click: browsers fire `dblclick` for
+ * both, but a drag-then-click must not enter group drill-in.
+ */
+const DRAG_VS_CLICK_PX = 5;
+
 /** Union of the visible children's canvas-plane bounding boxes. */
 interface DrillContentBox {
   left: number;
@@ -177,6 +185,14 @@ export function FabricSceneCanvas({
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   const hoveredObjectRef = useRef<FabricObject | null>(null);
+  // Distinguish a true double-click from drag-then-click: browsers fire
+  // `dblclick` for both, but only the former may enter group drill-in.
+  // pointerDownPosRef records where the current press started; each
+  // pointer-up records whether that press was a drag (moved beyond a few
+  // px). At `dblclick` time the second-to-last entry is the first click of
+  // the pair.
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const recentPointerUpsRef = useRef<{ dragged: boolean }[]>([]);
   // Shift-drag axis lock: the dragged's center when Shift is first detected
   // mid-drag, and the locked axis + the pin position of the locked-out
   // axis once the initial direction is clear.
@@ -965,15 +981,38 @@ export function FabricSceneCanvas({
         hasControls: false,
       });
     });
-    canvas.on("mouse:up", () => {
+    canvas.on("mouse:up", (event) => {
       lockedAxisRef.current = null;
       lockOriginRef.current = null;
+      // Record whether this press was a drag: a drag-then-click still fires
+      // `dblclick` in the browser, but must not enter group drill-in.
+      const pointerEvent = event.e as MouseEvent | undefined;
+      const downPos = pointerDownPosRef.current;
+      const dragged =
+        pointerEvent != null && downPos != null
+          ? Math.hypot(
+              pointerEvent.clientX - downPos.x,
+              pointerEvent.clientY - downPos.y,
+            ) > DRAG_VS_CLICK_PX
+          : false;
+      const ups = recentPointerUpsRef.current;
+      ups.push({ dragged });
+      if (ups.length > 2) ups.shift();
+      pointerDownPosRef.current = null;
       // Safety net: any child gesture that didn't end in object:modified
       // (e.g. a click without a drag) leaves the drill frame visible.
       if (drillGroupIdRef.current) {
         syncDrillBoundary(canvas);
       }
     });
+    // A drag-then-click still fires `dblclick` in the browser. At dblclick
+    // time the second-to-last pointer-up is the first click of the pair: if
+    // that press was a drag, this is not a true double-click and must not
+    // enter group drill-in.
+    const isDragThenClickDblClick = (): boolean => {
+      const ups = recentPointerUpsRef.current;
+      return ups.length >= 2 && ups[ups.length - 2]?.dragged === true;
+    };
     canvas.on("mouse:dblclick", (event) => {
       // Double-click an image toggles its crop mode (frame stays fixed,
       // the image inside can be panned/zoomed). This runs before group
@@ -1028,7 +1067,9 @@ export function FabricSceneCanvas({
       ) {
         // Drill-in: the group frame stays on the canvas as a boundary
         // overlay while its children become directly editable. Nothing is
-        // selected on entry; the overlay marks the drill scope.
+        // selected on entry; the overlay marks the drill scope. A
+        // drag-then-click is not a true double-click: don't drill in.
+        if (isDragThenClickDblClick()) return;
         groupEditEnterRef.current?.(selectedLayer.id);
         onSelectedLayerIdsChange([]);
         canvas.requestRenderAll();
@@ -1064,6 +1105,8 @@ export function FabricSceneCanvas({
         // Already drilling this group: double-clicking its empty area is a
         // no-op (the drill frame already marks the drill scope).
         if (drillGroupIdRef.current === child.id) return;
+        // A drag-then-click is not a true double-click: don't drill in.
+        if (isDragThenClickDblClick()) return;
         canvas.setActiveObject(mappedObject);
         onSelectedLayerIdsChange([child.id]);
         groupEditEnterRef.current?.(child.id);
@@ -1165,6 +1208,10 @@ export function FabricSceneCanvas({
         );
         return;
       }
+      pointerDownPosRef.current = {
+        x: pointerEvent.clientX,
+        y: pointerEvent.clientY,
+      };
       // Crop gestures take over for the cropping image: drag the zoom
       // handle to zoom, drag the (dimmed) image to pan. The frame itself
       // is locked.

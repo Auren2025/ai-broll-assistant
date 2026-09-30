@@ -1859,9 +1859,10 @@ button {
   padding: 0 8px;
 }
 
-/* Unified inspector slider: thin track with purple fill, white thumb.
-   Fill amount comes from the inline --slider-fill variable (0-100%). */
-.inspector-panel input[type="range"] {
+/* Unified inspector slider: slim track with light-purple fill, small solid
+   purple thumb. Fill amount comes from the inline --slider-fill variable
+   (0-100%). */
+.inspector-scroll input[type="range"] {
   --slider-fill: 50%;
   -webkit-appearance: none;
   appearance: none;
@@ -1872,45 +1873,45 @@ button {
   cursor: pointer;
 }
 
-.inspector-panel input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
+.inspector-scroll input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
   background: linear-gradient(
     to right,
-    #6857e5 var(--slider-fill),
+    #b5a9f2 var(--slider-fill),
     #e2e0e8 var(--slider-fill)
   );
 }
 
-.inspector-panel input[type="range"]::-webkit-slider-thumb {
+.inspector-scroll input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
   border-radius: 50%;
-  background: #fff;
-  border: 2px solid #6857e5;
+  background: #6857e5;
+  border: none;
 }
 
-.inspector-panel input[type="range"]::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
+.inspector-scroll input[type="range"]::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
   background: #e2e0e8;
 }
 
-.inspector-panel input[type="range"]::-moz-range-progress {
-  height: 4px;
-  border-radius: 2px;
-  background: #6857e5;
+.inspector-scroll input[type="range"]::-moz-range-progress {
+  height: 2px;
+  border-radius: 1px;
+  background: #b5a9f2;
 }
 
-.inspector-panel input[type="range"]::-moz-range-thumb {
+.inspector-scroll input[type="range"]::-moz-range-thumb {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #fff;
-  border: 2px solid #6857e5;
+  background: #6857e5;
+  border: none;
 }
 
 .inspector-panel textarea {

@@ -94,10 +94,6 @@ export function ScenePropertiesPanel({
 
   return (
     <section className="scene-design-panel" aria-label="Scene properties">
-      <header className="scene-design-header">
-        <span className="scene-design-icon" aria-hidden="true" />
-        <h3>{scene.name}</h3>
-      </header>
 
       <section className="scene-design-section scene-project-section">
         <h4>Project</h4>

@@ -1037,43 +1037,6 @@ button {
   background: #fff;
 }
 
-.scene-design-header {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  height: 53px;
-  box-sizing: border-box;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--divider);
-}
-
-.scene-design-header h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.scene-design-icon {
-  position: relative;
-  width: 14px;
-  height: 11px;
-  border: 1px solid #29282d;
-}
-
-.scene-design-icon::after {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  width: 0;
-  height: 0;
-  border-top: 2.5px solid transparent;
-  border-bottom: 2.5px solid transparent;
-  border-left: 4px solid #29282d;
-  content: "";
-}
-
 .scene-design-section {
   padding: 12px 0;
   border-bottom: 1px solid var(--divider);

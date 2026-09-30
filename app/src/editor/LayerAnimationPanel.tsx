@@ -281,7 +281,12 @@ export function LayerAnimationPanel({
               <div className="animation-time-input">
                 <BufferedNumberInput
                   aria-label="Animation duration in seconds"
-                  min={1 / fps}
+                  // NOTE: min must stay a multiple of the step (0 here).
+                  // The native number spinner anchors its step grid at min,
+                  // so min={1/fps} would make clicks land on 0.933/0.833
+                  // instead of 0.9/0.8. The real floor (1 frame) is enforced
+                  // in onValueChange below.
+                  min={0}
                   max={
                     (sceneDurationInFrames - selectedAnimation.startFrame) / fps
                   }

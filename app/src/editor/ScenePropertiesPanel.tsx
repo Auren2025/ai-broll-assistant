@@ -229,7 +229,12 @@ export function ScenePropertiesPanel({
         <h4>Duration</h4>
         <div className="scene-duration-control">
           <BufferedNumberInput
-            min={maximumAnimationEnd / project.fps}
+            // NOTE: min must stay a multiple of the step (0 here): the native
+            // spinner anchors its step grid at min, so a fractional min would
+            // make clicks land off the 0.1s grid (e.g. 0.933). The real floor
+            // (cannot shrink past the last animation) is enforced in
+            // onValueChange below.
+            min={0}
             max={
               Number.isFinite(maximumDurationInFrames)
                 ? maximumDurationInFrames / project.fps
@@ -287,7 +292,11 @@ export function ScenePropertiesPanel({
           {scene.exitTransition ? (
             <>
               <BufferedNumberInput
-                min={1 / project.fps}
+                // NOTE: min must stay a multiple of the step (0 here): the
+                // native spinner anchors its step grid at min, so min={1/fps}
+                // would make clicks land on 0.933/0.833 instead of 0.9/0.8.
+                // The real floor (1 frame) is enforced in onValueChange below.
+                min={0}
                 max={scene.durationInFrames / project.fps}
                 step={TIME_STEP_SECONDS}
                 aria-label="Exit transition duration in seconds"

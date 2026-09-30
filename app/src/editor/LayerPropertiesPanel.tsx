@@ -129,24 +129,18 @@ function LayerSizeControls({
   );
 }
 
-function LayerStackIcon({ highlight, arrow }: { highlight: "top" | "middle" | "bottom"; arrow?: "up" | "down" }) {
-  const layers = [
-    { cy: 9, key: "top" },
-    { cy: 13.5, key: "middle" },
-    { cy: 18, key: "bottom" },
-  ];
+function LayerStackIcon({ count, highlight }: { count: 2 | 3; highlight: number }) {
+  const centers = count === 3 ? [8.5, 13.5, 18.5] : [11, 16];
   return (
     <svg viewBox="0 0 24 30" width="20" height="25" aria-hidden="true">
-      {arrow === "up" ? <path d="M12 1.5l3.2 3.8H8.8z" fill="currentColor" /> : null}
-      {layers.map((layer) => (
+      {centers.map((cy, index) => (
         <path
-          key={layer.key}
-          d={`M12 ${layer.cy - 3.5}l7.5 3.5-7.5 3.5-7.5-3.5z`}
+          key={cy}
+          d={`M12 ${cy - 3.5}l7.5 3.5-7.5 3.5-7.5-3.5z`}
           fill="currentColor"
-          opacity={layer.key === highlight ? 1 : 0.28}
+          opacity={index === highlight ? 1 : 0.28}
         />
       ))}
-      {arrow === "down" ? <path d="M12 28.5l-3.2-3.8h6.4z" fill="currentColor" /> : null}
     </svg>
   );
 }
@@ -158,15 +152,15 @@ const ARRANGE_GROUPS: {
   {
     groupLabel: "Back / Front",
     buttons: [
-      { action: "back", label: "Back", title: "Send to back", icon: <LayerStackIcon highlight="bottom" /> },
-      { action: "front", label: "Front", title: "Bring to front", icon: <LayerStackIcon highlight="top" /> },
+      { action: "back", label: "Back", title: "Send to back", icon: <LayerStackIcon count={3} highlight={2} /> },
+      { action: "front", label: "Front", title: "Bring to front", icon: <LayerStackIcon count={3} highlight={0} /> },
     ],
   },
   {
     groupLabel: "Backward / Forward",
     buttons: [
-      { action: "backward", label: "Backward", title: "Send backward", icon: <LayerStackIcon highlight="middle" arrow="down" /> },
-      { action: "forward", label: "Forward", title: "Bring forward", icon: <LayerStackIcon highlight="middle" arrow="up" /> },
+      { action: "backward", label: "Backward", title: "Send backward", icon: <LayerStackIcon count={2} highlight={1} /> },
+      { action: "forward", label: "Forward", title: "Bring forward", icon: <LayerStackIcon count={2} highlight={0} /> },
     ],
   },
 ];

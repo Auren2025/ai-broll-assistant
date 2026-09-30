@@ -1162,7 +1162,7 @@ async function handleSplitScene(
 
   const secondScene: SceneType = structuredClone(sourceScene)
   secondScene.id = nextId
-  secondScene.topic = `${sourceScene.topic} (part 2)`
+  secondScene.name = `${sourceScene.name} (part 2)`
   secondScene.durationInFrames = secondDuration
   reassignSplitLayerIds(secondScene.layers)
   removedAnimationCount += pruneAnimationsForSplit(

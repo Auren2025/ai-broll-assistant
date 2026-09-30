@@ -486,7 +486,7 @@ test("split scene divides durations, inserts the new scene, and prunes animation
 
   const secondScene = parseScene(body.secondScene);
   assert.equal(secondScene.id, "scene-003");
-  assert.equal(secondScene.topic, "First scene (part 2)");
+  assert.equal(secondScene.name, "First scene (part 2)");
   assert.equal(secondScene.durationInFrames, 15);
   assert.deepEqual(
     secondScene.layers.map((layer) => layer.id),
@@ -553,7 +553,7 @@ test("split scene works for slide projects without timeline anchors", async (t) 
   const slideScene = parseScene({
     schemaVersion: 2,
     id: "scene-001",
-    topic: "Slide page",
+    name: "Slide page",
     durationInFrames: 30,
     layers: [textLayer("text-1", 0, [enterAnimation("a1", 5, 10)])],
   });

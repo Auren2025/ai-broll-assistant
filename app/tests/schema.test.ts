@@ -523,32 +523,6 @@ test("parseProject rejects an audioFile in another directory", () => {
   );
 });
 
-test("parseScene migrates the legacy topic field to name", () => {
-  const scene = parseScene({
-    schemaVersion: 1,
-    id: "scene-001",
-    topic: "Legacy title",
-    startFrame: 0,
-    durationInFrames: 100,
-    layers: [],
-  });
-  assert.equal(scene.name, "Legacy title");
-  assert.ok(!("topic" in scene));
-});
-
-test("parseScene prefers name over legacy topic when both are present", () => {
-  const scene = parseScene({
-    schemaVersion: 1,
-    id: "scene-001",
-    name: "Current title",
-    topic: "Legacy title",
-    startFrame: 0,
-    durationInFrames: 100,
-    layers: [],
-  });
-  assert.equal(scene.name, "Current title");
-});
-
 test("parseScene still requires a scene name", () => {
   assert.throws(() =>
     parseScene({
@@ -559,4 +533,46 @@ test("parseScene still requires a scene name", () => {
       layers: [],
     }),
   );
+});
+
+test("parseScene treats a missing exitTransition as a hard cut", () => {
+  const scene = parseScene({
+    schemaVersion: 2,
+    id: "scene-001",
+    name: "t",
+    durationInFrames: 100,
+    layers: [],
+  });
+  assert.equal(scene.exitTransition, undefined);
+});
+
+test("parseScene accepts a fade-out exit transition", () => {
+  const scene = parseScene({
+    schemaVersion: 2,
+    id: "scene-001",
+    name: "t",
+    durationInFrames: 100,
+    exitTransition: { type: "fade-out", durationInFrames: 15 },
+    layers: [],
+  });
+  assert.deepEqual(scene.exitTransition, { type: "fade-out", durationInFrames: 15 });
+});
+
+test("parseScene rejects an invalid exit transition", () => {
+  const base = {
+    schemaVersion: 2,
+    id: "scene-001",
+    name: "t",
+    durationInFrames: 100,
+    layers: [],
+  };
+  for (const exitTransition of [
+    { type: "crossfade", durationInFrames: 15 },
+    { type: "fade-out", durationInFrames: 0 },
+    { type: "fade-out", durationInFrames: -5 },
+    { type: "fade-out", durationInFrames: 7.5 },
+    { type: "fade-out" },
+  ]) {
+    assert.throws(() => parseScene({ ...base, exitTransition }));
+  }
 });

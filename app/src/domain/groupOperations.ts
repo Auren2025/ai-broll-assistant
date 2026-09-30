@@ -243,6 +243,20 @@ function rotatedChildBounds(child: AtomicLayer): {
  * re-basing by the unrotated top-left still keeps the (rotation-pivot)
  * center stationary, so it needs no change.
  */
+
+/**
+ * Layer patch keys that change a child's occupied bounds and therefore
+ * require the parent group's frame to be re-hugged. Rotation changes a
+ * child's axis-aligned bounds, so it counts as geometry — an inspector
+ * angle edit must re-fit the group exactly like a canvas rotate handle.
+ */
+export function patchKeysAffectGroupGeometry(keys: readonly string[]): boolean {
+  return keys.some((key) =>
+    key === "x" || key === "y" || key === "width" || key === "height" ||
+    key === "rotation"
+  );
+}
+
 export function hugGroupToChildren(group: GroupLayer): GroupLayer {
   const children = group.children;
   if (children.length === 0) return group;

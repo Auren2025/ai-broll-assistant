@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { findLayerById, hugGroupToChildren, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
+import { findLayerById, hugGroupToChildren, patchKeysAffectGroupGeometry, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
 import { isLineDrawEligible } from "../domain/lineDraw";
 import type { Layer, Scene } from "../domain/sceneSchema";
@@ -79,10 +79,7 @@ export function useLayerEdits(
         : merged;
     });
     if (changed) {
-      const touchesGeometry = patchKeys.some((key) =>
-        key === "x" || key === "y" || key === "width" || key === "height"
-      );
-      const finalLayers = parentGroup && touchesGeometry
+      const finalLayers = parentGroup && patchKeysAffectGroupGeometry(patchKeys)
         ? hugGroupInLayers(layers, parentGroup.id)
         : layers;
       handleSceneChange({ ...scene, layers: finalLayers });

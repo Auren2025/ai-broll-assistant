@@ -10,6 +10,7 @@ import {
   insertLayerIntoGroup,
   makeGroup,
   moveLayerTo,
+  patchKeysAffectGroupGeometry,
   reorderSelectedLayersZIndex,
   ungroupLayer,
 } from "../src/domain/groupOperations";
@@ -639,6 +640,46 @@ test("hugGroupToChildren accounts for child rotation in the union", () => {
   assert.ok(Math.abs(after[0]!.x - before[0]!.x) < 0.01);
   assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
   parseScene(sceneWith(next));
+});
+
+test("hugGroupToChildren accounts for a non-right-angle child rotation", () => {
+  const group = groupFixture(
+    { x: 0, y: 0, width: 400, height: 400, rotation: 0 },
+    [{ id: "rectangle-1", x: 100, y: 100, width: 100, height: 50 }],
+  );
+  // Rotate the child 45 degrees: its axis-aligned bounds grow beyond the
+  // unrotated 100x50 box around the same center (150, 125).
+  const rotated = {
+    ...group,
+    children: [{ ...group.children[0]!, rotation: 45 }],
+  } as GroupLayer;
+  const before = sceneCenters(rotated);
+  const next = hugGroupToChildren(rotated);
+  // 100x50 at 45°: bounds are ~106.07 x 106.07 around (150, 125), so the
+  // frame must cover roughly x in [97, 203], y in [72, 178].
+  assert.ok(Math.abs(next.width - 106) <= 1);
+  assert.ok(Math.abs(next.height - 106) <= 1);
+  assert.ok(next.x <= 97 && next.x + next.width >= 203);
+  assert.ok(next.y <= 72 && next.y + next.height >= 178);
+  assert.equal(next.children[0]?.rotation, 45);
+  // The child's scene-space center (its rotation pivot) is unchanged.
+  const after = sceneCenters(next);
+  assert.ok(Math.abs(after[0]!.x - before[0]!.x) < 0.01);
+  assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
+  parseScene(sceneWith(next));
+});
+
+test("patchKeysAffectGroupGeometry treats rotation as geometry", () => {
+  // An inspector angle edit must re-fit the parent group, exactly like a
+  // canvas rotate handle does.
+  assert.equal(patchKeysAffectGroupGeometry(["rotation"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["x"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["y"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["width"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["height"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["opacity"]), false);
+  assert.equal(patchKeysAffectGroupGeometry(["name"]), false);
+  assert.equal(patchKeysAffectGroupGeometry([]), false);
 });
 
 test("hugGroupToChildren is a no-op for an already hugging group", () => {

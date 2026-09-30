@@ -64,48 +64,6 @@ registerFabricObjectClasses();
  */
 const DRAG_VS_CLICK_PX = 5;
 
-/** Union of the visible children's canvas-plane bounding boxes. */
-interface DrillContentBox {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-/**
- * Compute the axis-aligned union of a drilled group's visible children in
- * canvas coordinates. Uses each child's bounding rect (which includes the
- * group's own transform, so rotated groups and rotated children are measured
- * exactly). This is what the drill frame hugs, so the frame follows children
- * as they are moved / scaled / rotated (Keynote).
- */
-function getDrillContentBox(
-  groupObject: FabricGroup,
-): DrillContentBox | null {
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  let found = false;
-  for (const child of groupObject.getObjects()) {
-    if (!child.visible) continue;
-    // setCoords refreshes the cached corners from the live props. During an
-    // active drag/scale/rotate fabric only refreshes them on finalize, so a
-    // stale cache would freeze the frame mid-gesture.
-    child.setCoords();
-    const rect = child.getBoundingRect();
-    if (rect.left < minX) minX = rect.left;
-    if (rect.top < minY) minY = rect.top;
-    const right = rect.left + rect.width;
-    const bottom = rect.top + rect.height;
-    if (right > maxX) maxX = right;
-    if (bottom > maxY) maxY = bottom;
-    found = true;
-  }
-  if (!found) return null;
-  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
-}
-
 interface FabricSceneCanvasProps {
   scene: Scene;
   projectId: string;
@@ -468,23 +426,18 @@ export function FabricSceneCanvas({
       clearFrame();
       return;
     }
-    const box = getDrillContentBox(groupObject);
-    if (!box) {
-      clearFrame();
-      return;
-    }
-    // Small padding so the frame never sits exactly on content edges.
-    const pad = 3;
-    const left = box.left - pad;
-    const top = box.top - pad;
-    const width = box.width + pad * 2;
-    const height = box.height + pad * 2;
-
+    // The drill frame traces the group's own frame exactly — the same
+    // boundary the blue selection shows, in white without handles. Using the
+    // group frame (not a recomputed children union) keeps the drill frame,
+    // the selection frame, and the schema frame in agreement for rotated
+    // groups and hidden children alike: no extra padding, no
+    // visibility filtering, rotation included.
+    groupObject.setCoords();
     let frame = drillFrameRef.current;
     if (!frame) {
       frame = new Rect({
-        originX: "left",
-        originY: "top",
+        originX: "center",
+        originY: "center",
         fill: "rgba(0,0,0,0)",
         // Plain white border (Keynote): marks the drill scope, distinct
         // from the purple selection border. No handles — the frame is not
@@ -499,7 +452,18 @@ export function FabricSceneCanvas({
       canvas.add(frame);
       drillFrameRef.current = frame;
     }
-    frame.set({ left, top, width, height, visible: true });
+    frame.set({
+      left: groupObject.left,
+      top: groupObject.top,
+      width: groupObject.width,
+      height: groupObject.height,
+      scaleX: groupObject.scaleX,
+      scaleY: groupObject.scaleY,
+      angle: groupObject.angle,
+      flipX: groupObject.flipX,
+      flipY: groupObject.flipY,
+      visible: true,
+    });
     frame.setCoords();
     canvas.bringObjectToFront(frame);
     canvas.requestRenderAll();
@@ -963,14 +927,21 @@ export function FabricSceneCanvas({
     });
     canvas.on("after:render", ({ ctx }) => {
       const hoveredObject = hoveredObjectRef.current;
+      // During drill-in, hovering a child resolves to the drilled group;
+      // never paint a hover border for the group being drilled.
+      const hoveredLayerId = hoveredObject
+        ? objectToLayerId.get(hoveredObject)
+        : undefined;
       if (
         !hoveredObject ||
         !hoveredObject.visible ||
         !canvas.getObjects().includes(hoveredObject) ||
         // Never outline an object the layer map no longer knows: a stale
         // reference must not paint a ghost border.
-        !objectToLayerId.has(hoveredObject) ||
-        canvas.getActiveObjects().includes(hoveredObject)
+        hoveredLayerId === undefined ||
+        canvas.getActiveObjects().includes(hoveredObject) ||
+        (drillGroupIdRef.current !== null &&
+          hoveredLayerId === drillGroupIdRef.current)
       ) {
         return;
       }

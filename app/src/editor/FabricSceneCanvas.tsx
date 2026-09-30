@@ -976,13 +976,18 @@ export function FabricSceneCanvas({
         syncDrillBoundary(canvas);
       }
     });
-    // A drag-then-click still fires `dblclick` in the browser. At dblclick
-    // time the second-to-last pointer-up is the first click of the pair: if
-    // that press was a drag, this is not a true double-click and must not
-    // enter group drill-in.
+    // A drag-then-click (or click-then-drag) still fires `dblclick` in the
+    // browser: Chrome synthesizes a click on mouseup when the press started
+    // and ended on the same element, even after movement — e.g. a macOS
+    // three-finger drag ending near its start point pairs with the earlier
+    // tap's click. At dblclick time the last two pointer-ups are the pair:
+    // if either press was a drag, this is not a true double-click and must
+    // not enter group drill-in.
     const isDragThenClickDblClick = (): boolean => {
       const ups = recentPointerUpsRef.current;
-      return ups.length >= 2 && ups[ups.length - 2]?.dragged === true;
+      if (ups.length < 2) return false;
+      return ups[ups.length - 2]?.dragged === true ||
+        ups[ups.length - 1]?.dragged === true;
     };
     canvas.on("mouse:dblclick", (event) => {
       // Double-click an image toggles its crop mode (frame stays fixed,

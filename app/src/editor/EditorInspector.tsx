@@ -3,6 +3,7 @@ import type { Project } from "../domain/projectSchema";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import { LayerAnimationPanel } from "./LayerAnimationPanel";
 import { LayerPropertiesPanel, MultiLayerPropertiesPanel } from "./LayerPropertiesPanel";
+import { SceneExitTransitionPanel } from "./SceneExitTransitionPanel";
 import { ScenePropertiesPanel } from "./ScenePropertiesPanel";
 import type { InspectorScope } from "./useEditorSelection";
 
@@ -66,6 +67,12 @@ export function EditorInspector({
               onDuplicate={actions.onDuplicate} onReorder={actions.onReorder}
               onDeleteLayer={actions.onDeleteLayer} />
           )
+        ) : selection.scope === "scene" ? (
+          <SceneExitTransitionPanel
+            scene={scene}
+            project={project}
+            onSceneChange={actions.onSceneChange}
+          />
         ) : (
           <LayerAnimationPanel
             layer={selection.layerIds.length === 1 ? selection.layer : null}

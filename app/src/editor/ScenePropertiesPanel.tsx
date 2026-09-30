@@ -4,10 +4,10 @@ import type { Scene, SceneTransition } from "../domain/sceneSchema";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 
 /**
- * Spinner step (seconds) for the scene duration / exit-transition duration
- * number inputs. The underlying model stores whole frames, so typed values
- * still round to the nearest frame; this only controls how far each spinner
- * click moves. 0.1s feels snappier than a single frame (1/30s).
+ * Spinner step (seconds) for the scene duration number input.
+ * The underlying model stores whole frames, so typed values still round to
+ * the nearest frame; this only controls how far each spinner click moves.
+ * 0.1s feels snappier than a single frame (1/30s) for timing tweaks.
  */
 const TIME_STEP_SECONDS = 0.1;
 
@@ -263,69 +263,6 @@ export function ScenePropertiesPanel({
             Cannot extend past the next scene's start frame.
           </p>
         ) : null}
-      </section>
-
-      <section className="scene-design-section scene-exit-transition-section">
-        <h4>Exit transition</h4>
-        <div className="scene-duration-control">
-          <select
-            aria-label="Scene exit transition"
-            value={scene.exitTransition?.type ?? "none"}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              if (value === "none") {
-                onSceneChange({ ...scene, exitTransition: undefined });
-              } else if (value === "fade-out") {
-                onSceneChange({
-                  ...scene,
-                  exitTransition: {
-                    type: "fade-out",
-                    durationInFrames: Math.max(1, Math.round(0.5 * project.fps)),
-                  },
-                });
-              }
-            }}
-          >
-            <option value="none">None</option>
-            <option value="fade-out">Fade out</option>
-          </select>
-          {scene.exitTransition ? (
-            <>
-              <BufferedNumberInput
-                // NOTE: min must stay a multiple of the step (0 here): the
-                // native spinner anchors its step grid at min, so min={1/fps}
-                // would make clicks land on 0.933/0.833 instead of 0.9/0.8.
-                // The real floor (1 frame) is enforced in onValueChange below.
-                min={0}
-                max={scene.durationInFrames / project.fps}
-                step={TIME_STEP_SECONDS}
-                aria-label="Exit transition duration in seconds"
-                value={Number(
-                  (scene.exitTransition.durationInFrames / project.fps).toFixed(3),
-                )}
-                onValueChange={(value) => {
-                  const frames = Math.min(
-                    scene.durationInFrames,
-                    Math.max(1, Math.round(value * project.fps)),
-                  );
-                  if (Number.isFinite(frames) && scene.exitTransition) {
-                    onSceneChange({
-                      ...scene,
-                      exitTransition: {
-                        ...scene.exitTransition,
-                        durationInFrames: frames,
-                      },
-                    });
-                  }
-                }}
-              />
-              <span>s</span>
-            </>
-          ) : null}
-        </div>
-        <p className="layer-group-hint">
-          Plays at the end of this scene, then cuts to the next scene.
-        </p>
       </section>
 
       {project.kind === "slide" ? (

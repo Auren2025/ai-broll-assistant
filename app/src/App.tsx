@@ -331,6 +331,7 @@ function App() {
       },
       onExternalError: (message) => setSceneError(message),
       markCurrentStateSaved,
+      updateDirtyState,
       clearHistory,
       resetSelection: () => {},
     },

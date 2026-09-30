@@ -38,6 +38,8 @@ export interface SaveControllerSetters {
   onExternalError: (message: string) => void;
   /** Mark the current change versions as acknowledged by the disk. */
   markCurrentStateSaved: () => void;
+  /** Recompute the dirty flag from the version counters (call after a save). */
+  updateDirtyState: () => void;
   /** Clear undo/redo stacks when the disk replaces the in-memory document. */
   clearHistory: () => void;
   /** Reset selection/animation inspector that depend on the prior scene set. */
@@ -121,6 +123,11 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
             force,
           );
           settersRef.current.setHasSaveConflict(false);
+          // The save succeeded: sync the dirty flag from the version
+          // counters. Without this the UI stays on "Waiting to save…"
+          // forever even though everything is on disk. Recomputing (rather
+          // than blindly clearing) keeps edits made during the save dirty.
+          settersRef.current.updateDirtyState();
         } catch (error: unknown) {
           settersRef.current.setSaveError(error instanceof Error ? error.message : "Unknown error");
           settersRef.current.setHasSaveConflict(error instanceof ExternalChangeConflictError);

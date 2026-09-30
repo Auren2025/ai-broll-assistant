@@ -881,7 +881,7 @@ async function handlePostScene(
   const newScene: SceneType = {
     schemaVersion: project.schemaVersion,
     id: nextId,
-    name: `Untitled scene ${nextNumber}`,
+    name: `Scene ${nextNumber}`,
     durationInFrames: NEW_SCENE_DURATION_IN_FRAMES,
     layers: [],
   }

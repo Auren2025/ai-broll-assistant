@@ -51,7 +51,7 @@ async function scaffold(projectId: string, category: ProjectCategory): Promise<v
   const scene = parseScene({
     schemaVersion: 2,
     id: "scene-001",
-    name: "Untitled scene 1",
+    name: "Scene 1",
     durationInFrames: 150,
     layers: [],
   });

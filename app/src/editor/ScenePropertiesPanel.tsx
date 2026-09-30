@@ -272,6 +272,65 @@ export function ScenePropertiesPanel({
           </p>
         ) : null}
       </section>
+
+      <section className="scene-design-section scene-exit-transition-section">
+        <h4>Exit transition</h4>
+        <div className="scene-duration-control">
+          <select
+            aria-label="Scene exit transition"
+            value={scene.exitTransition?.type ?? "none"}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value === "none") {
+                onSceneChange({ ...scene, exitTransition: undefined });
+              } else if (value === "fade-out") {
+                onSceneChange({
+                  ...scene,
+                  exitTransition: {
+                    type: "fade-out",
+                    durationInFrames: Math.max(1, Math.round(0.5 * project.fps)),
+                  },
+                });
+              }
+            }}
+          >
+            <option value="none">None</option>
+            <option value="fade-out">Fade out</option>
+          </select>
+          {scene.exitTransition ? (
+            <>
+              <BufferedNumberInput
+                min={1 / project.fps}
+                max={scene.durationInFrames / project.fps}
+                step={1 / project.fps}
+                aria-label="Exit transition duration in seconds"
+                value={Number(
+                  (scene.exitTransition.durationInFrames / project.fps).toFixed(3),
+                )}
+                onValueChange={(value) => {
+                  const frames = Math.min(
+                    scene.durationInFrames,
+                    Math.max(1, Math.round(value * project.fps)),
+                  );
+                  if (Number.isFinite(frames) && scene.exitTransition) {
+                    onSceneChange({
+                      ...scene,
+                      exitTransition: {
+                        ...scene.exitTransition,
+                        durationInFrames: frames,
+                      },
+                    });
+                  }
+                }}
+              />
+              <span>s</span>
+            </>
+          ) : null}
+        </div>
+        <p className="layer-group-hint">
+          Plays at the end of this scene, then cuts to the next scene.
+        </p>
+      </section>
     </section>
   );
 }

@@ -522,3 +522,45 @@ test("parseProject rejects an audioFile in another directory", () => {
     }),
   );
 });
+
+test("parseScene treats a missing exitTransition as a hard cut", () => {
+  const scene = parseScene({
+    schemaVersion: 2,
+    id: "scene-001",
+    topic: "t",
+    durationInFrames: 100,
+    layers: [],
+  });
+  assert.equal(scene.exitTransition, undefined);
+});
+
+test("parseScene accepts a fade-out exit transition", () => {
+  const scene = parseScene({
+    schemaVersion: 2,
+    id: "scene-001",
+    topic: "t",
+    durationInFrames: 100,
+    exitTransition: { type: "fade-out", durationInFrames: 15 },
+    layers: [],
+  });
+  assert.deepEqual(scene.exitTransition, { type: "fade-out", durationInFrames: 15 });
+});
+
+test("parseScene rejects an invalid exit transition", () => {
+  const base = {
+    schemaVersion: 2,
+    id: "scene-001",
+    topic: "t",
+    durationInFrames: 100,
+    layers: [],
+  };
+  for (const exitTransition of [
+    { type: "crossfade", durationInFrames: 15 },
+    { type: "fade-out", durationInFrames: 0 },
+    { type: "fade-out", durationInFrames: -5 },
+    { type: "fade-out", durationInFrames: 7.5 },
+    { type: "fade-out" },
+  ]) {
+    assert.throws(() => parseScene({ ...base, exitTransition }));
+  }
+});

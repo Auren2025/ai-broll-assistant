@@ -22,6 +22,24 @@ export const LayerSchema = z.union([AtomicLayerSchema, GroupLayerSchema]);
 
 export type Layer = z.infer<typeof LayerSchema>;
 
+// Scene exit-transition rules:
+// - exitTransition is optional; absent means a hard cut to the next scene.
+// - When present, the named outro effect plays over the last durationInFrames
+//   frames of this scene. It never overlaps the next scene (no crossfades):
+//   scene entrances are handled by layer animations, this control only
+//   handles the exit. New effect types are added to
+//   SceneExitTransitionTypeSchema; each may use its own duration.
+export const SceneExitTransitionTypeSchema = z.enum(["fade-out"]);
+
+export type SceneExitTransitionType = z.infer<typeof SceneExitTransitionTypeSchema>;
+
+export const SceneExitTransitionSchema = z.object({
+  type: SceneExitTransitionTypeSchema,
+  durationInFrames: z.number().int().min(1),
+});
+
+export type SceneExitTransition = z.infer<typeof SceneExitTransitionSchema>;
+
 export const SceneSchema = z
   .object({
     schemaVersion: z.union([z.literal(1), z.literal(2)]),
@@ -30,6 +48,7 @@ export const SceneSchema = z
     startFrame: z.number().int().nonnegative().optional(),
     durationInFrames: z.number().int().positive(),
     backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+    exitTransition: SceneExitTransitionSchema.optional(),
     layers: z.array(LayerSchema),
   })
   .strict()

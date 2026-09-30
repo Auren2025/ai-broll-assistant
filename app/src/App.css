@@ -1480,6 +1480,8 @@ button {
   flex: 1;
   width: auto;
   margin: 0;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .layer-image-replace {

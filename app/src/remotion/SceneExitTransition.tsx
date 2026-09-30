@@ -18,8 +18,8 @@ interface SceneExitTransitionProps {
  * Fade-out fades the whole scene (all layers together) TO TRANSPARENT, not
  * to black: the pipeline exports with an alpha channel for further editing
  * in DaVinci Resolve, where backgrounds are added uniformly in post. So the
- * scene's own opacity is animated; the editor preview shows a transparency
- * checkerboard behind the player so the fade reads as alpha, not white.
+ * scene's own opacity is animated; the editor preview sits on a black
+ * backdrop so the fade previews naturally against dark video.
  */
 export function SceneExitTransition({ scene, children }: SceneExitTransitionProps) {
   const frame = useCurrentFrame();

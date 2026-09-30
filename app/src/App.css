@@ -571,8 +571,15 @@ button {
   cursor: text;
 }
 
-.scene-rename-input {
+.layer-item-main.is-renaming {
+  display: block;
+  cursor: text;
+}
+
+.tree-rename-input {
+  width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   padding: 4px 6px;
   border: 1px solid #6857e5;
   border-radius: 6px;
@@ -581,7 +588,7 @@ button {
   font-weight: 600;
 }
 
-.scene-rename-input:focus {
+.tree-rename-input:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(101, 86, 216, 0.25);
 }
@@ -1226,10 +1233,9 @@ button {
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  height: 53px;
+  height: 40px;
   box-sizing: border-box;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--divider);
 }
 
 .layer-design-header h3 {
@@ -1240,29 +1246,6 @@ button {
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.layer-design-name-input {
-  min-width: 0;
-  height: 28px;
-  box-sizing: border-box;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  padding: 0 6px;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  font-weight: 600;
-}
-
-.layer-design-name-input:hover {
-  border-color: #d8d5dc;
-}
-
-.layer-design-name-input:focus {
-  border-color: #8b5cf6;
-  outline: none;
-  background: #fff;
 }
 
 .layer-design-type-icon {
@@ -1289,9 +1272,8 @@ button {
 .layer-align-row {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  height: 52px;
   align-items: center;
-  padding: 12px 8px;
+  padding: 8px;
   border-bottom: 1px solid var(--divider);
 }
 
@@ -1441,18 +1423,15 @@ button {
   background: #efedff;
 }
 
-.layer-arrange-groups {
-  display: flex;
-  gap: 8px;
-  padding: 0 16px 4px;
-}
-
 .layer-arrange-segment {
-  flex: 1;
   display: flex;
   padding: 2px;
   border-radius: 10px;
   background: rgb(242 241 243 / 70%);
+}
+
+.layer-arrange-single {
+  margin: 0 16px 4px;
 }
 
 .layer-arrange-segment button {
@@ -1462,7 +1441,7 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 6px 4px 5px;
+  padding: 4px 4px 3px;
   border: 0;
   border-radius: 8px;
   color: #55555c;
@@ -1489,6 +1468,18 @@ button {
   font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.layer-image-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.layer-image-actions .layer-image-replace {
+  flex: 1;
+  width: auto;
+  margin: 0;
 }
 
 .layer-image-replace {
@@ -1521,14 +1512,14 @@ button {
 }
 
 .layer-design-section {
-  padding: 12px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--divider);
 }
 
 .layer-design-section h4,
 .layer-section-title {
   display: flex;
-  height: 36px;
+  height: 28px;
   align-items: center;
   padding: 0 8px 0 16px;
   margin: 0;
@@ -2754,16 +2745,6 @@ button {
 
 .scene-context-menu {
   min-width: 190px;
-}
-
-.layer-image-source {
-  overflow: hidden;
-  max-width: 60%;
-  color: #5b5e67;
-  font-size: 11px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .app-stage {

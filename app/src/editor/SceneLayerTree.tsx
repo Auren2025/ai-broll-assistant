@@ -38,8 +38,9 @@ interface DraggedLayer {
   parentGroupId: string | null;
 }
 
-function SceneNameEditor({ initialName, onCommit, onCancel }: {
+function TreeNameEditor({ initialName, label, onCommit, onCancel }: {
   initialName: string;
+  label: string;
   onCommit: (name: string) => void;
   onCancel: () => void;
 }) {
@@ -59,8 +60,8 @@ function SceneNameEditor({ initialName, onCommit, onCancel }: {
   return (
     <input
       type="text"
-      className="scene-rename-input"
-      aria-label="Scene name"
+      className="tree-rename-input"
+      aria-label={label}
       maxLength={120}
       value={draft}
       autoFocus
@@ -102,7 +103,7 @@ interface SceneLayerTreeProps {
   onSceneMove: (sceneId: string, insertionIndex: number) => void;
   onSceneRename: (sceneId: string, name: string) => void;
   onLayerSelect: (sceneId: string, layerId: string, additive: boolean) => void;
-  onGroupEditEnter: (sceneId: string, groupId: string) => void;
+  onLayerRename: (sceneId: string, layerId: string, name: string) => void;
   onLayerMove: (sceneId: string, request: LayerMoveRequest) => void;
   onLayerStateChange: (
     sceneId: string,
@@ -126,7 +127,7 @@ export function SceneLayerTree({
   onSceneMove,
   onSceneRename,
   onLayerSelect,
-  onGroupEditEnter,
+  onLayerRename,
   onLayerMove,
   onLayerStateChange,
 }: SceneLayerTreeProps) {
@@ -142,6 +143,10 @@ export function SceneLayerTree({
     side: "before" | "after";
   } | null>(null);
   const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null);
+  const [renamingLayer, setRenamingLayer] = useState<{
+    sceneId: string;
+    layerId: string;
+  } | null>(null);
 
   useEffect(() => {
     setExpandedSceneIds((current) =>
@@ -357,23 +362,41 @@ export function SceneLayerTree({
           ) : (
             <span className="layer-toggle-spacer" aria-hidden="true" />
           )}
-          <button
-            className="layer-item-main"
-            type="button"
-            aria-pressed={isSelected}
-            disabled={
-              (!isCurrent && isSceneSwitchDisabled) || effectivelyLocked
-            }
-            onClick={(event) => handleLayerClick(event, sceneId, layer.id)}
-            onDoubleClick={
-              isGroup ? () => onGroupEditEnter(sceneId, layer.id) : undefined
-            }
-          >
-            <span className={`layer-icon layer-icon-${layer.type}`}>
-              {getLayerIcon(layer.type)}
-            </span>
-            <strong className="layer-type-name">{layer.name}</strong>
-          </button>
+          {renamingLayer?.sceneId === sceneId &&
+          renamingLayer?.layerId === layer.id ? (
+            <div className="layer-item-main is-renaming">
+              <TreeNameEditor
+                key={layer.id}
+                initialName={layer.name}
+                label="Layer name"
+                onCommit={(name) => {
+                  setRenamingLayer(null);
+                  onLayerRename(sceneId, layer.id, name);
+                }}
+                onCancel={() => setRenamingLayer(null)}
+              />
+            </div>
+          ) : (
+            <button
+              className="layer-item-main"
+              type="button"
+              aria-pressed={isSelected}
+              title="Double-click to rename"
+              disabled={
+                (!isCurrent && isSceneSwitchDisabled) || effectivelyLocked
+              }
+              onClick={(event) => handleLayerClick(event, sceneId, layer.id)}
+              onDoubleClick={() => {
+                if (!isCurrent || renamingLayer || renamingSceneId) return;
+                setRenamingLayer({ sceneId, layerId: layer.id });
+              }}
+            >
+              <span className={`layer-icon layer-icon-${layer.type}`}>
+                {getLayerIcon(layer.type)}
+              </span>
+              <strong className="layer-type-name">{layer.name}</strong>
+            </button>
+          )}
           <button
             className={`layer-state-button layer-lock-button${layer.locked ? " is-active" : ""}`}
             type="button"
@@ -494,9 +517,10 @@ export function SceneLayerTree({
                 {renamingSceneId === sceneReference.id ? (
                   <div className="scene-tree-main is-renaming">
                     <span className="scene-number">{index + 1}</span>
-                    <SceneNameEditor
+                    <TreeNameEditor
                       key={sceneReference.id}
                       initialName={scene?.name ?? ""}
+                      label="Scene name"
                       onCommit={(name) => {
                         setRenamingSceneId(null);
                         onSceneRename(sceneReference.id, name);

@@ -281,44 +281,32 @@ function LayerStackIcon({ count, highlight }: { count: 2 | 3; highlight: number 
   );
 }
 
-const ARRANGE_GROUPS: {
-  groupLabel: string;
-  buttons: { action: ZOrderAction; label: string; title: string; icon: ReactNode }[];
+const ARRANGE_BUTTONS: {
+  action: ZOrderAction;
+  label: string;
+  title: string;
+  icon: ReactNode;
 }[] = [
-  {
-    groupLabel: "Back / Front",
-    buttons: [
-      { action: "back", label: "Back", title: "Send to back", icon: <LayerStackIcon count={3} highlight={2} /> },
-      { action: "front", label: "Front", title: "Bring to front", icon: <LayerStackIcon count={3} highlight={0} /> },
-    ],
-  },
-  {
-    groupLabel: "Backward / Forward",
-    buttons: [
-      { action: "backward", label: "Backward", title: "Send backward", icon: <LayerStackIcon count={2} highlight={1} /> },
-      { action: "forward", label: "Forward", title: "Bring forward", icon: <LayerStackIcon count={2} highlight={0} /> },
-    ],
-  },
+  { action: "back", label: "Back", title: "Send to back", icon: <LayerStackIcon count={3} highlight={2} /> },
+  { action: "backward", label: "Backward", title: "Send backward", icon: <LayerStackIcon count={2} highlight={1} /> },
+  { action: "forward", label: "Forward", title: "Bring forward", icon: <LayerStackIcon count={2} highlight={0} /> },
+  { action: "front", label: "Front", title: "Bring to front", icon: <LayerStackIcon count={3} highlight={0} /> },
 ];
 
 function ArrangeControls({ onReorder }: { onReorder: (action: ZOrderAction) => void }) {
   return (
-    <div className="layer-arrange-groups" role="group" aria-label="Layer z-order">
-      {ARRANGE_GROUPS.map((group) => (
-        <div key={group.groupLabel} className="layer-arrange-segment" role="group" aria-label={group.groupLabel}>
-          {group.buttons.map((button) => (
-            <button
-              key={button.action}
-              type="button"
-              title={button.title}
-              aria-label={button.title}
-              onClick={() => onReorder(button.action)}
-            >
-              {button.icon}
-              <span>{button.label}</span>
-            </button>
-          ))}
-        </div>
+    <div className="layer-arrange-segment layer-arrange-single" role="group" aria-label="Layer z-order">
+      {ARRANGE_BUTTONS.map((button) => (
+        <button
+          key={button.action}
+          type="button"
+          title={button.title}
+          aria-label={button.title}
+          onClick={() => onReorder(button.action)}
+        >
+          {button.icon}
+          <span>{button.label}</span>
+        </button>
       ))}
     </div>
   );
@@ -575,37 +563,15 @@ function ShapeTextControls({
   );
 }
 
-function LayerNameInput({
-  layer,
-  onPatch,
-}: {
-  layer: Layer;
-  onPatch: (patch: EditableLayerPatch) => void;
-}) {
-  const [input, setInput] = useState(layer.name);
-
-  useEffect(() => {
-    setInput(layer.name);
-  }, [layer.id, layer.name]);
-
-  return (
-    <input
-      className="layer-design-name-input"
-      type="text"
-      aria-label="Layer name"
-      title={`${layer.type} layer`}
-      maxLength={120}
-      value={input}
-      onChange={(event) => {
-        const value = event.currentTarget.value;
-        setInput(value);
-        const name = value.trim();
-        if (name.length > 0) onPatch({ name });
-      }}
-      onBlur={() => setInput(layer.name)}
-    />
-  );
-}
+const LAYER_TYPE_LABELS: Record<Layer["type"], string> = {
+  text: "Text",
+  rectangle: "Rectangle",
+  circle: "Ellipse",
+  triangle: "Triangle",
+  arrow: "Arrow",
+  image: "Image",
+  group: "Group",
+};
 
 export function LayerPropertiesPanel({
   layer,
@@ -638,6 +604,7 @@ export function LayerPropertiesPanel({
   function handleFitFrameToImage() {
     // Contain mode: shrink the frame to the visible image rect, dropping
     // the transparent padding. The frame center stays fixed.
+    if (!layer) return;
     if (!isImage || !imageNaturalSize) return;
     const fitted = fitFrameToImageSize(
       layer.width,
@@ -666,7 +633,7 @@ export function LayerPropertiesPanel({
         <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
           {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "triangle" ? "△" : layer.type === "group" ? "◇" : layer.type === "image" ? "▣" : layer.type === "arrow" ? "→" : "□"}
         </span>
-        <LayerNameInput layer={layer} onPatch={onPatch} />
+        <h3>{LAYER_TYPE_LABELS[layer.type]}</h3>
       </header>
 
       <LayerAlignmentControls selectionCount={1} onAlign={onAlign} />
@@ -692,6 +659,11 @@ export function LayerPropertiesPanel({
             <BufferedNumberInput step="1" aria-label="Layer rotation" value={layer.rotation} onValueChange={(value) => onPatch({ rotation: value })} />
             <span>°</span>
           </div>
+        </div>
+        <div className="layer-toggle-value-row layer-opacity-row">
+          <strong>Opacity</strong>
+          <div className={`layer-single-input layer-wide-input${layer.opacityEnabled ? "" : " is-disabled"}`}><BufferedNumberInput min="0" max="100" aria-label="Layer opacity" disabled={!layer.opacityEnabled} value={Math.round(layer.opacity * 100)} onValueChange={(value) => onPatch({ opacity: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div>
+          <input type="checkbox" aria-label="Enable layer opacity" checked={layer.opacityEnabled} onChange={(event) => onPatch({ opacityEnabled: event.currentTarget.checked })} />
         </div>
       </section>
 
@@ -731,14 +703,6 @@ export function LayerPropertiesPanel({
       {shapeText && (isRectangle || (isCircle && layer.donut === 0 && layer.sweep === 360)) ? (
         <ShapeTextControls value={shapeText} onChange={(nextShapeText) => onPatch({ shapeText: nextShapeText })} />
       ) : null}
-
-      <section className="layer-design-section layer-opacity-section">
-        <div className="layer-toggle-value-row layer-opacity-row">
-          <strong>Opacity</strong>
-          <div className={`layer-single-input layer-wide-input${layer.opacityEnabled ? "" : " is-disabled"}`}><BufferedNumberInput min="0" max="100" aria-label="Layer opacity" disabled={!layer.opacityEnabled} value={Math.round(layer.opacity * 100)} onValueChange={(value) => onPatch({ opacity: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div>
-          <input type="checkbox" aria-label="Enable layer opacity" checked={layer.opacityEnabled} onChange={(event) => onPatch({ opacityEnabled: event.currentTarget.checked })} />
-        </div>
-      </section>
 
       {isRectangle || isTriangle ? (
         <section className="layer-design-section layer-corner-section">
@@ -790,13 +754,15 @@ export function LayerPropertiesPanel({
             />
           ) : null}
           {isCroppingThis ? (
-            <button
-              type="button"
-              className="layer-image-replace"
-              onClick={onImageCropExit}
-            >
-              Done cropping
-            </button>
+            <div className="layer-image-actions">
+              <button
+                type="button"
+                className="layer-image-replace"
+                onClick={onImageCropExit}
+              >
+                Done cropping
+              </button>
+            </div>
           ) : (
             <>
               {layer.fit === "contain" ? (
@@ -810,17 +776,27 @@ export function LayerPropertiesPanel({
                   Fit frame to image
                 </button>
               ) : null}
-              <button
-                type="button"
-                className="layer-image-replace"
-                onClick={() => onImageCropEnter(layer.id)}
-                disabled={layer.src === null || layer.locked || isGroupChild}
-                title={isGroupChild
-                  ? "Ungroup the image first to crop it"
-                  : "Double-click the image on canvas to enter as well"}
-              >
-                Crop image
-              </button>
+              <div className="layer-image-actions">
+                <button
+                  type="button"
+                  className="layer-image-replace"
+                  onClick={() => onImageCropEnter(layer.id)}
+                  disabled={layer.src === null || layer.locked || isGroupChild}
+                  title={isGroupChild
+                    ? "Ungroup the image first to crop it"
+                    : "Double-click the image on canvas to enter as well"}
+                >
+                  Crop image
+                </button>
+                <button
+                  type="button"
+                  className="layer-image-replace"
+                  onClick={onReplaceImage}
+                  title={layer.src ?? undefined}
+                >
+                  {layer.src === null ? "Load image…" : "Replace image…"}
+                </button>
+              </div>
             </>
           )}
           {layer.src === null ? (
@@ -833,14 +809,6 @@ export function LayerPropertiesPanel({
               />
             </div>
           ) : null}
-          <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src ?? "Not loaded"}</strong></div>
-          <button
-            type="button"
-            className="layer-image-replace"
-            onClick={onReplaceImage}
-          >
-            {layer.src === null ? "Load image…" : "Replace image…"}
-          </button>
         </section>
       ) : null}
 

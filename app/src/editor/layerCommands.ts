@@ -5,7 +5,6 @@ import {
   deleteLayers,
   duplicateSelectedLayers,
   findLayerById,
-  getAllLayers,
   insertLayerIntoGroup,
   makeGroup,
   moveLayerTo,
@@ -13,7 +12,7 @@ import {
   ungroupLayer,
   type ZOrderAction,
 } from "../domain/groupOperations";
-import { getNextLayerId, makeLayerIdGenerator } from "../domain/layerIds";
+import { getNextProjectLayerId, makeProjectLayerIdGenerator } from "../domain/layerIds";
 import type { AtomicLayer } from "../domain/atomicLayerSchema";
 import type { Project } from "../domain/projectSchema";
 import type { Layer, Scene } from "../domain/sceneSchema";
@@ -33,6 +32,8 @@ interface LayerSelectionState {
 interface LayerCommandState {
   selection: LayerSelectionState;
   project: Project | null;
+  /** Every loaded scene; new layer ids must be unique project-wide. */
+  allScenes: Scene[];
   isUploadingImage: boolean;
   sceneOperationRunning: boolean;
   isApplyingHistory: boolean;
@@ -288,7 +289,7 @@ function buildShapeLayer(
 
 export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommands {
   const { state, refs, setters, handlers } = options;
-  const { selection, project, isUploadingImage, sceneOperationRunning, isApplyingHistory } = state;
+  const { selection, project, allScenes, isUploadingImage, sceneOperationRunning, isApplyingHistory } = state;
 
   const buildImagePlaceholder = useCallback(
     (scene: Scene, id: string) => {
@@ -336,7 +337,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
   const groupSelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
     if (!scene) return;
-    const groupId = getNextLayerId(scene.layers, "group");
+    const groupId = getNextProjectLayerId(allScenes, "group");
     const groupNumber = Number(groupId.split("-").at(-1)) || 1;
     const updatedScene = makeGroup(scene, selectedLayerIds, groupId, `Group ${groupNumber}`);
     if (!updatedScene) return;
@@ -346,7 +347,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     setters.setInspectorScope("layer");
     setters.setActiveInsertionGroupId(null);
     setters.setContextMenu(null);
-  }, [handlers, selection, setters]);
+  }, [allScenes, handlers, selection, setters]);
 
   const ungroupSelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
@@ -391,7 +392,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
       }
     }
     if (targets.length !== selectedLayerIds.length) return;
-    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
+    const generator = makeProjectLayerIdGenerator(allScenes);
     const idByOriginal = new Map<Layer, string>();
     for (const target of targets) idByOriginal.set(target, generator(target));
     const newIdFor = (original: Layer): string =>
@@ -416,7 +417,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     setters.setSelectedAnimationId(null);
     setters.setInspectorScope("layer");
     setters.setContextMenu(null);
-  }, [handlers, selection, setters]);
+  }, [allScenes, handlers, selection, setters]);
 
   const copySelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
@@ -433,7 +434,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     const { scene, activeInsertionGroupId } = selection;
     const clipboard = refs.clipboardLayersRef.current;
     if (!scene || !clipboard || clipboard.length === 0) return;
-    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
+    const generator = makeProjectLayerIdGenerator(allScenes);
     const idByOriginal = new Map<Layer, string>();
     for (const layer of clipboard) idByOriginal.set(layer, generator(layer));
     const newIdFor = (original: Layer): string =>
@@ -476,7 +477,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     setters.setSelectedAnimationId(null);
     setters.setInspectorScope("layer");
     setters.setContextMenu(null);
-  }, [handlers, refs, selection, setters]);
+  }, [allScenes, handlers, refs, selection, setters]);
 
   const reorderSelection = useCallback(
     (action: ZOrderAction) => {
@@ -509,7 +510,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     (type: AddableLayerType) => {
       const { scene } = selection;
       if (!scene || !project) return;
-      const id = getNextLayerId(scene.layers, type);
+      const id = getNextProjectLayerId(allScenes, type);
       const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
       const layer: AtomicLayer =
         type === "text"
@@ -518,7 +519,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
       if (type === "text") setters.setPendingTextEditLayerId(layer.id);
       commitNewLayer(layer);
     },
-    [commitNewLayer, project, selection, setters],
+    [allScenes, commitNewLayer, project, selection, setters],
   );
 
   const addImagePlaceholder = useCallback(() => {
@@ -532,10 +533,10 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     ) {
       return;
     }
-    const id = getNextLayerId(scene.layers, "image");
+    const id = getNextProjectLayerId(allScenes, "image");
     const layer = buildImagePlaceholderLayer(project, scene, id);
     commitNewLayer(layer);
-  }, [commitNewLayer, isApplyingHistory, isUploadingImage, project, sceneOperationRunning, selection]);
+  }, [allScenes, commitNewLayer, isApplyingHistory, isUploadingImage, project, sceneOperationRunning, selection]);
 
   return {
     deleteSelection,

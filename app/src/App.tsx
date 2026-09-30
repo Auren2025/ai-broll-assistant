@@ -253,6 +253,9 @@ function App() {
         activeInsertionGroupId,
       },
       project,
+      allScenes: scene
+        ? Object.values({ ...scenesById, [scene.id]: scene })
+        : Object.values(scenesById),
       isUploadingImage,
       sceneOperationRunning: sceneOperationRunningRef.current,
       isApplyingHistory: isApplyingHistoryRef.current,
@@ -423,6 +426,24 @@ function App() {
       }
     },
     [activeInsertionGroupId, handleSceneChange, scene],
+  );
+
+  const handleLayerRename = useCallback(
+    (sceneId: string, layerId: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed || !scene || scene.id !== sceneId) {
+        return;
+      }
+      const updatedScene = {
+        ...scene,
+        layers: updateLayerById(scene.layers, layerId, (layer) => ({
+          ...layer,
+          name: trimmed,
+        } as Layer)),
+      } as Scene;
+      handleSceneChange(updatedScene);
+    },
+    [handleSceneChange, scene],
   );
 
   const sceneOperations = useSceneOperations({
@@ -999,7 +1020,7 @@ function App() {
             onSceneMove={sceneOperations.moveScene}
             onSceneRename={handleSceneRename}
             onLayerSelect={selection.onTreeLayerSelect}
-            onGroupEditEnter={selection.onTreeGroupEditEnter}
+            onLayerRename={handleLayerRename}
             onLayerMove={handleTreeLayerMove}
             onLayerStateChange={handleLayerStateChange}
           />

@@ -1,5 +1,5 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { createScene, deleteScene as deleteSceneRequest, fetchScene } from "../api/projectApi";
+import { createScene, deleteScene as deleteSceneRequest, fetchScene, splitScene as splitSceneRequest } from "../api/projectApi";
 import type { Project } from "../domain/projectSchema";
 import { moveSceneReference } from "../domain/sceneOrder";
 import type { Scene } from "../domain/sceneSchema";
@@ -164,5 +164,43 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
     handleProjectChange({ ...project, scenes });
   }
 
-  return { selectScene, deleteScene, addScene, moveScene };
+  async function splitScene(sceneId: string, splitFrame: number): Promise<number> {
+    if (!project || isCreatingScene) return 0;
+    setIsCreatingScene(true);
+    setCreateSceneError(null);
+    setSceneError(null);
+    recordHistory();
+    try {
+      await queueCurrentSave();
+      const {
+        project: nextProject,
+        firstScene,
+        secondScene,
+        removedAnimationCount,
+      } = await splitSceneRequest(project.id, sceneId, splitFrame);
+      setProject(nextProject);
+      // Stay on the first half: it keeps the source scene id, and its layer
+      // ids are unchanged so the current layer selection stays valid.
+      setScene(firstScene);
+      setScenesById((current) => ({
+        ...current,
+        [firstScene.id]: firstScene,
+        [secondScene.id]: secondScene,
+      }));
+      setSelectedAnimationId(null);
+      setInspectorScope("scene");
+      versions.markProjectChanged();
+      versions.markSceneChanged();
+      markCurrentStateSaved();
+      return removedAnimationCount;
+    } catch (error: unknown) {
+      undoStack.current.pop();
+      setCreateSceneError(errorMessage(error));
+      return 0;
+    } finally {
+      setIsCreatingScene(false);
+    }
+  }
+
+  return { selectScene, deleteScene, addScene, moveScene, splitScene };
 }

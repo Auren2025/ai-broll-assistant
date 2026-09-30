@@ -403,3 +403,219 @@ test("scene deletion failure reports the error and leaves project.json and the s
   assert.deepEqual(await fs.readFile(path.join(f.directory, "project.json")), projectBytesBefore);
   assert.deepEqual(await fs.readFile(path.join(f.directory, "scenes/scene-001.json")), sceneBytesBefore);
 });
+
+const enterAnimation = (id: string, startFrame: number, durationInFrames: number) => ({
+  id,
+  startFrame,
+  durationInFrames,
+  easing: "linear" as const,
+  phase: "enter" as const,
+  preset: "dissolve-in" as const,
+});
+
+const textLayer = (id: string, zIndex: number, animations: ReturnType<typeof enterAnimation>[]) => ({
+  id,
+  name: id,
+  type: "text" as const,
+  x: 0,
+  y: 0,
+  width: 100,
+  height: 40,
+  rotation: 0,
+  opacity: 1,
+  opacityEnabled: true,
+  blendMode: "normal" as const,
+  zIndex,
+  visible: true,
+  locked: false,
+  animations,
+  text: "hello",
+  fontFamily: "Arial",
+  fontSize: 12,
+  fontWeight: 400,
+  fontStyle: "normal" as const,
+  lineHeight: 1,
+  letterSpacing: 0,
+  textAlign: "center" as const,
+  verticalAlign: "middle" as const,
+  autoResize: "both" as const,
+  textCase: "normal" as const,
+  kerningPairs: true,
+  ligatures: true,
+  fill: "#000000",
+  fillEnabled: true,
+  stroke: null,
+});
+
+test("split scene divides durations, inserts the new scene, and prunes animations", async (t) => {
+  const f = await fixture(t);
+  const animated = {
+    ...f.scene,
+    durationInFrames: 30,
+    layers: [
+      textLayer("text-1", 0, [enterAnimation("a1", 0, 10)]),
+      textLayer("text-2", 1, [enterAnimation("b1", 10, 10)]),
+      textLayer("text-3", 2, [enterAnimation("c1", 20, 10)]),
+    ],
+  };
+  const putResponse = await f.write(f.sceneUrl, animated);
+  assert.equal(putResponse.status, 200);
+
+  const response = await f.request(`${f.sceneUrl}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: EDITOR_ORIGIN },
+    body: JSON.stringify({ splitFrame: 15 }),
+  });
+  assert.equal(response.status, 201);
+  const body = await responseObject(response);
+
+  const project = parseProject(body.project);
+  assert.deepEqual(
+    project.scenes.map((reference) => [reference.id, reference.startFrame]),
+    [["scene-001", 0], ["scene-003", 15], ["scene-002", 60]],
+  );
+
+  const firstScene = parseScene(body.firstScene);
+  assert.equal(firstScene.id, "scene-001");
+  assert.equal(firstScene.durationInFrames, 15);
+  assert.equal(firstScene.layers.length, 3);
+  assert.deepEqual(
+    firstScene.layers.map((layer) => layer.animations.map((animation) => [animation.startFrame, animation.durationInFrames])),
+    [[[0, 10]], [], []],
+  );
+
+  const secondScene = parseScene(body.secondScene);
+  assert.equal(secondScene.id, "scene-003");
+  assert.equal(secondScene.topic, "First scene (part 2)");
+  assert.equal(secondScene.durationInFrames, 15);
+  assert.deepEqual(
+    secondScene.layers.map((layer) => layer.id),
+    ["text-1", "text-2", "text-3"],
+  );
+  assert.deepEqual(
+    secondScene.layers.map((layer) => layer.animations.map((animation) => [animation.startFrame, animation.durationInFrames])),
+    [[], [], [[5, 10]]],
+  );
+
+  assert.equal(body.removedAnimationCount, 4);
+
+  // On-disk state matches: seamless [0,15) + [15,30), later scenes untouched.
+  assert.deepEqual(await f.readProject(), project);
+  assert.deepEqual(await f.readScene("scene-001"), firstScene);
+  assert.deepEqual(await f.readScene("scene-003"), secondScene);
+});
+
+test("split scene rejects split frames outside the scene", async (t) => {
+  const f = await fixture(t);
+  const split = (payload: unknown, method = "POST") => f.request(`${f.sceneUrl}/split`, {
+    method,
+    headers: { "Content-Type": "application/json", Origin: EDITOR_ORIGIN },
+    body: JSON.stringify(payload),
+  });
+
+  for (const splitFrame of [0, 30, 45, -5, 7.5, "15", null]) {
+    const response = await split({ splitFrame });
+    assert.equal(response.status, 400, `splitFrame=${JSON.stringify(splitFrame)}`);
+  }
+  const missing = await split({});
+  assert.equal(missing.status, 400);
+
+  const unknownScene = await f.request(`${f.projectUrl}/scenes/nope/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: EDITOR_ORIGIN },
+    body: JSON.stringify({ splitFrame: 15 }),
+  });
+  assert.equal(unknownScene.status, 404);
+
+  const wrongMethod = await f.request(`${f.sceneUrl}/split`, {
+    method: "GET",
+    headers: { Origin: EDITOR_ORIGIN },
+  });
+  assert.equal(wrongMethod.status, 405);
+
+  // Nothing changed on disk.
+  assert.deepEqual(await f.readProject(), f.project);
+  assert.deepEqual(await f.readScene(), f.scene);
+});
+
+test("split scene works for slide projects without timeline anchors", async (t) => {
+  const f = await fixture(t);
+  const slideProject = parseProject({
+    schemaVersion: 2,
+    id: "slide-project",
+    kind: "slide",
+    name: "Slide project",
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    scenes: [{ id: "scene-001", file: "scenes/scene-001.json" }],
+  });
+  const slideScene = parseScene({
+    schemaVersion: 2,
+    id: "scene-001",
+    topic: "Slide page",
+    durationInFrames: 30,
+    layers: [textLayer("text-1", 0, [enterAnimation("a1", 5, 10)])],
+  });
+  const slideDir = path.join(f.root, "slide", slideProject.id);
+  await fs.mkdir(path.join(slideDir, "scenes"), { recursive: true });
+  await fs.writeFile(path.join(slideDir, "project.json"), JSON.stringify(slideProject));
+  await fs.writeFile(path.join(slideDir, "scenes/scene-001.json"), JSON.stringify(slideScene));
+
+  const response = await f.request(`/api/projects/${slideProject.id}/scenes/scene-001/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: EDITOR_ORIGIN },
+    body: JSON.stringify({ splitFrame: 10 }),
+  });
+  assert.equal(response.status, 201);
+  const body = await responseObject(response);
+  const project = parseProject(body.project);
+  assert.deepEqual(
+    project.scenes.map((reference) => [reference.id, reference.startFrame]),
+    [["scene-001", undefined], ["scene-002", undefined]],
+  );
+  const firstScene = parseScene(body.firstScene);
+  const secondScene = parseScene(body.secondScene);
+  assert.equal(firstScene.durationInFrames, 10);
+  assert.equal(secondScene.durationInFrames, 20);
+  // The animation straddles the split point, so it is dropped from both halves.
+  assert.equal(firstScene.layers[0]?.animations.length, 0);
+  assert.equal(secondScene.layers[0]?.animations.length, 0);
+  assert.equal(body.removedAnimationCount, 2);
+});
+
+const SAMPLE_SRT = `1
+00:00:01,000 --> 00:00:03,500
+Hello world
+
+2
+00:00:05,000 --> 00:00:07,000
+Second line
+`;
+
+test("subtitles endpoint returns parsed cues, or an empty list without source.srt", async (t) => {
+  const f = await fixture(t);
+  const url = `${f.projectUrl}/subtitles`;
+
+  const empty = await f.request(url);
+  assert.equal(empty.status, 200);
+  assert.deepEqual(await empty.json(), { cues: [] });
+
+  await fs.writeFile(path.join(f.directory, "source.srt"), SAMPLE_SRT);
+  const response = await f.request(url);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    cues: [
+      { id: "cue-001", index: 1, startMs: 1000, endMs: 3500, text: "Hello world" },
+      { id: "cue-002", index: 2, startMs: 5000, endMs: 7000, text: "Second line" },
+    ],
+  });
+
+  const wrongMethod = await f.request(url, { method: "POST", headers: { Origin: EDITOR_ORIGIN } });
+  assert.equal(wrongMethod.status, 405);
+
+  await fs.writeFile(path.join(f.directory, "source.srt"), "not a subtitle file");
+  const invalid = await f.request(url);
+  assert.equal(invalid.status, 500);
+  assert.equal(await responseError(invalid), "Invalid subtitle data");
+});

@@ -10,8 +10,10 @@ import type { PlayerRef } from "@remotion/player";
 import "./App.css";
 import {
   uploadImageAsset,
+  fetchSubtitles,
 } from "./api/projectApi";
 import type { Project } from "./domain/projectSchema";
+import type { SubtitleCue } from "./domain/subtitleCueSchema";
 import { sceneStartFrame as sceneStartFrameForProject } from "./domain/scenePlacement";
 import type { Layer, Scene } from "./domain/sceneSchema";
 import {
@@ -84,6 +86,8 @@ function App() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasSaveConflict, setHasSaveConflict] = useState(false);
   const [createSceneError, setCreateSceneError] = useState<string | null>(null);
+  const [splitNotice, setSplitNotice] = useState<string | null>(null);
+  const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSceneLoading, setIsSceneLoading] = useState(false);
@@ -127,6 +131,7 @@ function App() {
   const documentVersions = versionTracker.current;
   const activeSaveCountRef = useRef(0);
   const externalRefreshRunningRef = useRef(false);
+  const splitNoticeTimeoutRef = useRef<number | null>(null);
   const sceneOperationRunningRef = useRef(false);
   const scenesByIdRef = useRef<Record<string, Scene>>({});
   const selectedLayerId =
@@ -347,6 +352,27 @@ function App() {
     window.addEventListener("beforeunload", warnBeforeClosing);
     return () => window.removeEventListener("beforeunload", warnBeforeClosing);
   }, [isDirty]);
+
+  // Subtitles only exist for B-roll projects (source.srt). They are loaded
+  // once per project and drive the subtitle track on the scene timeline.
+  const subtitleProjectId = project?.kind === "broll" ? project.id : null;
+  useEffect(() => {
+    if (!subtitleProjectId) {
+      setSubtitleCues([]);
+      return;
+    }
+    let cancelled = false;
+    fetchSubtitles(subtitleProjectId)
+      .then((cues) => {
+        if (!cancelled) setSubtitleCues(cues);
+      })
+      .catch(() => {
+        if (!cancelled) setSubtitleCues([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [subtitleProjectId]);
 
   const handleReloadExternalChanges = useCallback(async () => {
     setIsSceneLoading(true);
@@ -699,6 +725,26 @@ function App() {
     previewPlayerRef.current?.seekTo(sceneStartFrame + frame);
   }, []);
 
+  const handleSplitScene = useCallback(async (absoluteFrame: number) => {
+    const currentProject = projectRef.current;
+    const currentScene = sceneRef.current;
+    if (!currentProject || !currentScene || currentProject.kind !== "broll") return;
+    if (splitNoticeTimeoutRef.current !== null) {
+      window.clearTimeout(splitNoticeTimeoutRef.current);
+      splitNoticeTimeoutRef.current = null;
+    }
+    const removed = await sceneOperations.splitScene(currentScene.id, absoluteFrame);
+    if (removed > 0) {
+      setSplitNotice(
+        `Split scene: removed ${removed} animation${removed === 1 ? "" : "s"} crossing the split point.`,
+      );
+      splitNoticeTimeoutRef.current = window.setTimeout(() => {
+        setSplitNotice(null);
+        splitNoticeTimeoutRef.current = null;
+      }, 8000);
+    }
+  }, [sceneOperations]);
+
   const selectedLayer: Layer | null = scene && selectedLayerId
     ? findLayerById(scene.layers, selectedLayerId)
     : null;
@@ -826,6 +872,9 @@ function App() {
           ) : null}
           {createSceneError ? (
             <span className="toolbar-error">{createSceneError}</span>
+          ) : null}
+          {splitNotice ? (
+            <span className="toolbar-notice">{splitNotice}</span>
           ) : null}
           {imageUploadError ? (
             <span className="toolbar-error">
@@ -1008,6 +1057,8 @@ function App() {
             onSeek={handlePreviewSeek}
             onAnimationSelect={selection.onAnimationSelect}
             onAnimationTimingChange={layerEdits.changeAnimationTiming}
+            subtitleCues={project.kind === "broll" ? subtitleCues : []}
+            onSplitScene={project.kind === "broll" ? handleSplitScene : null}
           />
         </section>
 

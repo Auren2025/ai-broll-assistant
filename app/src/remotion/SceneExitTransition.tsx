@@ -15,9 +15,11 @@ interface SceneExitTransitionProps {
  * (hard cut). New transition types are added to the switch below; each type
  * owns its own duration and never overlaps the next scene.
  *
- * Fade-out fades TO BLACK via an overlay: fading the scene's own opacity
- * would reveal whatever sits behind the player (white canvas in the editor,
- * black in an MP4 export), which looks inconsistent.
+ * Fade-out fades the whole scene (all layers together) TO TRANSPARENT, not
+ * to black: the pipeline exports with an alpha channel for further editing
+ * in DaVinci Resolve, where backgrounds are added uniformly in post. So the
+ * scene's own opacity is animated; the editor preview shows a transparency
+ * checkerboard behind the player so the fade reads as alpha, not white.
  */
 export function SceneExitTransition({ scene, children }: SceneExitTransitionProps) {
   const frame = useCurrentFrame();
@@ -26,26 +28,12 @@ export function SceneExitTransition({ scene, children }: SceneExitTransitionProp
 
   switch (transition.type) {
     case "fade-out": {
-      const overlayOpacity =
-        1 -
-        getExitTransitionOpacity(
-          frame,
-          scene.durationInFrames,
-          transition.durationInFrames,
-        );
-      if (overlayOpacity <= 0) return <>{children}</>;
-      return (
-        <>
-          {children}
-          <AbsoluteFill
-            style={{
-              backgroundColor: "#000000",
-              opacity: overlayOpacity,
-              pointerEvents: "none",
-            }}
-          />
-        </>
+      const opacity = getExitTransitionOpacity(
+        frame,
+        scene.durationInFrames,
+        transition.durationInFrames,
       );
+      return <AbsoluteFill style={{ opacity }}>{children}</AbsoluteFill>;
     }
   }
 }

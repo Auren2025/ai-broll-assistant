@@ -116,7 +116,7 @@ button {
 
 .topbar .editor-tool:hover,
 .topbar .editor-tool.is-active {
-  color: #5545cf;
+  color: #5845c9;
   background: #efedff;
 }
 
@@ -183,7 +183,7 @@ button {
 }
 
 .button-primary:hover:not(:disabled) {
-  background: #5848d5;
+  background: #5845c9;
 }
 
 .button-primary:disabled {
@@ -320,7 +320,7 @@ button {
 
 .scene-tree-row.is-slide.is-drop-before::before,
 .scene-tree-row.is-slide.is-drop-after::after {
-  background: #6556d8;
+  background: #6857e5;
   border-radius: 2px;
   content: "";
   height: 3px;
@@ -364,7 +364,7 @@ button {
 }
 
 .tree-toggle:disabled {
-  color: #6556d8;
+  color: #6857e5;
   cursor: default;
 }
 
@@ -498,7 +498,7 @@ button {
 }
 
 .layer-drop-zone.is-active::after {
-  background: #6554e8;
+  background: #6857e5;
   box-shadow: 0 0 0 1px rgb(101 84 232 / 14%);
 }
 
@@ -574,7 +574,7 @@ button {
 .scene-rename-input {
   min-width: 0;
   padding: 4px 6px;
-  border: 1px solid #6556d8;
+  border: 1px solid #6857e5;
   border-radius: 6px;
   background: #fff;
   font-size: 12px;
@@ -630,12 +630,12 @@ button {
 
 .layer-item.is-insertion-target {
   background: #e8e4ff;
-  box-shadow: inset 3px 0 #6554e8, inset 0 -1px #d9d3ff;
+  box-shadow: inset 3px 0 #6857e5, inset 0 -1px #d9d3ff;
 }
 
 .layer-item.is-group-drop-target {
   background: #ded8ff;
-  outline: 2px solid #6554e8;
+  outline: 2px solid #6857e5;
   outline-offset: -2px;
 }
 
@@ -814,7 +814,7 @@ button {
 }
 
 .canvas-zoom-controls button:hover {
-  color: #5545cf;
+  color: #5845c9;
   background: #efedff;
 }
 
@@ -976,23 +976,29 @@ button {
 .inspector-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0;
-  padding: 8px;
+  gap: 4px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--divider);
   background: #fff;
 }
 
 .inspector-tabs button {
-  height: 36px;
-  color: #97979b;
-  background: #f2f1f3;
+  height: 34px;
+  border-radius: 8px;
+  color: #8a8a90;
+  background: transparent;
   font-size: 13px;
   font-weight: 500;
 }
 
+.inspector-tabs button:hover {
+  color: #55555c;
+  background: #f4f4f6;
+}
+
 .inspector-tabs button.is-active {
-  color: #fff;
-  background: #19171c;
+  color: #5845c9;
+  background: #efedff;
   font-weight: 600;
 }
 
@@ -1100,7 +1106,7 @@ button {
 
 .scene-design-panel input:focus,
 .scene-design-panel select:focus {
-  box-shadow: inset 0 0 0 1px #7a40ed;
+  box-shadow: inset 0 0 0 1px #6857e5;
 }
 
 .scene-design-panel input[type="number"] {
@@ -1141,7 +1147,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: #6857e5;
 }
 
 .scene-color-inputs {
@@ -1300,8 +1306,8 @@ button {
 }
 
 .layer-align-row button:hover {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: #6857e5;
+  background: #efedff;
 }
 
 .layer-align-row button:disabled {
@@ -1330,8 +1336,8 @@ button {
 }
 
 .layer-distribute-row button:hover:not(:disabled) {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: #6857e5;
+  background: #efedff;
 }
 
 .layer-distribute-row button:disabled {
@@ -1421,7 +1427,7 @@ button {
 }
 
 .selection-actions-section .selection-group-button:hover:not(:disabled) {
-  background: #5848d5;
+  background: #5845c9;
 }
 
 .selection-actions-section .selection-group-button:disabled {
@@ -1475,7 +1481,7 @@ button {
 }
 
 .layer-arrange-segment button:hover {
-  color: #7a40ed;
+  color: #6857e5;
   background: rgb(255 255 255 / 75%);
 }
 
@@ -1546,7 +1552,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: #6857e5;
 }
 
 .layer-design-row {
@@ -1616,7 +1622,7 @@ button {
 .layer-design-panel input:focus,
 .layer-design-panel select:focus,
 .layer-design-panel button:focus-visible {
-  box-shadow: inset 0 0 0 1px #7a40ed;
+  box-shadow: inset 0 0 0 1px #6857e5;
 }
 
 .layer-double-input {
@@ -1637,7 +1643,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: #6857e5;
 }
 
 .layer-single-input {
@@ -1686,8 +1692,8 @@ button {
 }
 
 .layer-segmented-control button.is-active {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: #6857e5;
+  background: #efedff;
 }
 
 .layer-checkbox-row input {
@@ -1716,7 +1722,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: #6857e5;
 }
 
 .layer-opacity-row {
@@ -1752,8 +1758,8 @@ button {
 }
 
 .layer-corner-main button.is-active {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: #6857e5;
+  background: #efedff;
 }
 
 .layer-corner-grid {
@@ -2025,7 +2031,7 @@ button {
 }
 
 .animation-timeline-ruler.is-scrubbable:focus-visible {
-  outline: 2px solid #6951df;
+  outline: 2px solid #6857e5;
   outline-offset: -2px;
 }
 
@@ -2072,7 +2078,7 @@ button {
 
 .animation-event-label:hover,
 .animation-event-label.is-selected {
-  color: #5140c8;
+  color: #5845c9;
   background: #f0edff;
 }
 
@@ -2188,7 +2194,7 @@ button {
 }
 
 .timeline-split-menu button:hover {
-  color: #5140c8;
+  color: #5845c9;
   background: #f0edff;
 }
 
@@ -2250,7 +2256,7 @@ button {
 }
 
 .animation-event-bar.phase-enter {
-  background: #6951df;
+  background: #6857e5;
 }
 
 .animation-event-bar.phase-emphasis {
@@ -2431,8 +2437,8 @@ button {
 
 .animation-preset-grid button:hover,
 .animation-preset-grid button.is-current {
-  border-color: #7868dd;
-  color: #5545c8;
+  border-color: #6857e5;
+  color: #5845c9;
   background: #f2efff;
 }
 
@@ -2539,7 +2545,7 @@ button {
   margin-top: 12px;
   border: 0;
   border-radius: 7px;
-  color: #5545c8;
+  color: #5845c9;
   background: #efedff;
   font-size: 10px;
   font-weight: 650;
@@ -2695,10 +2701,10 @@ button {
 }
 
 .layer-context-menu {
-  background: #211f24;
-  border: 1px solid #3d3942;
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  background: #fff;
+  border: 1px solid #e8e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(35 33 39 / 12%);
   min-width: 190px;
   padding: 5px;
   position: fixed;
@@ -2710,7 +2716,7 @@ button {
   background: transparent;
   border: 0;
   border-radius: 5px;
-  color: #f5f2f7;
+  color: #39353d;
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -2721,11 +2727,11 @@ button {
 }
 
 .layer-context-menu button:hover {
-  background: #7542e8;
+  background: #f4f4f6;
 }
 
 .layer-context-menu button.is-danger {
-  color: #ff9d9d;
+  color: #e24767;
 }
 
 .layer-context-menu button.is-danger:hover {

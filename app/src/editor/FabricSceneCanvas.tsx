@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   ActiveSelection,
@@ -43,14 +42,9 @@ import {
 } from "./fabricObjects";
 import {
   fabricChildrenMatch,
-  resolveMagicMoveContext,
-  roundNumber,
   sortChildrenByZIndex,
 } from "./magicMove";
-import {
-  getMagicMovePath,
-  getMagicMoveTranslationForEndpoint,
-} from "./magicMoveGeometry";
+import { useMagicMoveDrag } from "./useMagicMoveDrag";
 import { clampFocal, clampImageCropZoom } from "./imageCrop";
 import { computeTextBoxSize } from "./textMetrics";
 
@@ -206,21 +200,24 @@ export function FabricSceneCanvas({
     panX: 0,
     panY: 0,
   });
-  const [magicMoveDraft, setMagicMoveDraft] = useState<{
-    layerId: string;
-    animationId: string;
-    translateX: number;
-    translateY: number;
-  } | null>(null);
-  const magicMoveDraftRef = useRef(magicMoveDraft);
-  const magicMoveDragRef = useRef<{
-    pointerId: number;
-    layerId: string;
-    animationId: string;
-  } | null>(null);
-  const magicMoveRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const {
+    magicMoveContext,
+    viewportPath,
+    startMagicMoveDrag,
+    updateMagicMoveEndpoint,
+    finishMagicMoveDrag,
+  } = useMagicMoveDrag({
+    scene,
+    selectedLayerIds,
+    selectedAnimationId,
+    viewportTransform,
+    fabricCanvasRef,
+    sceneRef,
+    selectedLayerIdsRef,
+    layerIdToObjectRef,
+    isApplyingSelectionRef,
+    onMagicMoveTranslationCommit,
+  });
 
   selectedLayerIdsRef.current = selectedLayerIds;
 
@@ -304,53 +301,6 @@ export function FabricSceneCanvas({
   useEffect(() => {
     onTextLayerChangeRef.current = onTextLayerChange;
   }, [onTextLayerChange]);
-
-  // Effect: when the scene or the active animation changes, reset the canvas
-  // to its normal editing state and cancel any in-flight magic-move handle
-  // drag. This is the only place we should null `_currentTransform`, because
-  // a scene/animation change means the user has left the previous editing
-  // context and any leftover drag state would be stale.
-  useEffect(() => {
-    if (magicMoveRestoreTimerRef.current !== null) {
-      clearTimeout(magicMoveRestoreTimerRef.current);
-      magicMoveRestoreTimerRef.current = null;
-    }
-    const canvas = fabricCanvasRef.current;
-    if (canvas) {
-      canvas.upperCanvasEl.style.pointerEvents = "";
-      canvas._currentTransform = null;
-      canvas.selection = true;
-      canvas.skipTargetFind = false;
-      isApplyingSelectionRef.current = true;
-      applySelectionToCanvas(
-        canvas,
-        selectedLayerIdsRef.current,
-        layerIdToObjectRef.current,
-      );
-      canvas.requestRenderAll();
-      isApplyingSelectionRef.current = false;
-    }
-    magicMoveDraftRef.current = null;
-    magicMoveDragRef.current = null;
-    setMagicMoveDraft(null);
-  }, [scene.id, selectedAnimationId]);
-
-  // Effect: when the user selects a different layer, only cancel any
-  // in-flight magic-move handle drag state. Do NOT touch the canvas
-  // internals (`_currentTransform`, selection, skipTargetFind, ...):
-  // `mouse:down` has just set up a drag via `_setupCurrentTransform`,
-  // and nulling `_currentTransform` here would silently cancel the drag,
-  // making the freshly-selected layer look selected but un-draggable.
-  // The heavy sync effect already reapplies selection on this change.
-  useEffect(() => {
-    if (magicMoveRestoreTimerRef.current !== null) {
-      clearTimeout(magicMoveRestoreTimerRef.current);
-      magicMoveRestoreTimerRef.current = null;
-    }
-    magicMoveDraftRef.current = null;
-    magicMoveDragRef.current = null;
-    setMagicMoveDraft(null);
-  }, [selectedLayerIds]);
 
   const syncObjectsToScene = useCallback(
     (objects: readonly FabricObject[]): void => {
@@ -1364,12 +1314,6 @@ export function FabricSceneCanvas({
 
     return () => {
       hoveredObjectRef.current = null;
-      magicMoveDraftRef.current = null;
-      magicMoveDragRef.current = null;
-      if (magicMoveRestoreTimerRef.current !== null) {
-        clearTimeout(magicMoveRestoreTimerRef.current);
-        magicMoveRestoreTimerRef.current = null;
-      }
       onHoveredLayerIdChange(null);
       canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
       void canvas.dispose();
@@ -1716,126 +1660,8 @@ export function FabricSceneCanvas({
     }
   }, [addFabricObject, drillGroupId, onHoveredLayerIdChange, scene, selectedLayerIds, syncDrillBoundary]);
 
-  const magicMoveContext = resolveMagicMoveContext(
-    scene,
-    selectedLayerIds,
-    selectedAnimationId,
-  );
-  const activeMagicMoveDraft =
-    magicMoveContext &&
-    magicMoveDraft?.layerId === magicMoveContext.layer.id &&
-    magicMoveDraft.animationId === magicMoveContext.animation.id
-      ? magicMoveDraft
-      : null;
-  const magicMoveTranslation = magicMoveContext
-    ? {
-        x:
-          activeMagicMoveDraft?.translateX ??
-          magicMoveContext.animation.translateX,
-        y:
-          activeMagicMoveDraft?.translateY ??
-          magicMoveContext.animation.translateY,
-      }
-    : null;
-  const magicMovePath =
-    magicMoveContext && magicMoveTranslation
-      ? getMagicMovePath(
-          magicMoveContext.layer,
-          magicMoveTranslation,
-          magicMoveContext.parentGroup ?? undefined,
-        )
-      : null;
   const canvasWidth = projectWidth * displayScale * zoom;
   const canvasHeight = projectHeight * displayScale * zoom;
-  const toViewport = (point: { x: number; y: number }) => ({
-    x: point.x * viewportTransform.scale + viewportTransform.panX,
-    y: point.y * viewportTransform.scale + viewportTransform.panY,
-  });
-  const viewportPath = magicMovePath
-    ? {
-        start: toViewport(magicMovePath.start),
-        end: toViewport(magicMovePath.end),
-      }
-    : null;
-
-  function updateMagicMoveEndpoint(
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ): void {
-    const drag = magicMoveDragRef.current;
-    const canvas = fabricCanvasRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !canvas) return;
-    const currentScene = sceneRef.current;
-    const layer = findLayerByIdOrChild(currentScene, drag.layerId);
-    if (!layer) return;
-    const parentGroup = findParentGroupLayer(currentScene, drag.layerId);
-    const bounds = canvas.upperCanvasEl.getBoundingClientRect();
-    const transform = canvas.viewportTransform;
-    const endpoint = {
-      x: (event.clientX - bounds.left - transform[4]) / transform[0],
-      y: (event.clientY - bounds.top - transform[5]) / transform[3],
-    };
-    const translation = getMagicMoveTranslationForEndpoint(
-      layer,
-      endpoint,
-      parentGroup ?? undefined,
-    );
-    const draft = {
-      layerId: drag.layerId,
-      animationId: drag.animationId,
-      translateX: roundNumber(translation.x),
-      translateY: roundNumber(translation.y),
-    };
-    magicMoveDraftRef.current = draft;
-    setMagicMoveDraft(draft);
-  }
-
-  function finishMagicMoveDrag(
-    event: ReactPointerEvent<HTMLButtonElement>,
-    commit: boolean,
-  ): void {
-    const drag = magicMoveDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const draft = magicMoveDraftRef.current;
-    magicMoveDragRef.current = null;
-    magicMoveDraftRef.current = null;
-    setMagicMoveDraft(null);
-    if (
-      commit &&
-      draft &&
-      draft.layerId === drag.layerId &&
-      draft.animationId === drag.animationId
-    ) {
-      onMagicMoveTranslationCommit?.(
-        drag.layerId,
-        drag.animationId,
-        draft.translateX,
-        draft.translateY,
-      );
-    }
-    if (magicMoveRestoreTimerRef.current !== null) {
-      clearTimeout(magicMoveRestoreTimerRef.current);
-    }
-    magicMoveRestoreTimerRef.current = setTimeout(() => {
-      const canvas = fabricCanvasRef.current;
-      if (canvas) {
-        canvas.upperCanvasEl.style.pointerEvents = "";
-        canvas._currentTransform = null;
-        canvas.selection = true;
-        canvas.skipTargetFind = false;
-        applySelectionToCanvas(
-          canvas,
-          selectedLayerIdsRef.current,
-          layerIdToObjectRef.current,
-        );
-        canvas.requestRenderAll();
-      }
-      isApplyingSelectionRef.current = false;
-      magicMoveRestoreTimerRef.current = null;
-    }, 100);
-  }
 
   return (
     <div
@@ -1907,30 +1733,7 @@ export function FabricSceneCanvas({
               left: viewportPath.end.x,
               top: viewportPath.end.y,
             }}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              const canvas = fabricCanvasRef.current;
-              if (canvas) {
-                if (magicMoveRestoreTimerRef.current !== null) {
-                  clearTimeout(magicMoveRestoreTimerRef.current);
-                  magicMoveRestoreTimerRef.current = null;
-                }
-                isApplyingSelectionRef.current = true;
-                canvas._currentTransform = null;
-                canvas.selection = false;
-                canvas.skipTargetFind = true;
-                canvas.discardActiveObject();
-                canvas.upperCanvasEl.style.pointerEvents = "none";
-                canvas.requestRenderAll();
-              }
-              event.currentTarget.setPointerCapture(event.pointerId);
-              magicMoveDragRef.current = {
-                pointerId: event.pointerId,
-                layerId: magicMoveContext.layer.id,
-                animationId: magicMoveContext.animation.id,
-              };
-            }}
+            onPointerDown={startMagicMoveDrag}
             onPointerMove={updateMagicMoveEndpoint}
             onPointerUp={(event) => finishMagicMoveDrag(event, true)}
             onPointerCancel={(event) => finishMagicMoveDrag(event, false)}

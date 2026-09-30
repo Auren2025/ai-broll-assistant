@@ -1503,6 +1503,41 @@ button {
   background: #f8f8fa;
 }
 
+.layer-image-crop-row {
+  display: flex;
+  gap: 8px;
+  padding: 4px 16px 0;
+}
+
+.layer-image-crop-row button {
+  flex: 1;
+  height: 30px;
+  border: 1px solid #d8d9df;
+  border-radius: 7px;
+  color: #19171c;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.layer-image-crop-row button:hover:not(:disabled) {
+  border-color: #bfc1ca;
+  background: #f8f8fa;
+}
+
+.layer-image-crop-row button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.layer-image-crop-hint {
+  margin: 4px 16px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6b6f7a;
+}
+
 .layer-design-section {
   padding: 12px 0;
   border-bottom: 1px solid var(--divider);

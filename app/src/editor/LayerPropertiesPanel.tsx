@@ -13,7 +13,8 @@ import {
 } from "./alignment";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 import type { EditableLayerPatch } from "./layerEditing";
-import { matchingImageSize } from "./imageSizing";
+import { fitFrameToImageSize, matchingImageSize } from "./imageSizing";
+import { IMAGE_CROP_ZOOM_MAX, IMAGE_CROP_ZOOM_MIN } from "./imageCrop";
 
 const FONT_OPTIONS: { label: string; options: string[] }[] = [
   {
@@ -42,6 +43,10 @@ interface LayerPropertiesPanelProps {
   onAlign: (action: AlignmentAction) => void;
   onReplaceImage: () => void;
   onReorder: (action: ZOrderAction) => void;
+  isGroupChild: boolean;
+  onImageCropEnter: (layerId: string) => void;
+  onImageCropExit: () => void;
+  croppingLayerId: string | null;
 }
 
 function LayerSizeControls({
@@ -129,8 +134,89 @@ function LayerSizeControls({
   );
 }
 
-function LayerStackIcon({ count, highlight }: { count: 2 | 3; highlight: number }) {
-  const centers = count === 3 ? [8.5, 13.5, 18.5] : [11, 16];
+/** Loads the natural pixel size of an image asset for the inspector. */
+function useImageNaturalSize(
+  projectId: string,
+  src: string | null,
+): { naturalWidth: number; naturalHeight: number } | null {
+  const imageUrl = src ? getAssetUrl(projectId, src) : null;
+  const [size, setSize] = useState<{
+    url: string;
+    naturalWidth: number;
+    naturalHeight: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!imageUrl) {
+      setSize(null);
+      return;
+    }
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (active) {
+        setSize(
+          image.naturalWidth > 0 && image.naturalHeight > 0
+            ? {
+              url: imageUrl,
+              naturalWidth: image.naturalWidth,
+              naturalHeight: image.naturalHeight,
+            }
+            : null,
+        );
+      }
+    };
+    image.onerror = () => {
+      if (active) {
+        setSize(null);
+      }
+    };
+    image.src = imageUrl;
+    return () => {
+      active = false;
+    };
+  }, [imageUrl]);
+  return size && imageUrl && size.url === imageUrl ? size : null;
+}
+
+/** Zoom slider with buffered draft: commits once per drag (one undo step). */
+function ImageZoomSlider({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (zoom: number) => void;
+}) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? value;
+  const commit = () => {
+    if (draft !== null) {
+      onCommit(draft);
+      setDraft(null);
+    }
+  };
+  return (
+    <div className="layer-design-row">
+      <span>Zoom</span>
+      <div className="layer-single-input layer-wide-input">
+        <input
+          type="range"
+          min={IMAGE_CROP_ZOOM_MIN}
+          max={IMAGE_CROP_ZOOM_MAX}
+          step={0.1}
+          aria-label="Image crop zoom"
+          title="Zoom the image inside the frame"
+          value={shown}
+          onChange={(event) => setDraft(Number(event.currentTarget.value))}
+          onPointerUp={commit}
+          onBlur={commit}
+        />
+        <span>{Math.round(shown * 100)}%</span>
+      </div>
+    </div>
+  );
+}
+
+function LayerStackIcon({ count, highlight }: { count: 2 | 3; highlight: number }) {  const centers = count === 3 ? [8.5, 13.5, 18.5] : [11, 16];
   return (
     <svg viewBox="0 0 24 30" width="20" height="25" aria-hidden="true">
       {centers.map((cy, index) => (
@@ -478,7 +564,16 @@ export function LayerPropertiesPanel({
   onAlign,
   onReplaceImage,
   onReorder,
+  isGroupChild,
+  onImageCropEnter,
+  onImageCropExit,
+  croppingLayerId,
 }: LayerPropertiesPanelProps) {
+  // Hook before the early return: hooks must run unconditionally.
+  const imageNaturalSize = useImageNaturalSize(
+    projectId,
+    layer?.type === "image" ? layer.src : null,
+  );
   if (!layer) return <p className="app-stage">Select a layer to view its properties.</p>;
 
   const isText = layer.type === "text";
@@ -488,6 +583,26 @@ export function LayerPropertiesPanel({
   const isImage = layer.type === "image";
   const isGroup = layer.type === "group";
   const shapeText = isRectangle || isCircle ? layer.shapeText : null;
+  const isCroppingThis = isImage && croppingLayerId === layer.id;
+
+  function handleFitFrameToImage() {
+    // Contain mode: shrink the frame to the visible image rect, dropping
+    // the transparent padding. The frame center stays fixed.
+    if (!isImage || !imageNaturalSize) return;
+    const fitted = fitFrameToImageSize(
+      layer.width,
+      layer.height,
+      imageNaturalSize.naturalWidth,
+      imageNaturalSize.naturalHeight,
+    );
+    if (!fitted) return;
+    onPatch({
+      x: layer.x + (layer.width - fitted.width) / 2,
+      y: layer.y + (layer.height - fitted.height) / 2,
+      width: fitted.width,
+      height: fitted.height,
+    });
+  }
   const hasFill = isText || isRectangle || isCircle || layer.type === "triangle";
   const hasStroke = !isGroup;
   const stroke = isGroup ? null : layer.stroke;
@@ -620,6 +735,10 @@ export function LayerPropertiesPanel({
           </label>
           {layer.fit === "cover" ? (
             <>
+              <ImageZoomSlider
+                value={layer.zoom}
+                onCommit={(zoom) => onPatch({ zoom })}
+              />
               <div className="layer-design-row">
                 <span>Focus X</span>
                 <div className="layer-single-input layer-wide-input">
@@ -636,6 +755,44 @@ export function LayerPropertiesPanel({
               </div>
             </>
           ) : null}
+          {isCroppingThis ? (
+            <>
+              <p className="layer-image-crop-hint">
+                Drag the image to reposition it, drag the corner handle to zoom.
+                Press Esc or double-click the image to finish.
+              </p>
+              <button
+                type="button"
+                className="layer-image-replace"
+                onClick={onImageCropExit}
+              >
+                Done cropping
+              </button>
+            </>
+          ) : (
+            <div className="layer-image-crop-row">
+              <button
+                type="button"
+                onClick={handleFitFrameToImage}
+                disabled={layer.src === null || imageNaturalSize === null || layer.fit !== "contain"}
+                title={layer.fit === "contain"
+                  ? "Shrink the frame to the visible image, removing empty padding"
+                  : "Available in Contain mode"}
+              >
+                Fit frame to image
+              </button>
+              <button
+                type="button"
+                onClick={() => onImageCropEnter(layer.id)}
+                disabled={layer.src === null || layer.locked || isGroupChild}
+                title={isGroupChild
+                  ? "Ungroup the image first to crop it"
+                  : "Double-click the image on canvas to enter as well"}
+              >
+                Crop image
+              </button>
+            </div>
+          )}
           {layer.src === null ? (
             <div className="layer-design-row layer-paint-row">
               <span>Placeholder color</span>

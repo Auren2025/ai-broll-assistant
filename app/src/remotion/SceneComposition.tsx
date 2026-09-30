@@ -522,6 +522,18 @@ function LayerView({
                 layer.fit === "cover"
                   ? `${layer.focalX * 100}% ${layer.focalY * 100}%`
                   : "50% 50%",
+              // Zoom scales the cover image about the focal point, which
+              // matches the editor's imagePlacement math exactly: the drawn
+              // rect becomes (fw - w*zoom)*fx anchored at the frame point
+              // (fx*fw, fy*fh). The frame div clips the overflow.
+              transform:
+                layer.fit === "cover" && layer.zoom !== 1
+                  ? `scale(${layer.zoom})`
+                  : undefined,
+              transformOrigin:
+                layer.fit === "cover" && layer.zoom !== 1
+                  ? `${layer.focalX * 100}% ${layer.focalY * 100}%`
+                  : undefined,
             }}
           />
         ) : null}

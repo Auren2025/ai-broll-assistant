@@ -366,11 +366,33 @@ export function applyLayerToFabricObject(
       imageFit: layer.fit,
       imageFocalX: layer.focalX,
       imageFocalY: layer.focalY,
+      imageZoom: layer.zoom,
       imagePlaceholderColor: layer.placeholderColor,
     });
     object.dirty = true;
     object.setCoords();
   }
+}
+
+/**
+ * Toggle the canvas-only crop interaction on an image object. Crop mode is
+ * not persisted on the layer: the frame is locked, the resize controls are
+ * hidden, and the object paints its dimmed full-image ghost plus a zoom
+ * handle (see FabricImageLayerObject).
+ */
+export function setImageCropMode(
+  object: FabricObject,
+  cropping: boolean,
+): void {
+  if (!(object instanceof FabricImageLayerObject)) return;
+  object.isCropping = cropping;
+  object.set({
+    lockMovementX: cropping,
+    lockMovementY: cropping,
+    hasControls: !cropping,
+    hoverCursor: cropping ? "move" : "pointer",
+  });
+  object.dirty = true;
 }
 
 export function createFabricObjectForLayer(
@@ -424,6 +446,7 @@ export function createFabricObjectForLayer(
         imageFit: layer.fit,
         imageFocalX: layer.focalX,
         imageFocalY: layer.focalY,
+        imageZoom: layer.zoom,
         imagePlaceholderColor: layer.placeholderColor,
       });
       break;

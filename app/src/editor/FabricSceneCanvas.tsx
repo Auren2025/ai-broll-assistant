@@ -18,6 +18,7 @@ import {
   applySelectionToCanvas,
   createFabricObjectForLayer,
   isFabricObjectForLayer,
+  setImageCropMode,
   updateChildLayerFromFabricObject,
   updateLayerFromFabricObject,
 } from "./fabricAdapter";
@@ -28,6 +29,7 @@ import {
 import {
   FabricLayerTextbox,
   FabricShapeTextObject,
+  FabricImageLayerObject,
   registerFabricObjectClasses,
   resolveShiftLockAxis,
 } from "./fabricObjects";
@@ -41,6 +43,7 @@ import {
   getMagicMovePath,
   getMagicMoveTranslationForEndpoint,
 } from "./magicMoveGeometry";
+import { clampFocal, clampImageCropZoom } from "./imageCrop";
 import { computeTextBoxSize } from "./textMetrics";
 
 registerFabricObjectClasses();
@@ -73,6 +76,14 @@ interface FabricSceneCanvasProps {
     naturalWidth: number,
     naturalHeight: number,
   ) => void;
+  /** Layer id currently in image-crop mode (canvas-only interaction state). */
+  croppingLayerId?: string | null;
+  onImageCropEnter?: (layerId: string) => void;
+  onImageCropExit?: () => void;
+  onImageCropCommit?: (
+    layerId: string,
+    patch: { focalX: number; focalY: number; zoom: number },
+  ) => void;
 }
 
 export function FabricSceneCanvas({
@@ -94,6 +105,10 @@ export function FabricSceneCanvas({
   pendingTextEditLayerId,
   onPendingTextEditConsumed,
   onTextLayerChange,
+  croppingLayerId = null,
+  onImageCropEnter,
+  onImageCropExit,
+  onImageCropCommit,
 }: FabricSceneCanvasProps) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
@@ -120,6 +135,28 @@ export function FabricSceneCanvas({
     ((layerId: string, text: string, width: number, height: number) => void) |
       undefined
   >(undefined);
+  // Image crop mode: which layer is being cropped, the active pan/zoom
+  // gesture, and the latest prop callbacks (mirrored to refs so the
+  // long-lived canvas handlers never close over stale values).
+  const croppingLayerIdRef = useRef<string | null>(croppingLayerId);
+  const onImageCropEnterRef = useRef(onImageCropEnter);
+  const onImageCropExitRef = useRef(onImageCropExit);
+  const onImageCropCommitRef = useRef(onImageCropCommit);
+  const cropSessionRef = useRef<
+    | {
+        type: "pan";
+        layerId: string;
+        lastLocal: { x: number; y: number };
+      }
+    | {
+        type: "zoom";
+        layerId: string;
+        startZoom: number;
+        startDist: number;
+      }
+    | null
+  >(null);
+  const prevCroppingLayerIdRef = useRef<string | null>(null);
   const [viewportTransform, setViewportTransform] = useState({
     scale: displayScale,
     panX: 0,
@@ -158,6 +195,41 @@ export function FabricSceneCanvas({
   useEffect(() => {
     groupEditEnterRef.current = onGroupEditEnter;
   }, [onGroupEditEnter]);
+
+  useEffect(() => {
+    croppingLayerIdRef.current = croppingLayerId;
+  }, [croppingLayerId]);
+
+  useEffect(() => {
+    onImageCropEnterRef.current = onImageCropEnter;
+    onImageCropExitRef.current = onImageCropExit;
+    onImageCropCommitRef.current = onImageCropCommit;
+  }, [onImageCropEnter, onImageCropExit, onImageCropCommit]);
+
+  // Apply/clear the canvas-only crop visuals whenever the cropping layer
+  // changes. Scene sync (applyLayerToFabricObject) does not know about crop
+  // mode, so this effect owns the toggle on both enter and exit.
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    const previous = prevCroppingLayerIdRef.current;
+    if (previous && previous !== croppingLayerId) {
+      const previousObject = layerIdToObjectRef.current.get(previous);
+      if (previousObject) {
+        setImageCropMode(previousObject, false);
+      }
+      // A crop gesture cannot outlive crop mode.
+      cropSessionRef.current = null;
+    }
+    if (croppingLayerId) {
+      const object = layerIdToObjectRef.current.get(croppingLayerId);
+      if (object) {
+        setImageCropMode(object, true);
+        canvas?.setActiveObject(object);
+      }
+    }
+    prevCroppingLayerIdRef.current = croppingLayerId;
+    canvas?.requestRenderAll();
+  }, [croppingLayerId]);
 
   useEffect(() => {
     pendingTextEditRef.current = pendingTextEditLayerId ?? null;
@@ -577,6 +649,81 @@ export function FabricSceneCanvas({
     };
 
     canvas.on("mouse:move", (event) => {
+      const cropSession = cropSessionRef.current;
+      const croppingId = croppingLayerIdRef.current;
+      if ((cropSession || croppingId) && event.scenePoint) {
+        const targetId = cropSession ? cropSession.layerId : croppingId;
+        const targetObject =
+          targetId != null
+            ? layerIdToObjectRef.current.get(targetId)
+            : undefined;
+        if (targetObject instanceof FabricImageLayerObject) {
+          const local = targetObject.toCropLocalPoint(event.scenePoint);
+          if (cropSession?.type === "pan") {
+            // Drag the image inside the locked frame: convert the pointer
+            // delta to focal deltas. span is zero on an exactly-filled
+            // axis, which correctly disables panning there.
+            const placement = targetObject.getCropImagePlacement();
+            if (placement) {
+              const spanX = targetObject.width - placement.width;
+              const spanY = targetObject.height - placement.height;
+              const dfx =
+                Math.abs(spanX) > 1e-6
+                  ? (local.x - cropSession.lastLocal.x) / spanX
+                  : 0;
+              const dfy =
+                Math.abs(spanY) > 1e-6
+                  ? (local.y - cropSession.lastLocal.y) / spanY
+                  : 0;
+              targetObject.imageFocalX = clampFocal(
+                targetObject.imageFocalX + dfx,
+              );
+              targetObject.imageFocalY = clampFocal(
+                targetObject.imageFocalY + dfy,
+              );
+              targetObject.dirty = true;
+              canvas.requestRenderAll();
+            }
+            cropSession.lastLocal = { x: local.x, y: local.y };
+            canvas.setCursor("grabbing");
+            return;
+          }
+          if (cropSession?.type === "zoom") {
+            // Drag away from the frame center to zoom in, toward it to
+            // zoom out. The focal point stays pinned while zooming.
+            const dist = Math.hypot(local.x, local.y);
+            targetObject.imageZoom = clampImageCropZoom(
+              (cropSession.startZoom * dist) / cropSession.startDist,
+            );
+            targetObject.dirty = true;
+            canvas.requestRenderAll();
+            canvas.setCursor("nwse-resize");
+            return;
+          }
+          // No active gesture: hint the zoom handle and the draggable
+          // image; otherwise fall through to the normal hover logic.
+          const handle = targetObject.cropZoomHandle;
+          if (
+            handle != null &&
+            Math.hypot(local.x - handle.x, local.y - handle.y) <=
+              handle.radius
+          ) {
+            canvas.setCursor("nwse-resize");
+            return;
+          }
+          const ghost = targetObject.getCropImagePlacement();
+          if (
+            ghost != null &&
+            local.x >= ghost.x &&
+            local.x <= ghost.x + ghost.width &&
+            local.y >= ghost.y &&
+            local.y <= ghost.y + ghost.height
+          ) {
+            canvas.setCursor("move");
+            return;
+          }
+        }
+      }
       const hoverTarget = resolveHoverTarget(event.target);
       if (hoverTarget === hoveredObjectRef.current) return;
 
@@ -617,6 +764,36 @@ export function FabricSceneCanvas({
       lockOriginRef.current = null;
     });
     canvas.on("mouse:dblclick", (event) => {
+      // Double-click an image toggles its crop mode (frame stays fixed,
+      // the image inside can be panned/zoomed). This runs before group
+      // edit handling so images win the gesture.
+      const cropCandidate = [...(event.subTargets ?? []), event.target]
+        .reverse()
+        .find(
+          (candidate): candidate is FabricImageLayerObject =>
+            candidate instanceof FabricImageLayerObject,
+        );
+      if (cropCandidate) {
+        const layerId = objectToLayerIdRef.current.get(cropCandidate);
+        const layer =
+          layerId != null
+            ? findLayerByIdOrChild(sceneRef.current, layerId)
+            : null;
+        if (
+          layerId != null &&
+          layer?.type === "image" &&
+          layer.src !== null &&
+          !layer.locked &&
+          findParentGroupLayer(sceneRef.current, layerId) === null
+        ) {
+          if (croppingLayerIdRef.current === layerId) {
+            onImageCropExitRef.current?.();
+          } else {
+            onImageCropEnterRef.current?.(layerId);
+          }
+          return;
+        }
+      }
       const selectedLayerId = selectedLayerIdsRef.current.length === 1
         ? selectedLayerIdsRef.current[0]
         : null;
@@ -727,6 +904,45 @@ export function FabricSceneCanvas({
         );
         return;
       }
+      // Crop gestures take over for the cropping image: drag the zoom
+      // handle to zoom, drag the (dimmed) image to pan. The frame itself
+      // is locked.
+      const croppingId = croppingLayerIdRef.current;
+      if (croppingId && event.scenePoint) {
+        const croppingObject = layerIdToObjectRef.current.get(croppingId);
+        if (croppingObject instanceof FabricImageLayerObject) {
+          const local = croppingObject.toCropLocalPoint(event.scenePoint);
+          const handle = croppingObject.cropZoomHandle;
+          if (
+            handle &&
+            Math.hypot(local.x - handle.x, local.y - handle.y) <=
+              handle.radius
+          ) {
+            cropSessionRef.current = {
+              type: "zoom",
+              layerId: croppingId,
+              startZoom: croppingObject.imageZoom,
+              startDist: Math.max(Math.hypot(local.x, local.y), 1e-6),
+            };
+            return;
+          }
+          const placement = croppingObject.getCropImagePlacement();
+          if (
+            placement &&
+            local.x >= placement.x &&
+            local.x <= placement.x + placement.width &&
+            local.y >= placement.y &&
+            local.y <= placement.y + placement.height
+          ) {
+            cropSessionRef.current = {
+              type: "pan",
+              layerId: croppingId,
+              lastLocal: { x: local.x, y: local.y },
+            };
+            return;
+          }
+        }
+      }
       if (!event.target) {
         onSelectedLayerIdsChange([]);
         return;
@@ -756,6 +972,21 @@ export function FabricSceneCanvas({
       }
     });
     canvas.on("mouse:up", () => {
+      // End of a crop gesture: commit focal/zoom to the layer in one
+      // history entry. A no-op drag commits identical values, which the
+      // patch path drops without recording history.
+      const cropSession = cropSessionRef.current;
+      if (cropSession) {
+        cropSessionRef.current = null;
+        const object = layerIdToObjectRef.current.get(cropSession.layerId);
+        if (object instanceof FabricImageLayerObject) {
+          onImageCropCommitRef.current?.(cropSession.layerId, {
+            focalX: clampFocal(object.imageFocalX),
+            focalY: clampFocal(object.imageFocalY),
+            zoom: clampImageCropZoom(object.imageZoom),
+          });
+        }
+      }
       if (!promotedDragTarget) {
         return;
       }
@@ -1052,6 +1283,17 @@ export function FabricSceneCanvas({
 
         canvas.moveObjectTo(object, index);
       });
+
+      // Scene sync does not know about crop mode; re-apply the canvas-only
+      // crop visuals so a sync (e.g. the crop commit itself) never drops
+      // them mid-session.
+      const croppingId = croppingLayerIdRef.current;
+      if (croppingId) {
+        const croppingObject = layerIdToObject.get(croppingId);
+        if (croppingObject) {
+          setImageCropMode(croppingObject, true);
+        }
+      }
 
       if (!editingObject) {
         applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);

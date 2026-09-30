@@ -24,6 +24,7 @@ import {
   type ZOrderAction,
 } from "./domain/groupOperations";
 import { type AlignmentAction } from "./editor/alignment";
+import { findParentGroupLayer } from "./editor/fabricLayerLookup";
 import { EditorToolbar } from "./editor/EditorToolbar";
 import { EditorInspector } from "./editor/EditorInspector";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
@@ -499,6 +500,7 @@ function App() {
       if (event.key === "Escape") {
         setActiveInsertionGroupId(null);
         setSlideMenu(null);
+        setCroppingLayerId(null);
         return;
       }
 
@@ -673,6 +675,59 @@ function App() {
   }, [isUploadingImage, project, scene, selectedLayerId]);
 
   const layerEdits = useLayerEdits(scene, selectedLayerId, handleSceneChange);
+
+  // Image crop mode (canvas-only interaction state): the frame is locked
+  // while the image inside it can be panned/zoomed. Entered by
+  // double-clicking an image or the inspector button; exited by Escape,
+  // double-click, the Done button, scene switch, or selecting away.
+  const [croppingLayerId, setCroppingLayerId] = useState<string | null>(null);
+
+  const exitImageCrop = useCallback(() => {
+    setCroppingLayerId(null);
+  }, []);
+
+  const enterImageCrop = useCallback((layerId: string) => {
+    const target = scene ? findLayerById(scene.layers, layerId) : null;
+    if (
+      !target || target.type !== "image" || target.src === null ||
+      target.locked || (scene && findParentGroupLayer(scene, layerId) !== null)
+    ) {
+      // Crop mode only supports top-level images: a grouped image would
+      // drag its whole group on the canvas.
+      return;
+    }
+    setSelectedLayerIds([layerId]);
+    setSelectedAnimationId(null);
+    setInspectorScope("layer");
+    if (target.fit !== "cover") {
+      // Crop mode is cover semantics: the frame defines the visible
+      // window. Recorded as its own history entry.
+      layerEdits.patchLayerById(layerId, { fit: "cover" });
+    }
+    setCroppingLayerId(layerId);
+  }, [layerEdits, scene]);
+
+  const commitImageCrop = useCallback((layerId: string, patch: {
+    focalX: number;
+    focalY: number;
+    zoom: number;
+  }) => {
+    // One history entry per gesture; no-op drags are dropped by the patch
+    // path because no value changed.
+    layerEdits.patchLayerById(layerId, patch);
+  }, [layerEdits]);
+
+  // Leaving the cropping layer (selection change or scene switch) ends
+  // crop mode.
+  useEffect(() => {
+    if (croppingLayerId && !selectedLayerIds.includes(croppingLayerId)) {
+      setCroppingLayerId(null);
+    }
+  }, [croppingLayerId, selectedLayerIds]);
+
+  useEffect(() => {
+    setCroppingLayerId(null);
+  }, [scene?.id]);
 
   const selection = useEditorSelection({
     scene, sceneRef, setSelectedLayerIds, setActiveInsertionGroupId,
@@ -997,6 +1052,10 @@ function App() {
                     pendingTextEditLayerId={pendingTextEditLayerId}
                     onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
                     onTextLayerChange={layerEdits.changeTextLayer}
+                    croppingLayerId={croppingLayerId}
+                    onImageCropEnter={enterImageCrop}
+                    onImageCropExit={exitImageCrop}
+                    onImageCropCommit={commitImageCrop}
                   />
                 )}
                 {isPreviewMode ? (
@@ -1085,6 +1144,9 @@ function App() {
             onReplaceImage: handleReplaceImage,
             onAnimationSelect: setSelectedAnimationId,
             onAnimationsChange: layerEdits.changeSelectedLayerAnimations,
+            onImageCropEnter: enterImageCrop,
+            onImageCropExit: exitImageCrop,
+            croppingLayerId,
           }}
         />
       </div>

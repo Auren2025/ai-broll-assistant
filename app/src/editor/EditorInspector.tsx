@@ -29,6 +29,9 @@ interface EditorInspectorProps {
     onReorder: ComponentProps<typeof MultiLayerPropertiesPanel>["onReorder"];
     onPatch: ComponentProps<typeof LayerPropertiesPanel>["onPatch"];
     onReplaceImage: () => void;
+    onImageCropEnter: (layerId: string) => void;
+    onImageCropExit: () => void;
+    croppingLayerId: string | null;
     onAnimationSelect: (id: string | null) => void;
     onAnimationsChange: ComponentProps<typeof LayerAnimationPanel>["onAnimationsChange"];
   };
@@ -62,7 +65,11 @@ export function EditorInspector({
             <LayerPropertiesPanel key={`${scene.id}:${selection.layer?.id ?? ""}`}
               layer={selection.layer} projectId={project.id} onPatch={actions.onPatch}
               onAlign={actions.onAlign} onReplaceImage={actions.onReplaceImage}
-              onReorder={actions.onReorder} />
+              onReorder={actions.onReorder}
+              isGroupChild={selection.isGroupChild}
+              onImageCropEnter={actions.onImageCropEnter}
+              onImageCropExit={actions.onImageCropExit}
+              croppingLayerId={actions.croppingLayerId} />
           )
         ) : (
           <LayerAnimationPanel

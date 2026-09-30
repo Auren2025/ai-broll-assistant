@@ -20,16 +20,16 @@ export function useLayerEdits(
   selectedLayerId: string | null,
   handleSceneChange: (scene: Scene) => void,
 ) {
-  const patchSelectedLayer = useCallback((patch: EditableLayerPatch) => {
-    if (!scene || !selectedLayerId) return;
-    const selected = findLayerById(scene.layers, selectedLayerId);
-    const parentGroup = findParentGroup(scene.layers, selectedLayerId);
+  const patchLayerById = useCallback((layerId: string, patch: EditableLayerPatch) => {
+    if (!scene) return;
+    const selected = findLayerById(scene.layers, layerId);
+    const parentGroup = findParentGroup(scene.layers, layerId);
     if (!selected || selected.locked || parentGroup?.locked) return;
     const patchKeys = Object.keys(patch);
     if (patchKeys.length === 0) return;
 
     let changed = false;
-    const layers = updateLayerById(scene.layers, selectedLayerId, (layer) => {
+    const layers = updateLayerById(scene.layers, layerId, (layer) => {
       const layerRecord = layer as unknown as Record<string, unknown>;
       const patchRecord = patch as Record<string, unknown>;
       if (!patchKeys.some((key) => layerRecord[key] !== patchRecord[key])) return layer;
@@ -69,7 +69,12 @@ export function useLayerEdits(
         : merged;
     });
     if (changed) handleSceneChange({ ...scene, layers });
-  }, [handleSceneChange, scene, selectedLayerId]);
+  }, [handleSceneChange, scene]);
+
+  const patchSelectedLayer = useCallback((patch: EditableLayerPatch) => {
+    if (!selectedLayerId) return;
+    patchLayerById(selectedLayerId, patch);
+  }, [patchLayerById, selectedLayerId]);
 
   const changeLayerAnimations = useCallback((layerId: string, animations: LayerAnimation[]) => {
     if (!scene) return;
@@ -139,7 +144,7 @@ export function useLayerEdits(
   }, [changeLayerAnimations, scene]);
 
   return {
-    patchSelectedLayer, changeSelectedLayerAnimations, changeTextLayer,
+    patchLayerById, patchSelectedLayer, changeSelectedLayerAnimations, changeTextLayer,
     changeAnimationTiming, commitMagicMoveTranslation,
   };
 }

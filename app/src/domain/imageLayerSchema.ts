@@ -18,6 +18,10 @@ import { LayerBaseSchema, StrokePositionSchema } from "./layerSchema";
 //   never use it as a background or tint.
 // - `focalX` and `focalY` position the image within a cover crop. Zero aligns
 //   the left/top edge, one aligns the right/bottom edge, and 0.5 centers it.
+// - `zoom` magnifies the image within a cover crop. 1 means the image just
+//   covers the frame (classic cover); larger values zoom into the focal
+//   point, which stays pinned while zooming. Only meaningful when
+//   `fit` is "cover".
 
 const ASSET_PATH_PATTERN = /^assets\/[A-Za-z0-9_.-]+$/;
 
@@ -36,6 +40,7 @@ export const ImageLayerSchema = LayerBaseSchema.extend({
   fit: ImageFitSchema.default("fill"),
   focalX: z.number().finite().min(0).max(1).default(0.5),
   focalY: z.number().finite().min(0).max(1).default(0.5),
+  zoom: z.number().finite().min(1).max(16).default(1),
   placeholderColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)

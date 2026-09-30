@@ -53,6 +53,7 @@ interface LayerCommandSetters {
   setSceneError: (message: string | null) => void;
   setPendingTextEditLayerId: (value: string | null) => void;
   setImageUploadError: (message: string | null) => void;
+  setHasClipboard: (value: boolean) => void;
 }
 
 interface LayerCommandHandlers {
@@ -423,6 +424,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     const topLevel = scene.layers.filter((layer) => selectedIdSet.has(layer.id));
     if (topLevel.length === 0) return;
     refs.clipboardLayersRef.current = JSON.parse(JSON.stringify(topLevel)) as Layer[];
+    setters.setHasClipboard(true);
     setters.setContextMenu(null);
   }, [refs, selection, setters]);
 

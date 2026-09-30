@@ -29,7 +29,6 @@ interface EditorInspectorProps {
     onReorder: ComponentProps<typeof MultiLayerPropertiesPanel>["onReorder"];
     onPatch: ComponentProps<typeof LayerPropertiesPanel>["onPatch"];
     onReplaceImage: () => void;
-    onDeleteLayer: () => void;
     onAnimationSelect: (id: string | null) => void;
     onAnimationsChange: ComponentProps<typeof LayerAnimationPanel>["onAnimationsChange"];
   };
@@ -63,8 +62,7 @@ export function EditorInspector({
             <LayerPropertiesPanel key={`${scene.id}:${selection.layer?.id ?? ""}`}
               layer={selection.layer} projectId={project.id} onPatch={actions.onPatch}
               onAlign={actions.onAlign} onReplaceImage={actions.onReplaceImage}
-              onDuplicate={actions.onDuplicate} onReorder={actions.onReorder}
-              onDeleteLayer={actions.onDeleteLayer} />
+              onReorder={actions.onReorder} />
           )
         ) : (
           <LayerAnimationPanel

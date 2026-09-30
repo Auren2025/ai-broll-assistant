@@ -119,6 +119,7 @@ function App() {
   const handleOpenPreviewWindow = usePreviewWindow(project, scene, isDirty);
   const previewPlayerRef = useRef<PlayerRef | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);
+  const [hasClipboard, setHasClipboard] = useState(false);
   const replaceImageTargetIdRef = useRef<string | null>(null);
   const isApplyingHistoryRef = useRef(false);
   const isSceneLoadingRef = useRef(false);
@@ -269,6 +270,7 @@ function App() {
       setSceneError,
       setPendingTextEditLayerId,
       setImageUploadError,
+      setHasClipboard,
     },
     handlers: {
       handleSceneChange,
@@ -1081,7 +1083,6 @@ function App() {
             onGroup: handleGroupSelection, onDuplicate: handleDuplicateSelection,
             onReorder: handleReorderSelection, onPatch: layerEdits.patchSelectedLayer,
             onReplaceImage: handleReplaceImage,
-            onDeleteLayer: () => void handleDeleteSelection(),
             onAnimationSelect: setSelectedAnimationId,
             onAnimationsChange: layerEdits.changeSelectedLayerAnimations,
           }}
@@ -1110,7 +1111,7 @@ function App() {
           <button type="button" role="menuitem" onClick={handleCopySelection}>
             <span>Copy</span><kbd>⌘C</kbd>
           </button>
-          <button type="button" role="menuitem" onClick={handlePasteSelection}>
+          <button type="button" role="menuitem" disabled={!hasClipboard} onClick={handlePasteSelection}>
             <span>Paste</span><kbd>⌘V</kbd>
           </button>
           <button type="button" role="menuitem" onClick={() => handleReorderSelection("back")}>
@@ -1124,6 +1125,17 @@ function App() {
           </button>
           <button type="button" role="menuitem" onClick={() => handleReorderSelection("front")}>
             <span>Bring to front</span><kbd>⇧⌘]</kbd>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="is-danger"
+            onClick={() => {
+              setContextMenu(null);
+              layerCommands.deleteSelection();
+            }}
+          >
+            <span>Delete</span><kbd>⌫</kbd>
           </button>
         </div>
       ) : null}

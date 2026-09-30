@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getAssetUrl } from "../api/projectApi";
 import type { ZOrderAction } from "../domain/groupOperations";
 import type { ImageFit } from "../domain/imageLayerSchema";
@@ -41,9 +41,7 @@ interface LayerPropertiesPanelProps {
   onPatch: (patch: EditableLayerPatch) => void;
   onAlign: (action: AlignmentAction) => void;
   onReplaceImage: () => void;
-  onDuplicate: () => void;
   onReorder: (action: ZOrderAction) => void;
-  onDeleteLayer: () => void;
 }
 
 function LayerSizeControls({
@@ -131,27 +129,66 @@ function LayerSizeControls({
   );
 }
 
-const ARRANGE_BUTTONS: { action: ZOrderAction; label: string; icon: string }[] =
-  [
-    { action: "back", label: "Send to back", icon: "⏮" },
-    { action: "backward", label: "Send backward", icon: "◀" },
-    { action: "forward", label: "Bring forward", icon: "▶" },
-    { action: "front", label: "Bring to front", icon: "⏭" },
+function LayerStackIcon({ highlight, arrow }: { highlight: "top" | "middle" | "bottom"; arrow?: "up" | "down" }) {
+  const layers = [
+    { cy: 9, key: "top" },
+    { cy: 13.5, key: "middle" },
+    { cy: 18, key: "bottom" },
   ];
+  return (
+    <svg viewBox="0 0 24 30" width="20" height="25" aria-hidden="true">
+      {arrow === "up" ? <path d="M12 1.5l3.2 3.8H8.8z" fill="currentColor" /> : null}
+      {layers.map((layer) => (
+        <path
+          key={layer.key}
+          d={`M12 ${layer.cy - 3.5}l7.5 3.5-7.5 3.5-7.5-3.5z`}
+          fill="currentColor"
+          opacity={layer.key === highlight ? 1 : 0.28}
+        />
+      ))}
+      {arrow === "down" ? <path d="M12 28.5l-3.2-3.8h6.4z" fill="currentColor" /> : null}
+    </svg>
+  );
+}
+
+const ARRANGE_GROUPS: {
+  groupLabel: string;
+  buttons: { action: ZOrderAction; label: string; title: string; icon: ReactNode }[];
+}[] = [
+  {
+    groupLabel: "Back / Front",
+    buttons: [
+      { action: "back", label: "Back", title: "Send to back", icon: <LayerStackIcon highlight="bottom" /> },
+      { action: "front", label: "Front", title: "Bring to front", icon: <LayerStackIcon highlight="top" /> },
+    ],
+  },
+  {
+    groupLabel: "Backward / Forward",
+    buttons: [
+      { action: "backward", label: "Backward", title: "Send backward", icon: <LayerStackIcon highlight="middle" arrow="down" /> },
+      { action: "forward", label: "Forward", title: "Bring forward", icon: <LayerStackIcon highlight="middle" arrow="up" /> },
+    ],
+  },
+];
 
 function ArrangeControls({ onReorder }: { onReorder: (action: ZOrderAction) => void }) {
   return (
-    <div className="layer-arrange-row" role="group" aria-label="Layer z-order">
-      {ARRANGE_BUTTONS.map((button) => (
-        <button
-          key={button.action}
-          type="button"
-          title={button.label}
-          aria-label={button.label}
-          onClick={() => onReorder(button.action)}
-        >
-          {button.icon}
-        </button>
+    <div className="layer-arrange-groups" role="group" aria-label="Layer z-order">
+      {ARRANGE_GROUPS.map((group) => (
+        <div key={group.groupLabel} className="layer-arrange-segment" role="group" aria-label={group.groupLabel}>
+          {group.buttons.map((button) => (
+            <button
+              key={button.action}
+              type="button"
+              title={button.title}
+              aria-label={button.title}
+              onClick={() => onReorder(button.action)}
+            >
+              {button.icon}
+              <span>{button.label}</span>
+            </button>
+          ))}
+        </div>
       ))}
     </div>
   );
@@ -446,9 +483,7 @@ export function LayerPropertiesPanel({
   onPatch,
   onAlign,
   onReplaceImage,
-  onDuplicate,
   onReorder,
-  onDeleteLayer,
 }: LayerPropertiesPanelProps) {
   if (!layer) return <p className="app-stage">Select a layer to view its properties.</p>;
 
@@ -480,18 +515,6 @@ export function LayerPropertiesPanel({
       <section className="layer-design-section layer-arrange-section">
         <h4>Arrange</h4>
         <ArrangeControls onReorder={onReorder} />
-        <div className="layer-actions-row">
-          <button type="button" onClick={onDuplicate}>
-            <span>Duplicate</span><kbd>⌘D</kbd>
-          </button>
-          <button
-            type="button"
-            className="is-danger"
-            onClick={onDeleteLayer}
-          >
-            Delete
-          </button>
-        </div>
       </section>
 
       <section className="layer-design-section layer-layout-section">

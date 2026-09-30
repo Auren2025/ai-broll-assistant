@@ -1426,69 +1426,54 @@ button {
   background: #efedff;
 }
 
-.layer-arrange-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 0 12px 4px 16px;
-}
-
-.layer-arrange-row button {
-  height: 30px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  color: #97979b;
-  background: rgb(242 241 243 / 35%);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.layer-arrange-row button:hover {
-  color: #7a40ed;
-  background: #f2ecfd;
-}
-
-.layer-actions-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 8px 16px 0;
-}
-
-.layer-actions-row button {
+.layer-arrange-groups {
   display: flex;
+  gap: 8px;
+  padding: 0 16px 4px;
+}
+
+.layer-arrange-segment {
+  flex: 1;
+  display: flex;
+  padding: 2px;
+  border-radius: 10px;
+  background: rgb(242 241 243 / 70%);
+}
+
+.layer-arrange-segment button {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid #d8d9df;
-  border-radius: 7px;
-  color: #19171c;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 600;
+  gap: 2px;
+  padding: 6px 4px 5px;
+  border: 0;
+  border-radius: 8px;
+  color: #55555c;
+  background: transparent;
   cursor: pointer;
 }
 
-.layer-actions-row button:hover {
-  border-color: #bfc1ca;
-  background: #f8f8fa;
+.layer-arrange-segment button + button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: rgb(0 0 0 / 10%);
 }
 
-.layer-actions-row button.is-danger {
-  color: #c0392b;
-  border-color: #e6b9b3;
+.layer-arrange-segment button:hover {
+  color: #7a40ed;
+  background: rgb(255 255 255 / 75%);
 }
 
-.layer-actions-row button.is-danger:hover {
-  background: #fdf0ef;
-}
-
-.layer-actions-row kbd {
-  color: #97979b;
-  font: inherit;
+.layer-arrange-segment button span {
   font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .layer-image-replace {
@@ -2671,6 +2656,15 @@ button {
 
 .layer-context-menu button:hover {
   background: #7542e8;
+}
+
+.layer-context-menu button.is-danger {
+  color: #ff9d9d;
+}
+
+.layer-context-menu button.is-danger:hover {
+  background: #d43a3a;
+  color: #fff;
 }
 
 .layer-context-menu button:disabled {

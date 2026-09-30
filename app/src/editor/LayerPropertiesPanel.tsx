@@ -197,14 +197,13 @@ function ImageZoomSlider({
   return (
     <div className="layer-design-row">
       <span>Zoom</span>
-      <div className="layer-single-input layer-wide-input">
+      <div className="layer-zoom-control">
         <input
           type="range"
           min={IMAGE_CROP_ZOOM_MIN}
           max={IMAGE_CROP_ZOOM_MAX}
           step={0.1}
           aria-label="Image crop zoom"
-          title="Zoom the image inside the frame"
           value={shown}
           onChange={(event) => setDraft(Number(event.currentTarget.value))}
           onPointerUp={commit}
@@ -740,20 +739,13 @@ export function LayerPropertiesPanel({
             />
           ) : null}
           {isCroppingThis ? (
-            <>
-              <p className="layer-image-crop-hint">
-                Drag the image to reposition it, drag the magnifier handle in
-                the frame's bottom-right corner to zoom. Press Esc or
-                double-click the image to finish.
-              </p>
-              <button
-                type="button"
-                className="layer-image-replace"
-                onClick={onImageCropExit}
-              >
-                Done cropping
-              </button>
-            </>
+            <button
+              type="button"
+              className="layer-image-replace"
+              onClick={onImageCropExit}
+            >
+              Done cropping
+            </button>
           ) : (
             <>
               {layer.fit === "contain" ? (

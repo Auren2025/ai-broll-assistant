@@ -1503,11 +1503,27 @@ button {
   background: #f8f8fa;
 }
 
-.layer-image-crop-hint {
-  margin: 4px 16px 0;
+/* Zoom slider: same thin purple track as the Animate tab sliders. */
+.layer-design-panel .layer-zoom-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.layer-design-panel .layer-zoom-control input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 4px;
+  padding: 0;
+  accent-color: #6857e5;
+  cursor: pointer;
+}
+
+.layer-design-panel .layer-zoom-control > span {
+  flex: 0 0 auto;
   font-size: 11px;
-  line-height: 1.5;
-  color: #6b6f7a;
+  color: #19171c;
 }
 
 .layer-design-section {

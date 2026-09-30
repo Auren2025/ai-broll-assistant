@@ -431,7 +431,7 @@ function App() {
     },
     actions: {
       queueCurrentSave, recordHistory, undoStack: historyController.stacks.undo,
-      markCurrentStateSaved, clearHistory, handleProjectChange, versions: documentVersions,
+      markCurrentStateSaved, handleProjectChange, versions: documentVersions,
     },
   });
 

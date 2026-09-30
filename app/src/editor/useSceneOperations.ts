@@ -39,7 +39,6 @@ interface SceneOperationsOptions {
     recordHistory: () => void;
     undoStack: RefObject<unknown[]>;
     markCurrentStateSaved: () => void;
-    clearHistory: () => void;
     handleProjectChange: (project: Project) => void;
     versions: DocumentVersionTracker;
   };
@@ -58,7 +57,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
   } = state;
   const {
     queueCurrentSave, recordHistory, undoStack, markCurrentStateSaved,
-    clearHistory, handleProjectChange, versions,
+    handleProjectChange, versions,
   } = actions;
 
   async function selectScene(
@@ -86,7 +85,11 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       setInspectorScope(nextScope);
       versions.markSceneChanged();
       markCurrentStateSaved();
-      clearHistory();
+      // NOTE: do NOT clearHistory() here. The undo snapshots are
+      // project-wide (project + all scenes + current scene/selection), so
+      // undo survives a scene switch: it simply restores the snapshot's
+      // scene as current. Clearing on switch is what made Cmd+Z die after
+      // split -> switch scenes.
       return loadedScene;
     } catch (error: unknown) {
       setSceneError(errorMessage(error));

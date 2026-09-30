@@ -18,6 +18,7 @@ type TimingPatch = Pick<LayerAnimation, "startFrame" | "durationInFrames">;
 
 interface SceneAnimationTimelineProps {
   scene: Scene;
+  timelineStartFrame: number;
   fps: number;
   selectedLayerId: string | null;
   selectedAnimationId: string | null;
@@ -62,6 +63,7 @@ function getTickFrames(durationInFrames: number, fps: number): number[] {
 
 export function SceneAnimationTimeline({
   scene,
+  timelineStartFrame,
   fps,
   selectedLayerId,
   selectedAnimationId,
@@ -87,7 +89,7 @@ export function SceneAnimationTimeline({
 
     const updateFrame = (absoluteFrame: number): void => {
       setCurrentFrame(
-        clamp(absoluteFrame - scene.startFrame, 0, maximumFrame),
+        clamp(absoluteFrame - timelineStartFrame, 0, maximumFrame),
       );
     };
     const handleFrameUpdate = (event: { detail: { frame: number } }): void => {
@@ -97,7 +99,7 @@ export function SceneAnimationTimeline({
     updateFrame(player.getCurrentFrame());
     player.addEventListener("frameupdate", handleFrameUpdate);
     return () => player.removeEventListener("frameupdate", handleFrameUpdate);
-  }, [isPreviewMode, maximumFrame, playerRef, scene.id, scene.startFrame]);
+  }, [isPreviewMode, maximumFrame, playerRef, scene.id, timelineStartFrame]);
 
   function seekFromClientX(clientX: number, ruler: HTMLElement): void {
     const bounds = ruler.getBoundingClientRect();

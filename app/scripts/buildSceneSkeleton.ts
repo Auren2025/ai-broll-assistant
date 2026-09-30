@@ -7,12 +7,13 @@ import {
   sourceStartFrame,
 } from "../src/domain/sourceTimelineValidation";
 import { parseSrt } from "../src/srt/parseSrt";
+import { projectDirectory } from "./projectDirectory";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 async function printCandidates(projectId: string, gapMs: number): Promise<void> {
   if (!ID_PATTERN.test(projectId)) throw new Error(`Invalid project id: "${projectId}"`);
-  const projectDir = resolve("projects", projectId);
+  const projectDir = projectDirectory(resolve("projects"), projectId, "broll");
   const project = parseProject(
     JSON.parse(await readFile(resolve(projectDir, "project.json"), "utf8")),
   );

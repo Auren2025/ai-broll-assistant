@@ -518,6 +518,10 @@ function LayerView({
               height: "100%",
               display: "block",
               objectFit: layer.fit,
+              objectPosition:
+                layer.fit === "cover"
+                  ? `${layer.focalX * 100}% ${layer.focalY * 100}%`
+                  : "50% 50%",
             }}
           />
         ) : null}

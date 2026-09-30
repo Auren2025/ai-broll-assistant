@@ -8,6 +8,7 @@ import { parseProject } from '../src/domain/projectSchema.ts'
 import { parseScene } from '../src/domain/sceneSchema.ts'
 import type { Project } from '../src/domain/projectSchema.ts'
 import type { Scene as SceneType } from '../src/domain/sceneSchema.ts'
+import { projectDirectory } from '../scripts/projectDirectory.ts'
 import {
   getImageAssetSizeError,
   MAX_IMAGE_ASSET_BYTES,
@@ -52,6 +53,10 @@ const __dirname = path.dirname(__filename)
 export function createLocalServer(
   PROJECTS_ROOT = path.resolve(__dirname, '..', 'projects'),
 ): http.Server {
+
+function projectDir(projectId: string): string {
+  return projectDirectory(PROJECTS_ROOT, projectId)
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   if (res.headersSent || res.writableEnded) {
@@ -101,7 +106,7 @@ async function readAndParseProjectFile(
   res: http.ServerResponse,
   projectId: string,
 ): Promise<ParsedProjectFile | null> {
-  const projectPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
+  const projectPath = path.join(projectDir(projectId), 'project.json')
 
   let raw: string
   try {
@@ -127,7 +132,12 @@ async function readAndParseProjectFile(
   }
 
   try {
-    return { project: parseProject(json), raw }
+    const project = parseProject(json)
+    if (projectDirectory(PROJECTS_ROOT, projectId, project.kind) !== path.dirname(projectPath)) {
+      sendJson(res, 500, { error: 'Project kind does not match its directory' })
+      return null
+    }
+    return { project, raw }
   } catch (err) {
     console.error(err)
     sendJson(res, 500, { error: 'Invalid project data' })
@@ -175,7 +185,12 @@ async function handlePutProject(
     return
   }
 
-  const projectPath = path.join(PROJECTS_ROOT, projectId, 'project.json')
+  if (projectDirectory(PROJECTS_ROOT, projectId, project.kind) !== projectDir(projectId)) {
+    sendJson(res, 400, { error: 'Project kind does not match its directory' })
+    return
+  }
+
+  const projectPath = path.join(projectDir(projectId), 'project.json')
   const tempPath = buildSceneTempPath(projectPath)
 
   try {
@@ -206,7 +221,7 @@ async function handleGetScene(
     return
   }
 
-  const scenePath = path.join(PROJECTS_ROOT, projectId, reference.file)
+  const scenePath = path.join(projectDir(projectId), reference.file)
 
   let raw: string
   try {
@@ -336,7 +351,7 @@ async function handlePutScene(
     return
   }
 
-  const scenePath = path.join(PROJECTS_ROOT, projectId, reference.file)
+  const scenePath = path.join(projectDir(projectId), reference.file)
   const sceneDir = path.dirname(scenePath)
   const tempPath = path.join(
     sceneDir,
@@ -393,7 +408,7 @@ async function handleDeleteScene(
     return
   }
 
-  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
   const projectPath = path.join(projectDir, 'project.json')
 
   // Unlink the scene file first. If it fails with anything other than ENOENT,
@@ -518,7 +533,7 @@ async function handlePostAsset(
   const project = await readAndParseProject(res, projectId)
   if (project === null) return
 
-  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
   const assetsDir = path.join(projectDir, 'assets')
 
   const contentLengthHeader = req.headers['content-length']
@@ -580,7 +595,7 @@ async function handleGetAsset(
     return
   }
 
-  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
   const absolutePath = path.join(projectDir, 'assets', filename)
 
   const resolved = path.resolve(absolutePath)
@@ -697,7 +712,7 @@ async function handleGetAudio(
   projectId: string,
   relativePath: string,
 ): Promise<void> {
-  const projectDir = path.join(PROJECTS_ROOT, projectId)
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
   const absolutePath = path.resolve(projectDir, relativePath)
 
   const allowedRoot = path.resolve(projectDir) + path.sep
@@ -801,7 +816,9 @@ async function readExistingSceneEndFrames(
 
     try {
       const scene = parseScene(json)
-      const endFrame = scene.startFrame + scene.durationInFrames
+      const startFrame = reference.startFrame ?? scene.startFrame
+      if (startFrame === undefined) throw new Error('Missing B-roll scene anchor')
+      const endFrame = startFrame + scene.durationInFrames
       if (endFrame > maxEndFrame) maxEndFrame = endFrame
     } catch (err) {
       console.error(err)
@@ -820,9 +837,22 @@ async function handlePostScene(
   _req: http.IncomingMessage,
   res: http.ServerResponse,
   projectId: string,
+  position?: string,
 ): Promise<void> {
   const project = await readAndParseProject(res, projectId)
   if (project === null) return
+
+  const insertionIndex = position === undefined ? project.scenes.length : Number(position)
+  if (
+    (position !== undefined && project.kind !== 'slide') ||
+    (position !== undefined && !/^(?:0|[1-9]\d*)$/.test(position)) ||
+    !Number.isSafeInteger(insertionIndex) ||
+    insertionIndex < 0 ||
+    insertionIndex > project.scenes.length
+  ) {
+    sendJson(res, 400, { error: 'Invalid scene insertion position' })
+    return
+  }
 
   let maxNumber = 0
   for (const reference of project.scenes) {
@@ -839,18 +869,19 @@ async function handlePostScene(
     return
   }
 
-  const projectDir = path.join(PROJECTS_ROOT, projectId)
-  const endFrameResult = await readExistingSceneEndFrames(project, projectDir)
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
+  const endFrameResult = project.kind === 'broll'
+    ? await readExistingSceneEndFrames(project, projectDir)
+    : { value: 0, ok: true as const }
   if (!endFrameResult.ok) {
     sendJson(res, endFrameResult.error.status, { error: endFrameResult.error.message })
     return
   }
 
   const newScene: SceneType = {
-    schemaVersion: 1,
+    schemaVersion: project.schemaVersion,
     id: nextId,
     topic: `Untitled scene ${nextNumber}`,
-    startFrame: endFrameResult.value,
     durationInFrames: NEW_SCENE_DURATION_IN_FRAMES,
     layers: [],
   }
@@ -882,8 +913,13 @@ async function handlePostScene(
 
   const nextProject: Project = {
     ...project,
-    scenes: [...project.scenes, { id: nextId, file: sceneRelPath }],
+    scenes: [...project.scenes],
   }
+  nextProject.scenes.splice(insertionIndex, 0, {
+    id: nextId,
+    file: sceneRelPath,
+    ...(project.kind === 'broll' ? { startFrame: endFrameResult.value } : {}),
+  })
 
   let validatedProject: Project
   try {
@@ -1004,7 +1040,8 @@ const server = http.createServer((req, res) => {
 
     if (restAfterProject === 'scenes') {
       if (method === 'POST') {
-        void handlePostScene(req, res, projectIdPart)
+        const position = new URL(url, 'http://localhost').searchParams.get('index') ?? undefined
+        void handlePostScene(req, res, projectIdPart, position)
         return
       }
       sendJson(res, 405, { error: 'Method not allowed' })

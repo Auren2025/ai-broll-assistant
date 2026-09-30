@@ -2,6 +2,7 @@ import { access, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseProject } from "../src/domain/projectSchema";
 import { parseScene } from "../src/domain/sceneSchema";
+import { projectDirectory, type ProjectCategory } from "./projectDirectory";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 const PROJECTS_ROOT = resolve("projects");
@@ -16,12 +17,17 @@ async function exists(filePath: string): Promise<boolean> {
   }
 }
 
-async function scaffold(projectId: string): Promise<void> {
+async function scaffold(projectId: string, category: ProjectCategory): Promise<void> {
   if (!ID_PATTERN.test(projectId)) {
     throw new Error(`Invalid project id: "${projectId}"`);
   }
 
-  const projectDir = resolve(PROJECTS_ROOT, projectId);
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId, category);
+
+  const otherCategory = category === "broll" ? "slide" : "broll";
+  if (await exists(projectDirectory(PROJECTS_ROOT, projectId, otherCategory))) {
+    throw new Error(`Project id "${projectId}" already exists in ${otherCategory}`);
+  }
 
   const projectExists = await exists(projectDir);
   if (projectExists && await exists(resolve(projectDir, "project.json"))) {
@@ -43,21 +49,25 @@ async function scaffold(projectId: string): Promise<void> {
   }
 
   const scene = parseScene({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "scene-001",
     topic: "Untitled scene 1",
-    startFrame: 0,
     durationInFrames: 150,
     layers: [],
   });
   const project = parseProject({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: projectId,
+    kind: category,
     name: projectId,
     width: 1920,
     height: 1080,
     fps: 30,
-    scenes: [{ id: scene.id, file: "scenes/scene-001.json" }],
+    scenes: [{
+      id: scene.id,
+      file: "scenes/scene-001.json",
+      ...(category === "broll" ? { startFrame: 0 } : {}),
+    }],
   });
 
   await mkdir(projectDir, { recursive: true });
@@ -68,7 +78,7 @@ async function scaffold(projectId: string): Promise<void> {
   ]);
 
   const sourcePath = resolve(projectDir, "source.srt");
-  if (!await exists(sourcePath)) {
+  if (category === "broll" && !await exists(sourcePath)) {
     const rootEntries = await readdir(projectDir, { withFileTypes: true });
     const srtFiles = rootEntries.filter(
       (entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".srt"),
@@ -95,18 +105,21 @@ async function scaffold(projectId: string): Promise<void> {
     "utf-8",
   );
 
-  console.log(`Initialized project "${projectId}" at projects/${projectId}`);
-  console.log("Confirm source.srt, review the full narration semantically, then replace");
-  console.log("the placeholder scene with the selected B-roll scene plan.");
+  console.log(`Initialized project "${projectId}" at projects/${category}/${projectId}`);
+  if (category === "broll") {
+    console.log("Confirm source.srt, review the full narration semantically, then replace");
+    console.log("the placeholder scene with the selected B-roll scene plan.");
+  }
 }
 
 const projectId = process.argv[2];
+const categoryArg = process.argv[3];
 
-if (!projectId) {
-  console.error("Usage: pnpm scaffold <project-id>");
+if (!projectId || (categoryArg !== undefined && categoryArg !== "--slide" && categoryArg !== "--broll")) {
+  console.error("Usage: pnpm scaffold <project-id> [--slide|--broll]");
   process.exitCode = 1;
 } else {
-  scaffold(projectId).catch((error: unknown) => {
+  scaffold(projectId, categoryArg === "--slide" ? "slide" : "broll").catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });

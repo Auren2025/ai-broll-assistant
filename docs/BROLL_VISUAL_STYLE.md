@@ -18,11 +18,11 @@
 
 | 参考 | 借鉴内容 | 使用边界 |
 | --- | --- | --- |
-| `app/projects/my-design/scenes/scene-001.json` | 大 Logo、规整分组、彩色描边容器、白色常规字重文字 | 主要审美参考；不把双栏和描边变成固定模板 |
-| `app/projects/my-design/scenes/scene-002.json` | 中央超大章节名和简单入场 | 只用于明确的过场标题 |
-| `app/projects/opencode/scenes/scene-004.json` | 真实截图作为主体，旁边补充少量要点 | 不照搬标题、字号和逐项动画 |
-| `app/projects/opencode/scenes/scene-recording-command-demo.json` | 用真实配置截图和箭头解释具体字段 | 不用形状重画伪界面 |
-| `app/projects/opencode/scenes/scene-recording-agent-demo.json`、`app/projects/opencode/scenes/scene-010.json` | 同一截图从展示延续到解释，移动缩小后让出空间 | 不把所有场景都做成截图加卡片 |
+| `app/projects/broll/my-design/scenes/scene-001.json` | 大 Logo、规整分组、彩色描边容器、白色常规字重文字 | 主要审美参考；不把双栏和描边变成固定模板 |
+| `app/projects/broll/my-design/scenes/scene-002.json` | 中央超大章节名和简单入场 | 只用于明确的过场标题 |
+| `app/projects/broll/opencode/scenes/scene-004.json` | 真实截图作为主体，旁边补充少量要点 | 不照搬标题、字号和逐项动画 |
+| `app/projects/broll/opencode/scenes/scene-recording-command-demo.json` | 用真实配置截图和箭头解释具体字段 | 不用形状重画伪界面 |
+| `app/projects/broll/opencode/scenes/scene-recording-agent-demo.json`、`app/projects/broll/opencode/scenes/scene-010.json` | 同一截图从展示延续到解释，移动缩小后让出空间 | 不把所有场景都做成截图加卡片 |
 
 `my-design` 用于审美校准；OpenCode 只提供已验证可用的表达方法。参考时应查看实际素材和预览，学习比例、组织和节奏，而不是只读 JSON 后照搬。
 

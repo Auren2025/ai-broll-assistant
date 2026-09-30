@@ -9,7 +9,7 @@ description: 提取、确认并保存创作项目的讨论记忆。用于用户�
 
 ## 保存位置
 
-- `app/projects/<project-id>/MEMORY.md`：只影响一个作品的决定、反馈和待办。
+- `app/projects/<broll|slide>/<project-id>/MEMORY.md`：只影响一个作品的决定、反馈和待办。
 - `docs/BROLL_VISUAL_STYLE.md`：用户确认可跨 B-roll 作品复用的视觉方法。
 - `docs/PRESENTATION_VISUAL_STYLE.md`：用户确认可跨演示作品复用的视觉方法。
 - `docs/EVOLUTION.md`：跨作品的产品、流程和实现改进，以及实验结果。

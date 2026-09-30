@@ -9,6 +9,13 @@ export const PresentationDataSchema = z
   })
   .strict()
   .superRefine((data, context) => {
+    if (data.project.kind !== "slide") {
+      context.addIssue({
+        code: "custom",
+        message: "Presentation project must be a slide project",
+        path: ["project", "kind"],
+      });
+    }
     if (data.scenes.length !== data.project.scenes.length) {
       context.addIssue({
         code: "custom",

@@ -1,6 +1,7 @@
 import type { RectangleLayer } from "../domain/rectangleLayerSchema";
 import type { ShapeText } from "../domain/shapeTextSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
+import type { ImageFit } from "../domain/imageLayerSchema";
 
 export type EditableLayerPatch = Partial<{
   name: string;
@@ -38,7 +39,9 @@ export type EditableLayerPatch = Partial<{
   arrowStartStyle: "none" | "triangle" | "line" | "diamond" | "circle";
   arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
   src: string | null;
-  fit: "fill" | "contain";
+  fit: ImageFit;
+  focalX: number;
+  focalY: number;
   placeholderColor: string;
   shapeText: ShapeText;
 }>;

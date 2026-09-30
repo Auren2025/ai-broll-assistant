@@ -14,6 +14,8 @@
     "export:html": "pnpm --dir app run export:html",
     "parse:srt": "pnpm --dir app run parse:srt",
     "migrate:animations": "pnpm --dir app run migrate:animations",
+    "migrate:project-kinds": "pnpm --dir app run migrate:project-kinds",
+    "migrate:scene-placement": "pnpm --dir app run migrate:scene-placement",
     "scaffold": "pnpm --dir app run scaffold",
     "skeleton": "pnpm --dir app run skeleton",
     "validate:srt": "pnpm --dir app run validate:srt",

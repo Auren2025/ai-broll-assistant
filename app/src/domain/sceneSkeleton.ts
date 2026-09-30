@@ -41,7 +41,7 @@ export function buildSceneSkeleton(
   cues: readonly SubtitleCue[],
   fps: number,
   gapMs: number,
-): Scene[] {
+): (Scene & { startFrame: number })[] {
   const groups = groupCues(cues, gapMs);
 
   const groupStarts = groups.map(
@@ -59,13 +59,13 @@ export function buildSceneSkeleton(
     const firstLine = group[0].text.split("\n")[0].trim();
     const topic = firstLine.slice(0, 60) || `Scene ${index + 1}`;
 
-    return parseScene({
+    return { ...parseScene({
       schemaVersion: 1,
       id: `scene-${String(index + 1).padStart(3, "0")}`,
       topic,
       startFrame,
       durationInFrames,
       layers: [],
-    });
+    }), startFrame };
   });
 }

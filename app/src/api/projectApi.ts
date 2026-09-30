@@ -168,9 +168,10 @@ export interface CreateSceneResult {
 
 export async function createScene(
   projectId: string,
+  index?: number,
 ): Promise<CreateSceneResult> {
   const { body: input } = await fetchJson(
-    `/api/projects/${encodeURIComponent(projectId)}/scenes`,
+    `/api/projects/${encodeURIComponent(projectId)}/scenes${index === undefined ? "" : `?index=${index}`}`,
     {
       method: "POST",
     },

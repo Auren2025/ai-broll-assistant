@@ -13,6 +13,7 @@ interface RemotionScenePlayerProps {
   projectWidth: number;
   projectHeight: number;
   fps: number;
+  timelineStartFrame?: number;
   displayScale?: number;
   playerRef?: RefObject<PlayerRef | null>;
 }
@@ -21,12 +22,14 @@ interface ScenePreviewCompositionProps {
   scene: Scene;
   assetBaseUrl: string;
   audioFile?: string | null;
+  timelineStartFrame: number;
 }
 
 function ScenePreviewComposition({
   scene,
   assetBaseUrl,
   audioFile,
+  timelineStartFrame,
 }: ScenePreviewCompositionProps) {
   return (
     <>
@@ -37,7 +40,7 @@ function ScenePreviewComposition({
         />
       ) : null}
       <Sequence
-        from={scene.startFrame}
+        from={timelineStartFrame}
         durationInFrames={scene.durationInFrames}
       >
         <SceneComposition
@@ -57,23 +60,24 @@ export function RemotionScenePlayer({
   projectWidth,
   projectHeight,
   fps,
+  timelineStartFrame = 0,
   displayScale = 0.5,
   playerRef,
 }: RemotionScenePlayerProps) {
-  const sceneEndFrame = scene.startFrame + scene.durationInFrames;
+  const sceneEndFrame = timelineStartFrame + scene.durationInFrames;
   const assetBaseUrl = buildProjectAssetBaseUrl(projectId);
 
   return (
     <Player
       ref={playerRef}
       component={ScenePreviewComposition}
-      inputProps={{ scene, assetBaseUrl, audioFile }}
+      inputProps={{ scene, assetBaseUrl, audioFile, timelineStartFrame }}
       durationInFrames={sceneEndFrame}
       compositionWidth={projectWidth}
       compositionHeight={projectHeight}
       fps={fps}
-      initialFrame={scene.startFrame}
-      inFrame={scene.startFrame}
+      initialFrame={timelineStartFrame}
+      inFrame={timelineStartFrame}
       outFrame={sceneEndFrame - 1}
       numberOfSharedAudioTags={0}
       controls

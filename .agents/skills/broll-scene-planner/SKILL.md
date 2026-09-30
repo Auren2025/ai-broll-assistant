@@ -11,9 +11,9 @@ description: 阅读完整 SRT，在 scene-plan.md 中划分并标记 B-roll 场�
 
 ## 输入与产物
 
-- 时间源：`projects/<project-id>/source.srt`
+- 时间源：`projects/broll/<project-id>/source.srt`
 - 可选语义参考：用户提供的口播稿
-- 审查文件：`projects/<project-id>/scene-plan.md`
+- 审查文件：`projects/broll/<project-id>/scene-plan.md`
 
 不要修改 `source.srt`。口播稿与 SRT 不一致时，用口播稿理解章节和意图，用 SRT 确定实际时间。
 
@@ -22,7 +22,7 @@ description: 阅读完整 SRT，在 scene-plan.md 中划分并标记 B-roll 场�
 1. 校验并完整阅读 SRT：
 
    ```bash
-   pnpm validate:srt projects/<project-id>/source.srt
+   pnpm validate:srt projects/broll/<project-id>/source.srt
    ```
 
 2. 从全文判断章节、主题转换、连续解释、录屏段落和适合留白的内容。
@@ -47,7 +47,7 @@ description: 阅读完整 SRT，在 scene-plan.md 中划分并标记 B-roll 场�
 ## 时间规则
 
 - 标记必须放在明确的 Cue 边界，并记录每个场景覆盖的首尾 Cue。
-- Scene 起点使用首个 Cue 的起始时间；首场景需要与音频起点对齐时可以从第 0 帧开始。
+- 项目场景引用的 `startFrame` 使用首个 Cue 的起始时间；首场景需要与音频起点对齐时可以从第 0 帧开始。Scene JSON 不保存绝对起点。
 - 场景按时间排列且不能重叠；字幕内容都归入明确场景，录屏或留白场景由 Builder 生成透明时间段，只有字幕之间没有内容的时间可以留空。
 - 过场标题必须占用明确的 Cue 范围，不能只写插入位置或创建没有时长的场景；口播稿中的文字不能代替 SRT 时间。
 

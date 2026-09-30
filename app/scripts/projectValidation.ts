@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { parseProject, type Project } from "../src/domain/projectSchema";
 import { parseScene, type Scene } from "../src/domain/sceneSchema";
+import { sceneStartFrame } from "../src/domain/scenePlacement";
 import { validateScenesAgainstSource } from "../src/domain/sourceTimelineValidation";
 import {
   summarizeTimelineIssues,
@@ -32,6 +33,9 @@ export function validateProjectDirectory(
   const project = parseProject(
     readJson(resolve(absoluteProjectDirectory, "project.json")),
   );
+  if (project.kind !== "broll") {
+    throw new Error(`Project "${project.id}" is not a B-roll project`);
+  }
 
   if (project.audioFile) {
     assertFileExists(
@@ -74,11 +78,16 @@ export function validateProjectDirectory(
     return scene;
   });
 
-  const issues = validateSceneTimeline(scenes, { strict: options.strict });
+  const timelineScenes = scenes.map((scene) => ({
+    id: scene.id,
+    startFrame: sceneStartFrame(project, scene),
+    durationInFrames: scene.durationInFrames,
+  }));
+  const issues = validateSceneTimeline(timelineScenes, { strict: options.strict });
   const sourceFile = resolve(absoluteProjectDirectory, "source.srt");
   assertFileExists(sourceFile, "Project source.srt");
   const cues = parseSrt(readFileSync(sourceFile, "utf8"));
-  issues.push(...validateScenesAgainstSource(scenes, cues, project.fps));
+  issues.push(...validateScenesAgainstSource(timelineScenes, cues, project.fps));
 
   const errors = issues.filter((issue) => issue.severity === "error");
   if (errors.length > 0) {

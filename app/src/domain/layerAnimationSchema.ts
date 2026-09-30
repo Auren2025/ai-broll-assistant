@@ -3,7 +3,7 @@ import { z } from "zod"
 // Animation rules:
 // - startFrame is the animation's local start frame inside the layer's scene
 //   timeline; it is not the global project frame. The scene's own
-//   startFrame (see SceneSchema) carries the absolute timeline offset.
+//   project scene reference carries the absolute B-roll timeline offset.
 // - durationInFrames is the number of frames the animation lasts.
 // - startFrame doubles as a delay: an animation that should not begin at
 //   scene-local frame 0 simply has startFrame > 0.

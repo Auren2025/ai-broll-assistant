@@ -95,7 +95,7 @@ export function ScenePropertiesPanel({
     <section className="scene-design-panel" aria-label="Scene properties">
       <header className="scene-design-header">
         <span className="scene-design-icon" aria-hidden="true" />
-        <h3>Scene {sceneNumber}</h3>
+        <h3>{project.kind === "slide" ? "Page" : "Scene"} {sceneNumber}</h3>
       </header>
 
       <section className="scene-design-section scene-topic-section">

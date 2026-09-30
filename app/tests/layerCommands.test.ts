@@ -75,6 +75,8 @@ test("makeLayerIdGenerator returns a unique id per original layer and reuses cac
     type: "image" as const,
     src: null,
     fit: "contain" as const,
+    focalX: 0.5,
+    focalY: 0.5,
     placeholderColor: "#d1d5db",
     cornerRadius: 0,
   };

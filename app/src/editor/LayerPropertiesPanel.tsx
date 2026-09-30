@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { getAssetUrl } from "../api/projectApi";
 import type { ZOrderAction } from "../domain/groupOperations";
+import type { ImageFit } from "../domain/imageLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
 import type { TextLayer } from "../domain/textLayerSchema";
 import type { ShapeText } from "../domain/shapeTextSchema";
@@ -11,6 +13,7 @@ import {
 } from "./alignment";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 import type { EditableLayerPatch } from "./layerEditing";
+import { matchingImageSize } from "./imageSizing";
 
 const FONT_OPTIONS: { label: string; options: string[] }[] = [
   {
@@ -23,18 +26,109 @@ const FONT_OPTIONS: { label: string; options: string[] }[] = [
   },
   {
     label: "中文",
-    options: ["YouSheBiaoTiYuan", "YouSheBiaoTiHei", "PingFang SC"],
+    options: [
+      "YouSheBiaoTiYuan",
+      "YouSheBiaoTiHei",
+      "PingFang SC",
+      "Source Han Serif CN",
+    ],
   },
 ];
 
 interface LayerPropertiesPanelProps {
   layer: Layer | null;
+  projectId: string;
   onPatch: (patch: EditableLayerPatch) => void;
   onAlign: (action: AlignmentAction) => void;
   onReplaceImage: () => void;
   onDuplicate: () => void;
   onReorder: (action: ZOrderAction) => void;
   onDeleteLayer: () => void;
+}
+
+function LayerSizeControls({
+  layer,
+  projectId,
+  onPatch,
+}: {
+  layer: Layer;
+  projectId: string;
+  onPatch: (patch: EditableLayerPatch) => void;
+}) {
+  const [keepImageProportions, setKeepImageProportions] = useState(true);
+  const [sourceSize, setSourceSize] = useState<{
+    url: string;
+    aspectRatio: number | null;
+  } | null>(null);
+  const imageSrc = layer.type === "image" ? layer.src : null;
+  const imageUrl = imageSrc ? getAssetUrl(projectId, imageSrc) : null;
+
+  useEffect(() => {
+    if (!imageUrl) return;
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (active) {
+        setSourceSize({
+          url: imageUrl,
+          aspectRatio:
+            image.naturalWidth > 0 && image.naturalHeight > 0
+              ? image.naturalWidth / image.naturalHeight
+              : null,
+        });
+      }
+    };
+    image.onerror = () => {
+      if (active) setSourceSize({ url: imageUrl, aspectRatio: null });
+    };
+    image.src = imageUrl;
+    return () => {
+      active = false;
+    };
+  }, [imageUrl]);
+
+  const sourceReady = !imageUrl || sourceSize?.url === imageUrl;
+  const aspectRatio =
+    layer.type === "image" && layer.fit !== "cover" &&
+    imageSrc && sourceReady && sourceSize?.aspectRatio
+      ? sourceSize.aspectRatio
+      : layer.width / layer.height;
+
+  function changeSize(dimension: "width" | "height", value: number): void {
+    const size = Math.max(1, value);
+    if (layer.type === "image" && keepImageProportions) {
+      onPatch(matchingImageSize(dimension, size, aspectRatio));
+    } else {
+      onPatch({ [dimension]: size });
+    }
+  }
+
+  return (
+    <>
+      <div className="layer-design-row">
+        <span>Size</span>
+        <div className="layer-double-input">
+          <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={layer.width} disabled={layer.type === "image" && keepImageProportions && !sourceReady} onValueChange={(value) => changeSize("width", value)} />
+          <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={layer.height} disabled={layer.type === "image" && keepImageProportions && !sourceReady} onValueChange={(value) => changeSize("height", value)} />
+        </div>
+      </div>
+      {layer.type === "image" ? (
+        <label className="layer-design-row layer-image-aspect-row">
+          <span>Ratio</span>
+          <span className="layer-image-aspect-control">
+            <input
+              type="checkbox"
+              aria-label="Keep image proportions"
+              title={layer.fit === "cover" ? "Keep the crop frame ratio while resizing" : "Match the source image ratio while resizing"}
+              checked={keepImageProportions}
+              onChange={(event) => setKeepImageProportions(event.currentTarget.checked)}
+            />
+            {layer.fit === "cover" ? "Keep frame ratio" : "Keep proportions"}
+          </span>
+        </label>
+      ) : null}
+    </>
+  );
 }
 
 const ARRANGE_BUTTONS: { action: ZOrderAction; label: string; icon: string }[] =
@@ -348,6 +442,7 @@ function LayerNameInput({
 
 export function LayerPropertiesPanel({
   layer,
+  projectId,
   onPatch,
   onAlign,
   onReplaceImage,
@@ -408,13 +503,7 @@ export function LayerPropertiesPanel({
             <BufferedNumberInput step="1" aria-label="Layer Y position" value={layer.y} onValueChange={(value) => onPatch({ y: value })} />
           </div>
         </div>
-        <div className="layer-design-row">
-          <span>Size</span>
-          <div className="layer-double-input">
-            <BufferedNumberInput min="1" step="1" aria-label="Layer width" value={layer.width} onValueChange={(value) => onPatch({ width: Math.max(1, value) })} />
-            <BufferedNumberInput min="1" step="1" aria-label="Layer height" value={layer.height} onValueChange={(value) => onPatch({ height: Math.max(1, value) })} />
-          </div>
-        </div>
+        <LayerSizeControls key={layer.id} layer={layer} projectId={projectId} onPatch={onPatch} />
         <div className="layer-design-row">
           <span>Angle</span>
           <div className="layer-single-input">
@@ -506,12 +595,31 @@ export function LayerPropertiesPanel({
             <select
               aria-label="Image fit"
               value={layer.fit}
-              onChange={(event) => onPatch({ fit: event.currentTarget.value as "fill" | "contain" })}
+              onChange={(event) => onPatch({ fit: event.currentTarget.value as ImageFit })}
             >
               <option value="contain">Contain</option>
-              <option value="fill">Fill</option>
+              <option value="cover">Crop to fill</option>
+              <option value="fill">Stretch</option>
             </select>
           </label>
+          {layer.fit === "cover" ? (
+            <>
+              <div className="layer-design-row">
+                <span>Focus X</span>
+                <div className="layer-single-input layer-wide-input">
+                  <BufferedNumberInput min="0" max="100" step="1" aria-label="Image horizontal focus percent" title="0 left, 50 center, 100 right" value={Math.round(layer.focalX * 100)} onValueChange={(value) => onPatch({ focalX: Math.min(1, Math.max(0, value / 100)) })} />
+                  <span>%</span>
+                </div>
+              </div>
+              <div className="layer-design-row">
+                <span>Focus Y</span>
+                <div className="layer-single-input layer-wide-input">
+                  <BufferedNumberInput min="0" max="100" step="1" aria-label="Image vertical focus percent" title="0 top, 50 center, 100 bottom" value={Math.round(layer.focalY * 100)} onValueChange={(value) => onPatch({ focalY: Math.min(1, Math.max(0, value / 100)) })} />
+                  <span>%</span>
+                </div>
+              </div>
+            </>
+          ) : null}
           {layer.src === null ? (
             <div className="layer-design-row layer-paint-row">
               <span>Placeholder color</span>

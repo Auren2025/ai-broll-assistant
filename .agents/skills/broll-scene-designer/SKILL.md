@@ -9,7 +9,7 @@ description: 为 scene-plan.md 中已确认的 B-roll 场景编写具体、可�
 
 ## 输入
 
-- 已获批的 `projects/<project-id>/scene-plan.md`
+- 已获批的 `projects/broll/<project-id>/scene-plan.md`
 - 对应的 `source.srt`、音频和可选口播稿
 - `docs/BROLL_VISUAL_STYLE.md`
 - 项目已有素材和相关参考作品

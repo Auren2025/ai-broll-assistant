@@ -37,7 +37,7 @@ async function fixture(t: TestContext) {
   // Expected invalid requests/files are asserted below without dumping Zod stacks.
   t.mock.method(console, "error", () => {});
   const { project, scene, secondScene } = makeProjectFixture();
-  const directory = path.join(root, project.id);
+  const directory = path.join(root, "broll", project.id);
   await fs.mkdir(path.join(directory, "scenes"), { recursive: true });
   await fs.mkdir(path.join(directory, "assets"));
   await fs.writeFile(path.join(directory, "project.json"), JSON.stringify(project));
@@ -77,6 +77,55 @@ test("local server reads validated resources, health and ETags from an isolated 
     assert.match(response.headers.get("ETag") ?? "", /^"[a-f0-9]{64}"$/);
     assert.deepEqual(await response.json(), expected);
   }
+});
+
+test("local server reads slide projects without changing their project IDs", async (t) => {
+  const f = await fixture(t);
+  const slideDirectory = path.join(f.root, "slide", "slide-demo");
+  await fs.mkdir(path.join(slideDirectory, "scenes"), { recursive: true });
+  const slideProject = { ...f.project, id: "slide-demo", kind: "slide" as const, scenes: f.project.scenes.map(({ id, file }) => ({ id, file })) };
+  await fs.writeFile(path.join(slideDirectory, "project.json"), JSON.stringify(slideProject));
+  await fs.writeFile(path.join(slideDirectory, "scenes", `${f.scene.id}.json`), JSON.stringify(f.scene));
+  const response = await f.request("/api/projects/slide-demo");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), slideProject);
+  const sceneResponse = await f.request(`/api/projects/slide-demo/scenes/${f.scene.id}`);
+  assert.equal(sceneResponse.status, 200);
+  assert.deepEqual(await sceneResponse.json(), f.scene);
+});
+
+test("a project cannot change type without moving its directory", async (t) => {
+  const f = await fixture(t);
+  const response = await f.write(f.projectUrl, { ...f.project, kind: "slide", scenes: f.project.scenes.map(({ id, file }) => ({ id, file })) });
+  assert.equal(response.status, 400);
+  assert.match(await responseError(response), /kind does not match/);
+  assert.deepEqual(await f.readProject(), f.project);
+});
+
+test("slide pages can be inserted and reordered without changing page content or timeline anchors", async (t) => {
+  const f = await fixture(t);
+  const directory = path.join(f.root, "slide", "slide-order");
+  await fs.mkdir(path.join(directory, "scenes"), { recursive: true });
+  const project = { ...f.project, id: "slide-order", kind: "slide" as const, scenes: f.project.scenes.map(({ id, file }) => ({ id, file })) };
+  await fs.writeFile(path.join(directory, "project.json"), JSON.stringify(project));
+  for (const scene of [f.scene, f.secondScene]) {
+    await fs.writeFile(path.join(directory, "scenes", `${scene.id}.json`), JSON.stringify(scene));
+  }
+  const url = "/api/projects/slide-order";
+  const created = await f.request(`${url}/scenes?index=1`, { method: "POST", headers: { Origin: EDITOR_ORIGIN } });
+  assert.equal(created.status, 201);
+  const body = await responseObject(created);
+  const inserted = parseScene(body.scene);
+  assert.equal(inserted.schemaVersion, 2);
+  assert.equal(inserted.startFrame, undefined);
+  const updated = parseProject(body.project);
+  assert.deepEqual(updated.scenes.map(({ id }) => id), ["scene-001", "scene-003", "scene-002"]);
+  assert.deepEqual(updated.scenes.map(({ startFrame }) => startFrame), [undefined, undefined, undefined]);
+  const reordered = { ...updated, scenes: [updated.scenes[2], updated.scenes[0], updated.scenes[1]] };
+  const saved = await f.write(url, reordered);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await responseObject(saved)).scenes, reordered.scenes);
+  assert.deepEqual(parseScene(JSON.parse(await fs.readFile(path.join(directory, "scenes", "scene-001.json"), "utf8"))), f.scene);
 });
 
 test("server instances keep their injected project roots isolated", async (t) => {
@@ -214,7 +263,8 @@ test("scene creation and deletion preserve remaining IDs, contents and absolute 
   const body = await responseObject(created);
   const scene = parseScene(body.scene);
   assert.equal(scene.id, "scene-003");
-  assert.equal(scene.startFrame, 90);
+  assert.equal(scene.startFrame, undefined);
+  assert.equal(parseProject(body.project).scenes.at(-1)?.startFrame, 90);
   assert.deepEqual(scene.layers, []);
   assert.deepEqual(await f.readProject(), parseProject(body.project));
   assert.deepEqual(await f.readScene(scene.id), scene);

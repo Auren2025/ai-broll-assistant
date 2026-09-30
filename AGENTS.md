@@ -29,6 +29,7 @@
 
 - 工作区根目录保存 Agent 配置、入口文档，以及统一安装和转发应用命令的 pnpm workspace 配置与锁文件。
 - 应用根目录为 `app/`；`projects/`、`src/`、`scripts/`、`server/` 等应用路径均相对于 `app/`。
+- 作品位于 `app/projects/broll/<project-id>/` 或 `app/projects/slide/<project-id>/`；同一个项目 ID 不跨类别复用。
 - 安装和应用命令默认在工作区根目录执行；根脚本转发到 `app/` 并保持应用工作目录。
 
 ## 按需读取
@@ -50,7 +51,7 @@
 
 ## 讨论记忆
 
-- 继续处理某个具体作品前，如果存在 `app/projects/<project-id>/MEMORY.md`，按需读取它。
+- 继续处理某个具体作品前，如果存在 `app/projects/<类别>/<project-id>/MEMORY.md`，按需读取它。
 - 与单个作品有关的决定、反馈和待办写入该作品的 `MEMORY.md`；跨作品的视觉方法写入对应视觉文档，其他改进想法和实验经验写入 `docs/EVOLUTION.md`。
 - Project / Scene 等作品文件描述当前成品；记忆文件记录讨论背景，不能替代作品文件或成为另一份画面方案。
 - 重要讨论结束后，Agent 应提出简短的候选记忆清单并说明目标文件。只有用户确认的条目才能写入。

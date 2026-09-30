@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import type { SceneReference } from "../domain/projectSchema";
+import { moveSceneReference } from "../domain/sceneOrder";
 import type { Layer, Scene } from "../domain/sceneSchema";
 
 type InspectorScope = "scene" | "layer";
@@ -51,7 +52,10 @@ interface SceneLayerTreeProps {
   activeInsertionGroupId: string | null;
   inspectorScope: InspectorScope;
   isSceneSwitchDisabled: boolean;
+  isSlideProject: boolean;
   onSceneSelect: (sceneId: string) => void;
+  onSceneContextMenu: (sceneId: string, x: number, y: number) => void;
+  onSceneMove: (sceneId: string, insertionIndex: number) => void;
   onLayerSelect: (sceneId: string, layerId: string, additive: boolean) => void;
   onGroupEditEnter: (sceneId: string, groupId: string) => void;
   onLayerMove: (sceneId: string, request: LayerMoveRequest) => void;
@@ -71,7 +75,10 @@ export function SceneLayerTree({
   activeInsertionGroupId,
   inspectorScope,
   isSceneSwitchDisabled,
+  isSlideProject,
   onSceneSelect,
+  onSceneContextMenu,
+  onSceneMove,
   onLayerSelect,
   onGroupEditEnter,
   onLayerMove,
@@ -83,6 +90,11 @@ export function SceneLayerTree({
   const [expandedGroupIds, setExpandedGroupIds] = useState<string[]>([]);
   const [draggedLayer, setDraggedLayer] = useState<DraggedLayer | null>(null);
   const [activeDropTarget, setActiveDropTarget] = useState<string | null>(null);
+  const [draggedSceneId, setDraggedSceneId] = useState<string | null>(null);
+  const [sceneDropTarget, setSceneDropTarget] = useState<{
+    sceneId: string;
+    side: "before" | "after";
+  } | null>(null);
 
   useEffect(() => {
     setExpandedSceneIds((current) =>
@@ -141,6 +153,16 @@ export function SceneLayerTree({
   function endLayerDrag(): void {
     setDraggedLayer(null);
     setActiveDropTarget(null);
+  }
+
+  function sceneDropSide(event: DragEvent<HTMLElement>): "before" | "after" {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+  }
+
+  function endSceneDrag(): void {
+    setDraggedSceneId(null);
+    setSceneDropTarget(null);
   }
 
   function canDropAt(
@@ -350,7 +372,7 @@ export function SceneLayerTree({
   return (
     <section className="scene-tree-section">
       <div className="section-heading">
-        <h2>Scenes</h2>
+        <h2>{isSlideProject ? "Pages" : "Scenes"}</h2>
         <span>{sceneReferences.length}</span>
       </div>
       <div className="scene-tree" aria-label="Scene layer tree">
@@ -368,7 +390,50 @@ export function SceneLayerTree({
           return (
             <div className="scene-tree-node" key={sceneReference.id}>
               <div
-                className={`scene-tree-row${isCurrent ? " is-current" : ""}${isSceneSelected ? " is-scene-selected" : ""}`}
+                className={`scene-tree-row${isCurrent ? " is-current" : ""}${isSceneSelected ? " is-scene-selected" : ""}${isSlideProject ? " is-slide" : ""}${draggedSceneId === sceneReference.id ? " is-dragging" : ""}${sceneDropTarget?.sceneId === sceneReference.id ? ` is-drop-${sceneDropTarget.side}` : ""}`}
+                draggable={isSlideProject && !isSceneSwitchDisabled}
+                onDragStart={(event) => {
+                  if (!isSlideProject || isSceneSwitchDisabled) return;
+                  setDraggedSceneId(sceneReference.id);
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", sceneReference.id);
+                }}
+                onDragEnd={endSceneDrag}
+                onDragOver={(event) => {
+                  if (!draggedSceneId || !isSlideProject || isSceneSwitchDisabled) return;
+                  const side = sceneDropSide(event);
+                  const insertionIndex = index + (side === "after" ? 1 : 0);
+                  if (!moveSceneReference(sceneReferences, draggedSceneId, insertionIndex)) {
+                    setSceneDropTarget(null);
+                    return;
+                  }
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setSceneDropTarget((current) =>
+                    current?.sceneId === sceneReference.id && current.side === side
+                      ? current
+                      : { sceneId: sceneReference.id, side },
+                  );
+                }}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setSceneDropTarget((current) => current?.sceneId === sceneReference.id ? null : current);
+                  }
+                }}
+                onDrop={(event) => {
+                  if (!draggedSceneId || !isSlideProject || isSceneSwitchDisabled) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const insertionIndex = index + (sceneDropSide(event) === "after" ? 1 : 0);
+                  onSceneMove(draggedSceneId, insertionIndex);
+                  endSceneDrag();
+                }}
+                onContextMenu={(event) => {
+                  if (!isSlideProject || isSceneSwitchDisabled) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSceneContextMenu(sceneReference.id, event.clientX, event.clientY);
+                }}
               >
                 <button
                   className="tree-toggle"
@@ -388,7 +453,7 @@ export function SceneLayerTree({
                 >
                   <span className="scene-number">{index + 1}</span>
                   <span className="scene-copy">
-                    <strong>Scene {index + 1}</strong>
+                    <strong>{isSlideProject ? "Page" : "Scene"} {index + 1}</strong>
                   </span>
                   {isCurrent ? <span className="current-marker" /> : null}
                 </button>

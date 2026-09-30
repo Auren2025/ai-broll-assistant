@@ -1,6 +1,7 @@
 interface EditorToolbarProps {
   isAddSceneDisabled: boolean;
   isCreatingScene: boolean;
+  isSlideProject: boolean;
   canUndo: boolean;
   canRedo: boolean;
   isPreviewActive: boolean;
@@ -20,6 +21,7 @@ interface EditorToolbarProps {
 export function EditorToolbar({
   isAddSceneDisabled,
   isCreatingScene,
+  isSlideProject,
   canUndo,
   canRedo,
   isPreviewActive,
@@ -133,11 +135,11 @@ export function EditorToolbar({
           title={
             isAddSceneDisabled
               ? "Please wait for the current operation"
-              : "Add a new scene"
+              : `Add a new ${isSlideProject ? "page" : "scene"}`
           }
-          aria-label="Add scene"
+          aria-label={isSlideProject ? "Add page" : "Add scene"}
         >
-          {isCreatingScene ? "Adding…" : "Add Scene"}
+          {isCreatingScene ? "Adding…" : isSlideProject ? "Add Page" : "Add Scene"}
         </button>
         <button
           className={`editor-tool${isPreviewActive ? " is-active" : ""}`}

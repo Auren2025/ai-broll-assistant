@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { ExternalChangeConflictError, fetchProjectResource, fetchSceneResource, saveProject, saveScene } from "../api/projectApi";
 import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
@@ -68,6 +68,12 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
   } = hooks;
 
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // Callbacks from the editor may change on every render. Keep the public
+  // controller stable while always delivering results to the latest handlers.
+  const settersRef = useRef(setters);
+  useLayoutEffect(() => {
+    settersRef.current = setters;
+  }, [setters]);
 
   const buildSnapshot = useCallback((): SaveSnapshot | null => {
     const project = projectRef.current;
@@ -91,10 +97,10 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
         return saveQueueRef.current;
       }
 
-      setters.setIsSavePending(true);
+      settersRef.current.setIsSavePending(true);
       const { result, settled } = enqueueSave(saveQueueRef.current, async () => {
         activeSaveCountRef.current += 1;
-        setters.setIsSaving(true);
+        settersRef.current.setIsSaving(true);
 
         try {
           await saveChangedResources(
@@ -103,21 +109,21 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
             {
               saveProject,
               saveScene,
-              onSceneSaved: setters.onSceneSaved,
+              onSceneSaved: (scene) => settersRef.current.onSceneSaved(scene),
             },
             force,
           );
-          setters.setHasSaveConflict(false);
+          settersRef.current.setHasSaveConflict(false);
         } catch (error: unknown) {
-          setters.setSaveError(error instanceof Error ? error.message : "Unknown error");
-          setters.setHasSaveConflict(error instanceof ExternalChangeConflictError);
+          settersRef.current.setSaveError(error instanceof Error ? error.message : "Unknown error");
+          settersRef.current.setHasSaveConflict(error instanceof ExternalChangeConflictError);
           throw error;
         } finally {
           activeSaveCountRef.current -= 1;
-          if (activeSaveCountRef.current === 0) setters.setIsSaving(false);
+          if (activeSaveCountRef.current === 0) settersRef.current.setIsSaving(false);
         }
       });
-      saveQueueRef.current = settled.then(() => setters.setIsSavePending(false));
+      saveQueueRef.current = settled.then(() => settersRef.current.setIsSavePending(false));
       return result;
     },
     [
@@ -125,7 +131,6 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
       buildSnapshot,
       documentVersions.projectSaved,
       documentVersions.sceneSaved,
-      setters,
     ],
   );
 
@@ -135,7 +140,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
     async (signal?: AbortSignal): Promise<void> => {
       if (externalRefreshRunningRef.current) return;
       externalRefreshRunningRef.current = true;
-      setters.setIsExternalRefreshRunning(true);
+      settersRef.current.setIsExternalRefreshRunning(true);
       try {
         const beforeProject = projectRef.current;
         if (!beforeProject) return;
@@ -167,12 +172,12 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
         loadedProjectResource.commitEtag();
         loadedSceneResources.forEach((resource) => resource.commitEtag());
         if (!projectChanged && !scenesChanged) return;
-        setters.applyExternalSnapshot(loadedProject, loadedScenes);
+        settersRef.current.applyExternalSnapshot(loadedProject, loadedScenes);
       } catch (error: unknown) {
-        if (!isAbortError(error)) setters.onExternalError(error instanceof Error ? error.message : "Unknown error");
+        if (!isAbortError(error)) settersRef.current.onExternalError(error instanceof Error ? error.message : "Unknown error");
       } finally {
         externalRefreshRunningRef.current = false;
-        setters.setIsExternalRefreshRunning(false);
+        settersRef.current.setIsExternalRefreshRunning(false);
       }
     },
     [
@@ -181,7 +186,6 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
       externalRefreshRunningRef,
       projectRef,
       scenesByIdRef,
-      setters,
     ],
   );
 
@@ -189,11 +193,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
   // runExternalRefresh (typically from a useEffect interval). Keeping the hook focused
   // on queued persistence avoids coupling the controller to React timing.
 
-  return {
-    queueSave,
-    flush,
-    runExternalRefresh,
-  };
+  return useMemo(() => ({ queueSave, flush, runExternalRefresh }), [queueSave, flush, runExternalRefresh]);
 }
 
 /** Drive the auto-save timer and external-refresh interval around a controller. */
@@ -243,11 +243,10 @@ export function useSaveControllerLoop(options: SaveControllerLoopOptions): void 
     if (isDirty || isSceneLoading || isCreatingScene || hasSaveConflict || isApplyingHistory) {
       return;
     }
-    const controllerRef = { current: controller };
     const abortController = new AbortController();
     const interval = window.setInterval(() => {
       if (isExternalRefreshRunning) return;
-      void controllerRef.current.runExternalRefresh(abortController.signal);
+      void controller.runExternalRefresh(abortController.signal);
     }, externalRefreshIntervalMs);
     return () => {
       window.clearInterval(interval);

@@ -16,10 +16,13 @@ import { LayerBaseSchema, StrokePositionSchema } from "./layerSchema";
 //   is always present even when stroke is null.
 // - `placeholderColor` is rendered only while `src` is null. Loaded images
 //   never use it as a background or tint.
+// - `focalX` and `focalY` position the image within a cover crop. Zero aligns
+//   the left/top edge, one aligns the right/bottom edge, and 0.5 centers it.
 
 const ASSET_PATH_PATTERN = /^assets\/[A-Za-z0-9_.-]+$/;
 
-export const ImageFitSchema = z.enum(["fill", "contain"]);
+export const ImageFitSchema = z.enum(["fill", "contain", "cover"]);
+export type ImageFit = z.infer<typeof ImageFitSchema>;
 
 export const ImageLayerSchema = LayerBaseSchema.extend({
   type: z.literal("image"),
@@ -31,6 +34,8 @@ export const ImageLayerSchema = LayerBaseSchema.extend({
   // Existing persisted images omitted this field and used stretched rendering.
   // Keep that behavior while new placeholders explicitly opt into contain.
   fit: ImageFitSchema.default("fill"),
+  focalX: z.number().finite().min(0).max(1).default(0.5),
+  focalY: z.number().finite().min(0).max(1).default(0.5),
   placeholderColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)

@@ -4,8 +4,8 @@ import react from "@vitejs/plugin-react";
 import { build } from "vite";
 import { parseProject } from "../src/domain/projectSchema";
 import type { Layer } from "../src/domain/sceneSchema";
-import { validateSceneTimeline } from "../src/domain/timelineValidation";
 import { parsePresentationData } from "../src/presentation/presentationData";
+import { projectDirectory as resolveProjectDirectory } from "./projectDirectory";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -35,12 +35,15 @@ async function exportHtmlPresentation(projectId: string): Promise<void> {
   }
 
   const repositoryRoot = resolve(".");
-  const projectDirectory = resolve(repositoryRoot, "projects", projectId);
+  const projectDirectory = resolveProjectDirectory(resolve(repositoryRoot, "projects"), projectId, "slide");
   const project = parseProject(
     JSON.parse(
       await readFile(resolve(projectDirectory, "project.json"), "utf-8"),
     ),
   );
+  if (project.kind !== "slide") {
+    throw new Error(`Project "${projectId}" is not a slide presentation`);
+  }
   const scenes = await Promise.all(
     project.scenes.map(async (reference: { file: string }) =>
       JSON.parse(
@@ -49,16 +52,6 @@ async function exportHtmlPresentation(projectId: string): Promise<void> {
     ),
   );
   const presentationData = parsePresentationData({ project, scenes });
-  const timelineErrors = validateSceneTimeline(presentationData.scenes).filter(
-    (issue) => issue.severity === "error",
-  );
-  if (timelineErrors.length > 0) {
-    throw new Error(
-      `Invalid presentation timeline:\n${timelineErrors
-        .map((issue) => `- ${issue.message}`)
-        .join("\n")}`,
-    );
-  }
 
   const imageSources = new Set(
     presentationData.scenes.flatMap((scene) =>

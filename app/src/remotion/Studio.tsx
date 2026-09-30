@@ -10,6 +10,7 @@ import {
 } from "../api/localService";
 import { parseProject, type Project } from "../domain/projectSchema";
 import { parseScene, type Scene } from "../domain/sceneSchema";
+import { sceneStartFrame } from "../domain/scenePlacement";
 import {
   DEFAULT_PROJECT_ID,
   PROJECT_ID_PATTERN,
@@ -42,14 +43,17 @@ function resolveStudioProjectId(): string {
   return DEFAULT_PROJECT_ID;
 }
 
-function getProjectDurationInFrames(scenes: readonly Scene[]): number {
+function getProjectDurationInFrames(project: Project, scenes: readonly Scene[]): number {
   if (scenes.length === 0) {
     return 0;
   }
 
+  if (project.kind === "slide") {
+    return scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0);
+  }
   return Math.max(
     ...scenes.map(
-      (scene) => scene.startFrame + scene.durationInFrames,
+      (scene) => sceneStartFrame(project, scene) + scene.durationInFrames,
     ),
   );
 }
@@ -104,7 +108,7 @@ const studioCalculateMetadata: CalculateMetadataFunction<StudioProps> =
       width: project.width,
       height: project.height,
       fps: project.fps,
-      durationInFrames: getProjectDurationInFrames(scenes),
+      durationInFrames: getProjectDurationInFrames(project, scenes),
       defaultCodec: "prores",
       defaultVideoImageFormat: "png",
       defaultPixelFormat: "yuva444p10le",
@@ -117,6 +121,7 @@ const defaultProps: StudioProps = {
   project: {
     schemaVersion: 1,
     id: "",
+    kind: "broll",
     name: "",
     width: 1920,
     height: 1080,

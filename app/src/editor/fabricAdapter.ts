@@ -364,6 +364,8 @@ export function applyLayerToFabricObject(
       imageStrokeWidth: layer.strokeWidth,
       imageCornerRadius: layer.cornerRadius,
       imageFit: layer.fit,
+      imageFocalX: layer.focalX,
+      imageFocalY: layer.focalY,
       imagePlaceholderColor: layer.placeholderColor,
     });
     object.dirty = true;
@@ -420,6 +422,8 @@ export function createFabricObjectForLayer(
         objectCaching: false,
         imageSrc: layer.src ? getAssetUrl(projectId, layer.src) : "",
         imageFit: layer.fit,
+        imageFocalX: layer.focalX,
+        imageFocalY: layer.focalY,
         imagePlaceholderColor: layer.placeholderColor,
       });
       break;

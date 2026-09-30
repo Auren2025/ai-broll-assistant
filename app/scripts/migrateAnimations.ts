@@ -149,7 +149,7 @@ function migrateProject(projectDirectory: string): void {
 const projectDirectory = process.argv[2];
 
 if (!projectDirectory) {
-  console.error("Usage: pnpm migrate:animations projects/<project-id>");
+  console.error("Usage: pnpm migrate:animations projects/<broll|slide>/<project-id>");
   process.exitCode = 1;
 } else {
   try {

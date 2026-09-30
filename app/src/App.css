@@ -291,6 +291,43 @@ button {
   border-radius: 8px;
 }
 
+.scene-tree-row.is-slide {
+  cursor: grab;
+  position: relative;
+}
+
+.scene-tree-row.is-slide:active {
+  cursor: grabbing;
+}
+
+.scene-tree-row.is-slide.is-dragging {
+  opacity: 0.4;
+}
+
+.scene-tree-row.is-slide.is-drop-before::before,
+.scene-tree-row.is-slide.is-drop-after::after {
+  background: #6556d8;
+  border-radius: 2px;
+  content: "";
+  height: 3px;
+  left: 4px;
+  position: absolute;
+  right: 4px;
+  z-index: 1;
+}
+
+.scene-tree-row.is-slide.is-drop-before::before {
+  top: -4px;
+}
+
+.scene-tree-row.is-slide.is-drop-after::after {
+  bottom: -4px;
+}
+
+.scene-tree-row.is-slide .scene-tree-main {
+  cursor: grab;
+}
+
 .scene-tree-row.is-current {
   background: #efedff;
 }
@@ -1592,6 +1629,21 @@ button {
   gap: 4px;
 }
 
+.layer-image-aspect-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #19171c;
+  font-size: 12px;
+}
+
+.layer-image-aspect-control input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #7a40ed;
+}
+
 .layer-single-input {
   position: relative;
   width: 80px;
@@ -2573,6 +2625,10 @@ button {
   color: #aaa4b0;
   font: inherit;
   font-size: 11px;
+}
+
+.scene-context-menu {
+  min-width: 190px;
 }
 
 .layer-group-hint {

@@ -6,7 +6,7 @@ const strict = args.includes("--strict");
 const projectDirectory = args.find((argument) => !argument.startsWith("--"));
 
 if (!projectDirectory) {
-  console.error("Usage: pnpm validate:project projects/<project-id> [--strict]");
+  console.error("Usage: pnpm validate:project projects/broll/<project-id> [--strict]");
   process.exitCode = 1;
 } else {
   try {

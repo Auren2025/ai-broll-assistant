@@ -8,6 +8,7 @@ import {
 const project = {
   schemaVersion: 1 as const,
   id: "demo",
+  kind: "slide" as const,
   name: "Demo",
   width: 1920,
   height: 1080,

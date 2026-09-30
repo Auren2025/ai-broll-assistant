@@ -4,9 +4,11 @@ import { GroupLayerSchema } from "./groupLayerSchema";
 import { isLineDrawDirectionValid, isLineDrawEligible } from "./lineDraw";
 
 // Scene timeline rules:
-// - startFrame is the scene's starting frame on the full project timeline.
+// - Legacy startFrame is accepted for older scenes. B-roll placement belongs
+//   to the project scene reference; slide pages have no absolute start.
 // - durationInFrames is the number of frames the scene lasts.
-// - endFrame is derived from startFrame + durationInFrames and is not persisted.
+// - B-roll end frame is derived from the project reference's startFrame plus
+//   this scene's durationInFrames; it is not persisted.
 // - Higher zIndex values render in front of lower values.
 // - Layer ids and zIndex values must be unique within a scene.
 //
@@ -14,7 +16,7 @@ import { isLineDrawDirectionValid, isLineDrawEligible } from "./lineDraw";
 // - Every animation attached to any layer of this scene must satisfy
 //   animation.startFrame + animation.durationInFrames <= scene.durationInFrames.
 //   Animation frames are local to this scene (animation.startFrame 0 means
-//   "at this scene's startFrame", not "at project frame 0").
+//   "at this scene's start", not "at project frame 0").
 
 export const LayerSchema = z.union([AtomicLayerSchema, GroupLayerSchema]);
 
@@ -22,16 +24,19 @@ export type Layer = z.infer<typeof LayerSchema>;
 
 export const SceneSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
     id: z.string().min(1),
     topic: z.string().min(1),
-    startFrame: z.number().int().nonnegative(),
+    startFrame: z.number().int().nonnegative().optional(),
     durationInFrames: z.number().int().positive(),
     backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
     layers: z.array(LayerSchema),
   })
   .strict()
   .superRefine((scene, context) => {
+    if (scene.schemaVersion === 2 && scene.startFrame !== undefined) {
+      context.addIssue({ code: "custom", message: "Scene startFrame belongs to the project scene reference", path: ["startFrame"] });
+    }
     const layerIds = new Set<string>();
     const zIndexes = new Set<number>();
 

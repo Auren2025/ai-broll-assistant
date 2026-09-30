@@ -12,7 +12,7 @@ description: 根据完整讲稿规划、设计、生成并导出可手动翻页�
 ## 流程
 
 1. 继续已有项目时先读取 `MEMORY.md`。将完整讲稿保存在项目的 `script.md`，不得用摘要替代。
-2. 尚无 `project.json` 时运行 `pnpm scaffold <project-id>`；空 `source.srt` 只是当前脚手架产物，不是演示输入。
+2. 尚无 `project.json` 时运行 `pnpm scaffold <project-id> --slide`；演示作品位于 `projects/slide/<project-id>/`，不需要 `source.srt`。
 3. 完整阅读讲稿，在 `presentation-plan.md` 中按讲稿段落记录页面标题和范围，请用户审查。
 4. 读取 `docs/PRESENTATION_VISUAL_STYLE.md`，为每页补充一段可直接想象的 `画面设计：`，请用户再次审查。
 5. 两次审查完成后，按目标横版 1920 × 1080 或竖版 1080 × 1920 生成 Scene JSON、图层和必要动画。
@@ -37,7 +37,7 @@ description: 根据完整讲稿规划、设计、生成并导出可手动翻页�
 - 画面描述使用具体空间和变化语言，说明元素在哪里、如何出现、最终停在哪里。
 - 每页必须能独立打开和重播，不能依赖观众看过上一页的动画状态。
 - Scene 时长只控制页内动画和最终停留状态，换页由用户手动触发，不需要 SRT 时间轴。
-- 为满足共享 Project 时间线，第一页 `startFrame` 为 0，后续页面从上一页结束帧开始；HTML 打开每页时仍从该页局部第 0 帧播放。
+- 页面顺序由 `project.json` 中 `scenes` 的引用顺序决定；演示的 Scene 和引用都不写全局 `startFrame`，每页从局部第 0 帧播放。
 - 横版和竖版分别设计，不直接缩放或照搬固定坐标。
 - 当前没有成熟演示视觉规则时，优先形成可审查的具体方案，不把一次结果提升为长期模板。
 

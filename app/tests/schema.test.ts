@@ -33,7 +33,7 @@ function rectLayer(id: string, zIndex: number) {
   };
 }
 
-function imageLayer(src: string | null, fit?: "fill" | "contain") {
+function imageLayer(src: string | null, fit?: "fill" | "contain" | "cover") {
   return {
     id: "image-1",
     name: "Image",
@@ -368,6 +368,32 @@ test("parseScene keeps legacy image stretching when fit is absent", () => {
   assert.equal(layer.type, "image");
   if (layer.type !== "image") return;
   assert.equal(layer.fit, "fill");
+  assert.equal(layer.focalX, 0.5);
+  assert.equal(layer.focalY, 0.5);
+});
+
+test("parseScene accepts cover crop focus and rejects positions outside the image", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "t",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [{ ...imageLayer("assets/example.png", "cover"), focalX: 0.2, focalY: 1 }],
+  });
+  const layer = scene.layers[0];
+  assert.equal(layer.type, "image");
+  if (layer.type !== "image") return;
+  assert.equal(layer.fit, "cover");
+  assert.equal(layer.focalX, 0.2);
+  assert.equal(layer.focalY, 1);
+
+  assert.throws(() =>
+    parseScene({
+      ...scene,
+      layers: [{ ...layer, focalX: 1.1 }],
+    }),
+  );
 });
 
 test("parseScene defaults the image placeholder color to light gray", () => {

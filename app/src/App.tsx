@@ -5,54 +5,39 @@ import {
   useRef,
   useState,
   type ChangeEvent as ReactChangeEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
-import { createRoot } from "react-dom/client";
 import type { PlayerRef } from "@remotion/player";
 import "./App.css";
 import {
-  createScene,
-  deleteScene as deleteSceneRequest,
-  fetchProject,
-  fetchScene,
   uploadImageAsset,
 } from "./api/projectApi";
-import type { LayerAnimation } from "./domain/layerAnimationSchema";
-import { isLineDrawEligible } from "./domain/lineDraw";
 import type { Project } from "./domain/projectSchema";
+import { sceneStartFrame as sceneStartFrameForProject } from "./domain/scenePlacement";
 import type { Layer, Scene } from "./domain/sceneSchema";
 import {
   canFlattenGroup,
   findLayerById,
   moveLayerTo,
-  scaleGroupChildren,
   updateLayerById,
   type ZOrderAction,
 } from "./domain/groupOperations";
 import { type AlignmentAction } from "./editor/alignment";
 import { EditorToolbar } from "./editor/EditorToolbar";
+import { EditorInspector } from "./editor/EditorInspector";
 import { FabricSceneCanvas } from "./editor/FabricSceneCanvas";
-import { LayerAnimationPanel } from "./editor/LayerAnimationPanel";
 import { RemotionScenePlayer } from "./remotion/RemotionScenePlayer";
 import { SceneAnimationTimeline } from "./editor/SceneAnimationTimeline";
-import {
-  LayerPropertiesPanel,
-  MultiLayerPropertiesPanel,
-} from "./editor/LayerPropertiesPanel";
-import type { EditableLayerPatch } from "./editor/layerEditing";
+import { useLayerEdits } from "./editor/useLayerEdits";
+import { useEditorSelection, type InspectorScope } from "./editor/useEditorSelection";
+import { useProjectLoading } from "./editor/useProjectLoading";
+import { useSceneOperations } from "./editor/useSceneOperations";
 import {
   SceneLayerTree,
   type LayerMoveRequest,
 } from "./editor/SceneLayerTree";
-import { ScenePropertiesPanel } from "./editor/ScenePropertiesPanel";
-import {
-  PREVIEW_CHANNEL_NAME,
-  type PreviewStateMessage,
-  type PreviewSyncMessage,
-} from "./preview/previewChannel";
-import { PreviewWindow } from "./preview/PreviewWindow";
-import { computeTextBoxSize } from "./editor/textMetrics";
+import { usePreviewWindow } from "./preview/usePreviewWindow";
+import { BASE_CANVAS_SCALE, ZOOM_STEP, useCanvasZoom } from "./editor/useCanvasZoom";
+import { MIN_TIMELINE_HEIGHT, useTimelineResize } from "./editor/useTimelineResize";
 import { resolveProjectId } from "./projectSelection";
 
 import {
@@ -73,68 +58,13 @@ const PROJECT_ID = resolveProjectId(
   window.location.search,
   window.location.pathname,
 );
-const DEFAULT_TIMELINE_HEIGHT = 224;
-const MIN_TIMELINE_HEIGHT = 120;
-const MIN_CANVAS_HEIGHT = 240;
 const AUTO_SAVE_DELAY_MS = 600;
 const EXTERNAL_REFRESH_INTERVAL_MS = 3000;
 
 type InspectorTab = "design" | "animate";
-type InspectorScope = "scene" | "layer";
-
-interface DocumentPictureInPictureApi {
-  readonly window: Window | null;
-  requestWindow(options?: { width?: number; height?: number }): Promise<Window>;
-}
-
-function getDocumentPictureInPicture():
-  | DocumentPictureInPictureApi
-  | undefined {
-  return (
-    window as Window & {
-      documentPictureInPicture?: DocumentPictureInPictureApi;
-    }
-  ).documentPictureInPicture;
-}
-
-function copyStyleSheets(targetDocument: Document): void {
-  for (const styleSheet of document.styleSheets) {
-    try {
-      const style = targetDocument.createElement("style");
-      style.textContent = Array.from(styleSheet.cssRules, (rule) => rule.cssText).join(
-        "\n",
-      );
-      targetDocument.head.append(style);
-    } catch {
-      if (!styleSheet.href) {
-        continue;
-      }
-
-      const link = targetDocument.createElement("link");
-      link.rel = "stylesheet";
-      link.href = styleSheet.href;
-      link.media = styleSheet.media.mediaText;
-      targetDocument.head.append(link);
-    }
-  }
-}
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
-}
-
-function roundCoordinate(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
-
-function hasSameLayerIds(
-  first: readonly string[],
-  second: readonly string[],
-): boolean {
-  return (
-    first.length === second.length &&
-    first.every((layerId) => second.includes(layerId))
-  );
 }
 
 function findParentGroup(layers: readonly Layer[], layerId: string) {
@@ -166,35 +96,12 @@ function App() {
   const [selectedAnimationId, setSelectedAnimationId] = useState<string | null>(
     null,
   );
-  const [timelineHeight, setTimelineHeight] = useState(
-    DEFAULT_TIMELINE_HEIGHT,
-  );
-  const [isTimelineResizing, setIsTimelineResizing] = useState(false);
+  const timelineResize = useTimelineResize();
   const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [canvasZoom, setCanvasZoom] = useState(1);
-  const BASE_CANVAS_SCALE = 0.5;
-  const MIN_CANVAS_ZOOM = 0.5;
-  const MAX_CANVAS_ZOOM = 6;
-  const ZOOM_STEP = 0.25;
-
-  function clampCanvasZoom(value: number): number {
-    return Math.min(Math.max(value, MIN_CANVAS_ZOOM), MAX_CANVAS_ZOOM);
-  }
-
-  const canvasCursorRef = useRef<{ x: number; y: number } | null>(null);
-
-  function zoomCanvasBy(delta: number): void {
-    canvasCursorRef.current = null;
-    setCanvasZoom((current) => clampCanvasZoom(current + delta));
-  }
-
-  function resetCanvasZoom(): void {
-    canvasCursorRef.current = null;
-    setCanvasZoom(1);
-  }
   const [inspectorScope, setInspectorScope] = useState<InspectorScope>("scene");
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [slideMenu, setSlideMenu] = useState<{ sceneId: string; x: number; y: number } | null>(null);
   const [pendingTextEditLayerId, setPendingTextEditLayerId] = useState<
     string | null
   >(null);
@@ -204,12 +111,11 @@ function App() {
   const [historyCanRedo, setHistoryCanRedo] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
+  const canvasZoom = useCanvasZoom(canvasAreaRef, isPreviewMode, Boolean(project && scene));
+  const handleOpenPreviewWindow = usePreviewWindow(project, scene, isDirty);
   const previewPlayerRef = useRef<PlayerRef | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);
   const replaceImageTargetIdRef = useRef<string | null>(null);
-  const previewChannelRef = useRef<BroadcastChannel | null>(null);
-  const previewWindowRef = useRef<Window | null>(null);
-  const previewStateRef = useRef<PreviewStateMessage | null>(null);
   const isApplyingHistoryRef = useRef(false);
   const isSceneLoadingRef = useRef(false);
   const projectRef = useRef<Project | null>(null);
@@ -223,12 +129,6 @@ function App() {
   const externalRefreshRunningRef = useRef(false);
   const sceneOperationRunningRef = useRef(false);
   const scenesByIdRef = useRef<Record<string, Scene>>({});
-  const timelineResizeRef = useRef<{
-    pointerId: number;
-    startY: number;
-    startHeight: number;
-    maximumHeight: number;
-  } | null>(null);
   const selectedLayerId =
     selectedLayerIds.length === 1 ? (selectedLayerIds[0] ?? null) : null;
 
@@ -369,88 +269,6 @@ function App() {
     },
   });
 
-  function clampTimelineHeight(value: number, maximumHeight: number): number {
-    return Math.min(Math.max(value, MIN_TIMELINE_HEIGHT), maximumHeight);
-  }
-
-  function handleTimelineResizeStart(
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ): void {
-    const workspace = event.currentTarget.closest<HTMLElement>(
-      ".canvas-workspace",
-    );
-    if (!workspace) return;
-
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    timelineResizeRef.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight: timelineHeight,
-      maximumHeight: Math.max(
-        MIN_TIMELINE_HEIGHT,
-        workspace.clientHeight - MIN_CANVAS_HEIGHT - 7,
-      ),
-    };
-    setIsTimelineResizing(true);
-  }
-
-  function handleTimelineResizeMove(
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ): void {
-    const resize = timelineResizeRef.current;
-    if (!resize || resize.pointerId !== event.pointerId) return;
-
-    setTimelineHeight(
-      clampTimelineHeight(
-        resize.startHeight - (event.clientY - resize.startY),
-        resize.maximumHeight,
-      ),
-    );
-  }
-
-  function handleTimelineResizeEnd(
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ): void {
-    if (timelineResizeRef.current?.pointerId !== event.pointerId) return;
-    timelineResizeRef.current = null;
-    setIsTimelineResizing(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
-
-  function handleTimelineResizeKeyDown(
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-  ): void {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    const workspace = event.currentTarget.closest<HTMLElement>(
-      ".canvas-workspace",
-    );
-    if (!workspace) return;
-
-    event.preventDefault();
-    const step = event.shiftKey ? 40 : 10;
-    const direction = event.key === "ArrowUp" ? 1 : -1;
-    const maximumHeight = Math.max(
-      MIN_TIMELINE_HEIGHT,
-      workspace.clientHeight - MIN_CANVAS_HEIGHT - 7,
-    );
-    setTimelineHeight((current) =>
-      clampTimelineHeight(current + direction * step, maximumHeight),
-    );
-  }
-
-  previewStateRef.current =
-    project && scene
-      ? {
-          type: "state",
-          project,
-          scene,
-          isDirty,
-        }
-      : null;
-
   useHistorySnapshotCapture(
     historyController,
     project && scene
@@ -465,82 +283,12 @@ function App() {
       : null,
   );
 
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    async function loadProject(): Promise<void> {
-      try {
-        const loadedProject = await fetchProject(PROJECT_ID, {
-          signal: abortController.signal,
-        });
-        const loadedScenes = await Promise.all(
-          loadedProject.scenes.map((sceneReference) =>
-            fetchScene(loadedProject.id, sceneReference.id, {
-              signal: abortController.signal,
-            }),
-          ),
-        );
-        const loadedScene = loadedScenes[0];
-
-        if (!loadedScene) {
-          throw new Error("Project contains no scenes");
-        }
-
-        if (!abortController.signal.aborted) {
-          setProject(loadedProject);
-          setScene(loadedScene);
-          setScenesById(
-            Object.fromEntries(
-              loadedScenes.map((candidate) => [candidate.id, candidate]),
-            ),
-          );
-          documentVersions.resetAll();
-          setSelectedLayerIds([]);
-          setIsDirty(false);
-          setHasSaveConflict(false);
-        }
-      } catch (error: unknown) {
-        if (!abortController.signal.aborted) {
-          setLoadError(getErrorMessage(error));
-        }
-      }
-    }
-
-    void loadProject();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [documentVersions]);
-
-  useEffect(() => {
-    const channel = new BroadcastChannel(PREVIEW_CHANNEL_NAME);
-    previewChannelRef.current = channel;
-
-    channel.onmessage = (event: MessageEvent<PreviewSyncMessage>) => {
-      if (event.data.type === "ready" && previewStateRef.current) {
-        channel.postMessage(previewStateRef.current);
-      }
-    };
-
-    return () => {
-      channel.close();
-      previewChannelRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!project || !scene) {
-      return;
-    }
-
-    previewChannelRef.current?.postMessage({
-      type: "state",
-      project,
-      scene,
-      isDirty,
-    } satisfies PreviewStateMessage);
-  }, [isDirty, project, scene]);
+  const { applySnapshot, loadAllFromDisk } = useProjectLoading({
+    projectId: PROJECT_ID, projectRef, sceneRef, versions: documentVersions,
+    setProject, setScene, setScenesById, setSelectedLayerIds,
+    setActiveInsertionGroupId, setSelectedAnimationId, setInspectorScope,
+    setIsDirty, setHasSaveConflict, setLoadError, markCurrentStateSaved, clearHistory,
+  });
 
   const saveController = useSaveController({
     hooks: {
@@ -559,27 +307,7 @@ function App() {
       setSaveError,
       setHasSaveConflict,
       setIsExternalRefreshRunning: () => {},
-      applyExternalSnapshot: (incomingProject, incomingScenes) => {
-        const nextScenesById = Object.fromEntries(
-          incomingScenes.map((scene) => [scene.id, scene]),
-        );
-        const currentSceneId = sceneRef.current?.id;
-        const loadedScene =
-          (currentSceneId ? nextScenesById[currentSceneId] : undefined) ??
-          incomingScenes[0];
-        if (!loadedScene) return;
-        setProject(incomingProject);
-        setScene(loadedScene);
-        setScenesById(nextScenesById);
-        setSelectedLayerIds([]);
-        setActiveInsertionGroupId(null);
-        setSelectedAnimationId(null);
-        setInspectorScope("scene");
-        documentVersions.markProjectChanged();
-        documentVersions.markSceneChanged();
-        markCurrentStateSaved();
-        clearHistory();
-      },
+       applyExternalSnapshot: applySnapshot,
       onSceneSaved: (savedScene) => {
         setScenesById((current) => ({
           ...current,
@@ -620,38 +348,6 @@ function App() {
     return () => window.removeEventListener("beforeunload", warnBeforeClosing);
   }, [isDirty]);
 
-  const loadAllFromDisk = useCallback(async (): Promise<void> => {
-    const currentProject = projectRef.current;
-    if (!currentProject) return;
-
-    const loadedProject = await fetchProject(currentProject.id);
-    const loadedScenes = await Promise.all(
-      loadedProject.scenes.map((reference) =>
-        fetchScene(loadedProject.id, reference.id),
-      ),
-    );
-    const nextScenesById = Object.fromEntries(
-      loadedScenes.map((candidate) => [candidate.id, candidate]),
-    );
-    const currentSceneId = sceneRef.current?.id;
-    const loadedScene =
-      (currentSceneId ? nextScenesById[currentSceneId] : undefined) ??
-      loadedScenes[0];
-    if (!loadedScene) throw new Error("Project contains no scenes");
-
-    setProject(loadedProject);
-    setScene(loadedScene);
-    setScenesById(nextScenesById);
-    setSelectedLayerIds([]);
-    setActiveInsertionGroupId(null);
-    setSelectedAnimationId(null);
-    setInspectorScope("scene");
-    documentVersions.markProjectChanged();
-    documentVersions.markSceneChanged();
-    markCurrentStateSaved();
-    clearHistory();
-  }, [clearHistory, documentVersions, markCurrentStateSaved]);
-
   const handleReloadExternalChanges = useCallback(async () => {
     setIsSceneLoading(true);
     setSceneError(null);
@@ -669,41 +365,6 @@ function App() {
     setHasSaveConflict(false);
     void queueCurrentSave(true).catch(() => undefined);
   }, [queueCurrentSave]);
-
-  const handleSelectedLayerIdsChange = useCallback((layerIds: string[]) => {
-    setSelectedLayerIds((currentLayerIds) =>
-      hasSameLayerIds(currentLayerIds, layerIds) ? currentLayerIds : layerIds,
-    );
-    setSelectedAnimationId(null);
-    setInspectorScope(layerIds.length > 0 ? "layer" : "scene");
-    setActiveInsertionGroupId((current) => {
-      if (!current || layerIds.length === 0) return null;
-      const currentScene = sceneRef.current;
-      const group = currentScene
-        ? findLayerById(currentScene.layers, current)
-        : null;
-      if (!group || group.type !== "group") return null;
-      return layerIds.every(
-        (layerId) =>
-          layerId === group.id ||
-          group.children.some((child) => child.id === layerId),
-      )
-        ? current
-        : null;
-    });
-  }, []);
-
-  const handleGroupEditEnter = useCallback((groupId: string) => {
-    const currentScene = sceneRef.current;
-    const group = currentScene
-      ? findLayerById(currentScene.layers, groupId)
-      : null;
-    if (!group || group.type !== "group" || group.locked) return;
-    setActiveInsertionGroupId(groupId);
-    setSelectedLayerIds([groupId]);
-    setSelectedAnimationId(null);
-    setInspectorScope("layer");
-  }, []);
 
   const handleLayerStateChange = useCallback(
     (
@@ -731,74 +392,24 @@ function App() {
     [activeInsertionGroupId, handleSceneChange, scene],
   );
 
+  const sceneOperations = useSceneOperations({
+    document: { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict },
+    state: {
+      setProject, setScene, setScenesById, setSelectedLayerIds,
+      setActiveInsertionGroupId, setSelectedAnimationId, setInspectorScope,
+      setIsSceneLoading, setIsCreatingScene, setSceneError, setCreateSceneError, setSlideMenu,
+    },
+    actions: {
+      queueCurrentSave, recordHistory, undoStack: historyController.stacks.undo,
+      markCurrentStateSaved, clearHistory, handleProjectChange, versions: documentVersions,
+    },
+  });
+
   const handleDeleteSelection = useCallback(async () => {
-    if (!project || !scene || isSceneLoading) {
-      return;
-    }
-
-    if (inspectorScope === "layer") {
-      layerCommands.deleteSelection();
-      return;
-    }
-
-    if (project.scenes.length <= 1) {
-      setSceneError("A project must contain at least one scene");
-      return;
-    }
-
-    recordHistory();
-    setIsSceneLoading(true);
-    setSceneError(null);
-
-    try {
-      await queueCurrentSave();
-      const deletedIndex = project.scenes.findIndex(
-        (reference) => reference.id === scene.id,
-      );
-      const nextProject = await deleteSceneRequest(project.id, scene.id);
-      const nextReference =
-        nextProject.scenes[Math.min(deletedIndex, nextProject.scenes.length - 1)];
-
-      if (!nextReference) {
-        throw new Error("Project contains no scenes");
-      }
-
-      const nextScene =
-        scenesById[nextReference.id] ??
-        (await fetchScene(nextProject.id, nextReference.id));
-
-      setProject(nextProject);
-      setScene(nextScene);
-      setScenesById((current) => {
-        const next = { ...current };
-        delete next[scene.id];
-        return next;
-      });
-      setSelectedLayerIds([]);
-      setSelectedAnimationId(null);
-      setInspectorScope("scene");
-      documentVersions.markProjectChanged();
-      documentVersions.markSceneChanged();
-      markCurrentStateSaved();
-    } catch (error: unknown) {
-      historyController.stacks.undo.current.pop();
-      setSceneError(getErrorMessage(error));
-    } finally {
-      setIsSceneLoading(false);
-    }
-  }, [
-    documentVersions,
-    historyController.stacks.undo,
-    inspectorScope,
-    isSceneLoading,
-    markCurrentStateSaved,
-    project,
-    queueCurrentSave,
-    recordHistory,
-    scene,
-    scenesById,
-    layerCommands,
-  ]);
+    if (!project || !scene || isSceneLoading) return;
+    if (inspectorScope === "layer") layerCommands.deleteSelection();
+    else await sceneOperations.deleteScene();
+  }, [project, scene, isSceneLoading, inspectorScope, layerCommands, sceneOperations]);
 
   const handleGroupSelection = useCallback(() => {
     layerCommands.groupSelection();
@@ -839,6 +450,7 @@ function App() {
 
       if (event.key === "Escape") {
         setActiveInsertionGroupId(null);
+        setSlideMenu(null);
         return;
       }
 
@@ -1012,390 +624,13 @@ function App() {
     imageFileInputRef.current?.click();
   }, [isUploadingImage, project, scene, selectedLayerId]);
 
-  const handleSelectedLayerPatch = useCallback(
-    (patch: EditableLayerPatch) => {
-      if (!scene || !selectedLayerId) {
-        return;
-      }
-      const selected = findLayerById(scene.layers, selectedLayerId);
-      const parentGroup = findParentGroup(scene.layers, selectedLayerId);
-      if (!selected || selected.locked || parentGroup?.locked) return;
+  const layerEdits = useLayerEdits(scene, selectedLayerId, handleSceneChange);
 
-      const patchKeys = Object.keys(patch);
-
-      if (patchKeys.length === 0) {
-        return;
-      }
-
-      let changed = false;
-      const updatedLayers = updateLayerById(scene.layers, selectedLayerId, (layer) => {
-        const layerRecord = layer as unknown as Record<string, unknown>;
-        const patchRecord = patch as Record<string, unknown>;
-        const hasChanged = patchKeys.some(
-          (key) => layerRecord[key] !== patchRecord[key],
-        );
-
-        if (!hasChanged) {
-          return layer;
-        }
-
-        changed = true;
-
-        if (layer.type === "group" && ("width" in patch || "height" in patch)) {
-          const targetWidth = patch.width ?? layer.width;
-          const targetHeight = patch.height ?? layer.height;
-          const scaleX = layer.width > 0 ? targetWidth / layer.width : 1;
-          const scaleY = layer.height > 0 ? targetHeight / layer.height : 1;
-          const rescaled = scaleGroupChildren(
-            { ...layer, width: layer.width, height: layer.height },
-            scaleX,
-            scaleY,
-          );
-          const centerX = layer.x + layer.width / 2;
-          const centerY = layer.y + layer.height / 2;
-          return {
-            ...rescaled,
-            x: roundCoordinate(centerX - rescaled.width / 2),
-            y: roundCoordinate(centerY - rescaled.height / 2),
-          };
-        }
-
-        if (layer.type === "text") {
-          const merged: Layer = { ...layer, ...patch } as Layer;
-          if (merged.type !== "text") return merged;
-          const typographyChanged = patchKeys.some((key) =>
-            [
-              "text",
-              "fontFamily",
-              "fontSize",
-              "fontWeight",
-              "fontStyle",
-              "lineHeight",
-              "letterSpacing",
-              "textCase",
-              "autoResize",
-            ].includes(key),
-          );
-
-          let nextWidth = merged.width;
-          let nextHeight = merged.height;
-
-          if (typographyChanged) {
-            const measured = computeTextBoxSize(merged);
-            nextWidth = measured.width;
-            nextHeight = measured.height;
-          }
-
-          const widthDelta = nextWidth - layer.width;
-          const heightDelta = nextHeight - layer.height;
-          return {
-            ...merged,
-            width: nextWidth,
-            height: nextHeight,
-            x: layer.x - widthDelta / 2,
-            y: layer.y - heightDelta / 2,
-          } as Layer;
-        }
-
-        const merged = {
-          ...layer,
-          ...patch,
-        } as Layer;
-        return !isLineDrawEligible(merged) &&
-          merged.animations.some((animation) => animation.preset === "line-draw")
-          ? {
-              ...merged,
-              animations: merged.animations.filter(
-                (animation) => animation.preset !== "line-draw",
-              ),
-            }
-          : merged;
-      });
-
-      if (!changed) {
-        return;
-      }
-
-      handleSceneChange({
-        ...scene,
-        layers: updatedLayers,
-      });
-    },
-    [handleSceneChange, scene, selectedLayerId],
-  );
-
-  const handleLayerAnimationsChange = useCallback(
-    (layerId: string, animations: LayerAnimation[]) => {
-      if (!scene) {
-        return;
-      }
-      const selected = findLayerById(scene.layers, layerId);
-      const parentGroup = findParentGroup(scene.layers, layerId);
-      if (!selected || selected.locked || parentGroup) return;
-
-      let changed = false;
-      const updatedLayers = updateLayerById(scene.layers, layerId, (layer) => {
-        const isSame =
-          JSON.stringify(layer.animations) === JSON.stringify(animations);
-
-        if (isSame) {
-          return layer;
-        }
-
-        changed = true;
-
-        return {
-          ...layer,
-          animations,
-        };
-      });
-
-      if (!changed) {
-        return;
-      }
-
-      handleSceneChange({
-        ...scene,
-        layers: updatedLayers,
-      });
-    },
-    [handleSceneChange, scene],
-  );
-
-  const handleSelectedLayerAnimationsChange = useCallback(
-    (animations: LayerAnimation[]) => {
-      if (selectedLayerId) {
-        handleLayerAnimationsChange(selectedLayerId, animations);
-      }
-    },
-    [handleLayerAnimationsChange, selectedLayerId],
-  );
-
-  const handleTextLayerChange = useCallback(
-    (
-      layerId: string,
-      text: string,
-      width: number,
-      height: number,
-    ): void => {
-      if (!scene) {
-        return;
-      }
-      const target = findLayerById(scene.layers, layerId);
-       const parentGroup = findParentGroup(scene.layers, layerId);
-       if (
-         !target ||
-         (target.type !== "text" &&
-           target.type !== "rectangle" &&
-           target.type !== "circle") ||
-         target.locked ||
-         parentGroup?.locked
-       ) {
-         return;
-       }
-       if (target.type !== "text") {
-         if (target.type === "circle" && (target.donut !== 0 || target.sweep !== 360)) {
-           return;
-         }
-         if (target.shapeText.text === text) return;
-         const updatedLayers = updateLayerById(scene.layers, layerId, (layer) =>
-           layer.type === "rectangle" || layer.type === "circle"
-             ? { ...layer, shapeText: { ...layer.shapeText, text } }
-             : layer,
-         );
-         handleSceneChange({ ...scene, layers: updatedLayers });
-         return;
-       }
-      const nextWidth = Math.max(1, Math.ceil(width));
-      const nextHeight = Math.max(1, Math.ceil(height));
-      if (
-        target.text === text &&
-        Math.abs(target.width - nextWidth) < 0.5 &&
-        Math.abs(target.height - nextHeight) < 0.5
-      ) {
-        return;
-      }
-      const updatedLayers = updateLayerById(scene.layers, layerId, (layer) => {
-        if (layer.type !== "text") {
-          return layer;
-        }
-        const widthDelta = nextWidth - layer.width;
-        const heightDelta = nextHeight - layer.height;
-        return {
-          ...layer,
-          text,
-          width: nextWidth,
-          height: nextHeight,
-          x: layer.x - widthDelta / 2,
-          y: layer.y - heightDelta / 2,
-        };
-      });
-      handleSceneChange({
-        ...scene,
-        layers: updatedLayers,
-      });
-    },
-    [handleSceneChange, scene],
-  );
-
-  const handleAnimationTimingChange = useCallback(
-    (
-      layerId: string,
-      animationId: string,
-      patch: Pick<LayerAnimation, "startFrame" | "durationInFrames">,
-    ) => {
-      const layer = scene ? findLayerById(scene.layers, layerId) : null;
-      if (!layer) return;
-
-      handleLayerAnimationsChange(
-        layerId,
-        layer.animations.map((animation) =>
-          animation.id === animationId ? { ...animation, ...patch } : animation,
-        ),
-      );
-    },
-    [handleLayerAnimationsChange, scene],
-  );
-
-  const handleMagicMoveTranslationCommit = useCallback(
-    (
-      layerId: string,
-      animationId: string,
-      translateX: number,
-      translateY: number,
-    ) => {
-      const layer = scene ? findLayerById(scene.layers, layerId) : null;
-      if (!layer) return;
-      handleLayerAnimationsChange(
-        layerId,
-        layer.animations.map((animation) =>
-          animation.id === animationId && animation.preset === "magic-move"
-            ? { ...animation, translateX, translateY }
-            : animation,
-        ),
-      );
-    },
-    [handleLayerAnimationsChange, scene],
-  );
-
-  const handleAnimationSelect = useCallback(
-    (layerId: string, animationId: string) => {
-      const currentScene = sceneRef.current;
-      if (currentScene && findParentGroup(currentScene.layers, layerId)) return;
-      setActiveInsertionGroupId(null);
-      setSelectedLayerIds([layerId]);
-      setSelectedAnimationId(animationId);
-      setInspectorScope("layer");
-      setInspectorTab("animate");
-    },
-    [],
-  );
-
-  async function handleSceneSelect(
-    sceneId: string,
-    nextSelectedLayerIds: string[] = [],
-    nextScope: InspectorScope = "scene",
-  ): Promise<boolean> {
-    if (!project) {
-      return false;
-    }
-
-    if (sceneId === scene?.id) {
-      setActiveInsertionGroupId(null);
-      setSelectedLayerIds(nextSelectedLayerIds);
-      setSelectedAnimationId(null);
-      setInspectorScope(nextScope);
-      return true;
-    }
-
-    if (isSceneLoading || hasSaveConflict) {
-      return false;
-    }
-
-    setIsSceneLoading(true);
-    setSceneError(null);
-
-    try {
-      await queueCurrentSave();
-      const loadedScene = await fetchScene(project.id, sceneId);
-
-      setScene(loadedScene);
-      setScenesById((current) => ({
-        ...current,
-        [loadedScene.id]: loadedScene,
-      }));
-      setSelectedLayerIds(nextSelectedLayerIds);
-      setActiveInsertionGroupId(null);
-      setSelectedAnimationId(null);
-      setInspectorScope(nextScope);
-      documentVersions.markSceneChanged();
-      markCurrentStateSaved();
-      clearHistory();
-      return true;
-    } catch (error: unknown) {
-      setSceneError(getErrorMessage(error));
-      return false;
-    } finally {
-      setIsSceneLoading(false);
-    }
-  }
-
-  function handleTreeGroupEditEnter(sceneId: string, groupId: string): void {
-    if (sceneId === scene?.id) {
-      handleGroupEditEnter(groupId);
-      return;
-    }
-    void handleSceneSelect(sceneId, [groupId], "layer").then((didSelect) => {
-      if (didSelect) setActiveInsertionGroupId(groupId);
-    });
-  }
-
-  function handleTreeLayerSelect(
-    sceneId: string,
-    layerId: string,
-    additive: boolean,
-  ): void {
-    if (sceneId !== scene?.id) {
-      void handleSceneSelect(sceneId, [layerId], "layer");
-      return;
-    }
-
-    const clickedLayer = findLayerById(scene.layers, layerId);
-    const parentGroup = findParentGroup(scene.layers, layerId);
-    if (!clickedLayer || clickedLayer.locked || parentGroup?.locked) return;
-
-    setSelectedAnimationId(null);
-
-    setActiveInsertionGroupId((current) => {
-      if (!current) return null;
-      const group = findLayerById(scene.layers, current);
-      if (!group || group.type !== "group") return null;
-      return layerId === group.id ||
-        group.children.some((child) => child.id === layerId)
-        ? current
-        : null;
-    });
-
-    setSelectedLayerIds((currentLayerIds) => {
-      if (!additive) {
-        return currentLayerIds.length === 1 && currentLayerIds[0] === layerId
-          ? currentLayerIds
-          : [layerId];
-      }
-
-      if (currentLayerIds.includes(layerId)) {
-        return currentLayerIds.filter((candidate) => candidate !== layerId);
-      }
-      const normalized = clickedLayer.type === "group"
-        ? currentLayerIds.filter(
-            (candidate) =>
-              !clickedLayer.children.some((child) => child.id === candidate),
-          )
-        : currentLayerIds.filter((candidate) => candidate !== parentGroup?.id);
-      return [...normalized, layerId];
-    });
-    setInspectorScope("layer");
-  }
+  const selection = useEditorSelection({
+    scene, sceneRef, setSelectedLayerIds, setActiveInsertionGroupId,
+    setSelectedAnimationId, setInspectorScope, setInspectorTab,
+    selectScene: sceneOperations.selectScene,
+  });
 
   function handleTreeLayerMove(
     sceneId: string,
@@ -1423,39 +658,16 @@ function App() {
     );
   }
 
-  async function handleAddScene(): Promise<void> {
-    if (!project || isCreatingScene) {
-      return;
-    }
-
-    setIsCreatingScene(true);
-    setCreateSceneError(null);
-    setSceneError(null);
-
-    recordHistory();
-    try {
-      await queueCurrentSave();
-      const { project: nextProject, scene: newScene } = await createScene(
-        project.id,
-      );
-
-      setProject(nextProject);
-      setScene(newScene);
-      setScenesById((current) => ({
-        ...current,
-        [newScene.id]: newScene,
-      }));
-      setSelectedLayerIds([]);
-      setInspectorScope("scene");
-      documentVersions.markProjectChanged();
-      documentVersions.markSceneChanged();
-      markCurrentStateSaved();
-    } catch (error: unknown) {
-      historyController.stacks.undo.current.pop();
-      setCreateSceneError(getErrorMessage(error));
-    } finally {
-      setIsCreatingScene(false);
-    }
+  async function handleSlideContextMenu(sceneId: string, x: number, y: number): Promise<void> {
+    if (project?.kind !== "slide" || isCreatingScene || isSceneLoading || hasSaveConflict) return;
+    setContextMenu(null);
+    setSlideMenu(null);
+    if (!await sceneOperations.selectScene(sceneId)) return;
+    setSlideMenu({
+      sceneId,
+      x: Math.max(8, Math.min(x, window.innerWidth - 206)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 104)),
+    });
   }
 
   const handleTogglePreview = useCallback(() => {
@@ -1463,100 +675,13 @@ function App() {
   }, []);
 
   const handlePreviewSeek = useCallback((frame: number) => {
-    const sceneStartFrame = sceneRef.current?.startFrame ?? 0;
+    const currentProject = projectRef.current;
+    const currentScene = sceneRef.current;
+    const sceneStartFrame = currentProject && currentScene
+      ? sceneStartFrameForProject(currentProject, currentScene)
+      : 0;
     previewPlayerRef.current?.seekTo(sceneStartFrame + frame);
   }, []);
-
-  const handleOpenPreviewWindow = useCallback(() => {
-    const existingPreview = previewWindowRef.current;
-
-    if (existingPreview && !existingPreview.closed) {
-      existingPreview.focus();
-
-      if (previewStateRef.current) {
-        previewChannelRef.current?.postMessage(previewStateRef.current);
-      }
-
-      return;
-    }
-
-    const openPopup = (): void => {
-      const previewWindow = window.open(
-        "/preview",
-        "ai-broll-preview",
-        "popup=yes,width=960,height=600,resizable=yes",
-      );
-
-      previewWindowRef.current = previewWindow;
-      previewWindow?.focus();
-    };
-
-    const documentPictureInPicture = getDocumentPictureInPicture();
-
-    if (!documentPictureInPicture) {
-      openPopup();
-      return;
-    }
-
-    void documentPictureInPicture
-      .requestWindow({ width: 960, height: 600 })
-      .then((previewWindow) => {
-        previewWindowRef.current = previewWindow;
-        previewWindow.document.title = "AI-Broll Preview";
-        copyStyleSheets(previewWindow.document);
-
-        const rootElement = previewWindow.document.createElement("div");
-        rootElement.id = "root";
-        previewWindow.document.body.style.margin = "0";
-        previewWindow.document.body.append(rootElement);
-
-        const previewRoot = createRoot(rootElement);
-        previewRoot.render(<PreviewWindow hostWindow={previewWindow} />);
-
-        previewWindow.addEventListener(
-          "pagehide",
-          () => {
-            if (previewWindowRef.current === previewWindow) {
-              previewWindowRef.current = null;
-            }
-            previewRoot.unmount();
-          },
-          { once: true },
-        );
-        previewWindow.focus();
-      })
-      .catch(openPopup);
-  }, []);
-
-  const isPreviewModeRef = useRef(false);
-  isPreviewModeRef.current = isPreviewMode;
-
-  useEffect(() => {
-    const area = canvasAreaRef.current;
-    if (!area) {
-      return;
-    }
-
-    const handleWheel = (event: WheelEvent): void => {
-      if (!event.ctrlKey || isPreviewModeRef.current) {
-        return;
-      }
-      event.preventDefault();
-      const delta =
-        event.deltaMode === 1
-          ? event.deltaY * 16
-          : event.deltaMode === 2
-            ? event.deltaY * 100
-            : event.deltaY;
-      canvasCursorRef.current = { x: event.clientX, y: event.clientY };
-      setCanvasZoom((current) =>
-        clampCanvasZoom(current * Math.exp(-delta / 150)),
-      );
-    };
-
-    area.addEventListener("wheel", handleWheel, { passive: false });
-    return () => area.removeEventListener("wheel", handleWheel);
-  }, [project, scene]);
 
   const selectedLayer: Layer | null = scene && selectedLayerId
     ? findLayerById(scene.layers, selectedLayerId)
@@ -1612,8 +737,8 @@ function App() {
   const nextScene = nextSceneReference
     ? scenesById[nextSceneReference.id]
     : null;
-  const maximumDurationInFrames = nextScene
-    ? nextScene.startFrame - scene.startFrame
+  const maximumDurationInFrames = project.kind === "broll" && nextScene
+    ? sceneStartFrameForProject(project, nextScene) - sceneStartFrameForProject(project, scene)
     : Number.POSITIVE_INFINITY;
   const saveStatus = isSaving
     ? "Saving automatically…"
@@ -1628,7 +753,10 @@ function App() {
   return (
     <main
       className="editor-app"
-      onClick={() => setContextMenu(null)}
+      onClick={() => {
+        setContextMenu(null);
+        setSlideMenu(null);
+      }}
       onContextMenu={(event) => {
         if (!canOpenLayerContextMenu) return;
         if (
@@ -1699,6 +827,7 @@ function App() {
               !project || isSceneLoading || isCreatingScene || hasSaveConflict
             }
             isCreatingScene={isCreatingScene}
+            isSlideProject={project.kind === "slide"}
             canUndo={historyCanUndo}
             canRedo={historyCanRedo}
             isPreviewActive={isPreviewMode}
@@ -1712,7 +841,7 @@ function App() {
             onAddCircle={() => handleAddLayer("circle")}
             onAddTriangle={() => handleAddLayer("triangle")}
             onAddArrow={() => handleAddLayer("arrow")}
-            onAddScene={() => void handleAddScene()}
+            onAddScene={() => void sceneOperations.addScene(project.kind === "slide" ? project.scenes.length : undefined)}
           />
         </div>
         <input
@@ -1737,19 +866,25 @@ function App() {
             isSceneSwitchDisabled={
               isSceneLoading || isCreatingScene || hasSaveConflict
             }
-            onSceneSelect={(sceneId) => void handleSceneSelect(sceneId)}
-            onLayerSelect={handleTreeLayerSelect}
-            onGroupEditEnter={handleTreeGroupEditEnter}
+            isSlideProject={project.kind === "slide"}
+            onSceneSelect={(sceneId) => {
+              setSlideMenu(null);
+              void sceneOperations.selectScene(sceneId);
+            }}
+            onSceneContextMenu={(sceneId, x, y) => void handleSlideContextMenu(sceneId, x, y)}
+            onSceneMove={sceneOperations.moveScene}
+            onLayerSelect={selection.onTreeLayerSelect}
+            onGroupEditEnter={selection.onTreeGroupEditEnter}
             onLayerMove={handleTreeLayerMove}
             onLayerStateChange={handleLayerStateChange}
           />
         </aside>
 
         <section
-          className={`canvas-workspace${isTimelineResizing ? " is-resizing" : ""}`}
+          className={`canvas-workspace${timelineResize.isResizing ? " is-resizing" : ""}`}
           aria-label="Fabric editor"
           style={{
-            gridTemplateRows: `minmax(0, 1fr) 7px ${timelineHeight}px`,
+            gridTemplateRows: `minmax(0, 1fr) 7px ${timelineResize.height}px`,
           }}
         >
           <div className="canvas-editor-area" ref={canvasAreaRef}>
@@ -1760,7 +895,8 @@ function App() {
                     key={scene.id}
                     scene={scene}
                     projectId={project.id}
-                    audioFile={project.audioFile}
+                    audioFile={project.kind === "broll" ? project.audioFile : null}
+                    timelineStartFrame={sceneStartFrameForProject(project, scene)}
                     projectWidth={project.width}
                     projectHeight={project.height}
                     fps={project.fps}
@@ -1774,23 +910,23 @@ function App() {
                     projectWidth={project.width}
                     projectHeight={project.height}
                     displayScale={BASE_CANVAS_SCALE}
-                    zoom={canvasZoom}
-                    zoomCursorRef={canvasCursorRef}
+                    zoom={canvasZoom.zoom}
+                    zoomCursorRef={canvasZoom.cursorRef}
                     onSceneChange={handleSceneChange}
-                    onSelectedLayerIdsChange={handleSelectedLayerIdsChange}
+                    onSelectedLayerIdsChange={selection.onCanvasSelection}
                     onHoveredLayerIdChange={setHoveredLayerId}
-                    onGroupEditEnter={handleGroupEditEnter}
+                    onGroupEditEnter={selection.onGroupEditEnter}
                     onContextMenuRequest={openLayerContextMenu}
                     selectedLayerIds={selectedLayerIds}
                     selectedAnimationId={
                       inspectorTab === "animate" ? selectedAnimationId : null
                     }
                     onMagicMoveTranslationCommit={
-                      handleMagicMoveTranslationCommit
+                       layerEdits.commitMagicMoveTranslation
                     }
                     pendingTextEditLayerId={pendingTextEditLayerId}
                     onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
-                    onTextLayerChange={handleTextLayerChange}
+                    onTextLayerChange={layerEdits.changeTextLayer}
                   />
                 )}
                 {isPreviewMode ? (
@@ -1804,16 +940,16 @@ function App() {
                   type="button"
                   title="Zoom out"
                   aria-label="Zoom out"
-                  onClick={() => zoomCanvasBy(-ZOOM_STEP)}
+                  onClick={() => canvasZoom.zoomBy(-ZOOM_STEP)}
                 >
                   −
                 </button>
-                <span>{Math.round(BASE_CANVAS_SCALE * canvasZoom * 100)}%</span>
+                <span>{Math.round(BASE_CANVAS_SCALE * canvasZoom.zoom * 100)}%</span>
                 <button
                   type="button"
                   title="Zoom in"
                   aria-label="Zoom in"
-                  onClick={() => zoomCanvasBy(ZOOM_STEP)}
+                  onClick={() => canvasZoom.zoomBy(ZOOM_STEP)}
                 >
                   +
                 </button>
@@ -1821,7 +957,7 @@ function App() {
                   type="button"
                   className="canvas-zoom-fit"
                   title="Reset zoom to fit"
-                  onClick={resetCanvasZoom}
+                  onClick={canvasZoom.resetZoom}
                 >
                   Fit
                 </button>
@@ -1835,101 +971,50 @@ function App() {
             aria-orientation="horizontal"
             aria-valuemin={MIN_TIMELINE_HEIGHT}
             aria-valuemax={1000}
-            aria-valuenow={Math.round(timelineHeight)}
+            aria-valuenow={Math.round(timelineResize.height)}
             className="timeline-resize-handle"
-            onDoubleClick={() => setTimelineHeight(DEFAULT_TIMELINE_HEIGHT)}
-            onKeyDown={handleTimelineResizeKeyDown}
-            onPointerDown={handleTimelineResizeStart}
-            onPointerMove={handleTimelineResizeMove}
-            onPointerUp={handleTimelineResizeEnd}
-            onPointerCancel={handleTimelineResizeEnd}
+            onDoubleClick={timelineResize.reset}
+            onKeyDown={timelineResize.onKeyDown}
+            onPointerDown={timelineResize.onPointerDown}
+            onPointerMove={timelineResize.onPointerMove}
+            onPointerUp={timelineResize.onPointerEnd}
+            onPointerCancel={timelineResize.onPointerEnd}
           >
             <span />
           </button>
           <SceneAnimationTimeline
             scene={scene}
+            timelineStartFrame={sceneStartFrameForProject(project, scene)}
             fps={project.fps}
             selectedLayerId={selectedLayerId}
             selectedAnimationId={selectedAnimationId}
             isPreviewMode={isPreviewMode}
             playerRef={previewPlayerRef}
             onSeek={handlePreviewSeek}
-            onAnimationSelect={handleAnimationSelect}
-            onAnimationTimingChange={handleAnimationTimingChange}
+            onAnimationSelect={selection.onAnimationSelect}
+            onAnimationTimingChange={layerEdits.changeAnimationTiming}
           />
         </section>
 
-        <aside className="sidebar sidebar-right">
-          <div className="inspector-tabs" role="tablist" aria-label="Inspector">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={inspectorTab === "design"}
-              className={inspectorTab === "design" ? "is-active" : ""}
-              onClick={() => setInspectorTab("design")}
-            >
-              Design
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={inspectorTab === "animate"}
-              className={inspectorTab === "animate" ? "is-active" : ""}
-              onClick={() => setInspectorTab("animate")}
-            >
-              Animate
-            </button>
-          </div>
-
-          <div className="inspector-scroll">
-            {inspectorTab === "design" ? (
-              inspectorScope === "scene" ? (
-                <ScenePropertiesPanel
-                  key={scene.id}
-                  scene={scene}
-                  project={project}
-                  sceneNumber={sceneNumber}
-                  maximumDurationInFrames={maximumDurationInFrames}
-                  onProjectChange={handleProjectChange}
-                  onSceneChange={handleSceneChange}
-                />
-              ) : selectedLayerIds.length > 1 ? (
-                <MultiLayerPropertiesPanel
-                  selectionCount={selectedLayerIds.length}
-                  canGroup={canGroup}
-                  onAlign={handleAlign}
-                  onGroup={handleGroupSelection}
-                  onDuplicate={handleDuplicateSelection}
-                  onReorder={handleReorderSelection}
-                />
-              ) : (
-                <LayerPropertiesPanel
-                  layer={selectedLayer}
-                  onPatch={handleSelectedLayerPatch}
-                  onAlign={handleAlign}
-                  onReplaceImage={handleReplaceImage}
-                  onDuplicate={handleDuplicateSelection}
-                  onReorder={handleReorderSelection}
-                  onDeleteLayer={() => void handleDeleteSelection()}
-                />
-              )
-            ) : (
-               <LayerAnimationPanel
-                 layer={selectedLayerIds.length === 1 ? selectedLayer : null}
-                 readOnlyReason={
-                   selectedLayerParentGroup
-                     ? "Group members inherit animation from their top-level group."
-                     : null
-                 }
-                fps={project.fps}
-                sceneDurationInFrames={scene.durationInFrames}
-                selectedAnimationId={selectedAnimationId}
-                onAnimationSelect={setSelectedAnimationId}
-                onAnimationsChange={handleSelectedLayerAnimationsChange}
-              />
-            )}
-          </div>
-        </aside>
+        <EditorInspector
+          project={project} scene={scene} sceneNumber={sceneNumber}
+          maximumDurationInFrames={maximumDurationInFrames}
+          selection={{
+            tab: inspectorTab, scope: inspectorScope, layerIds: selectedLayerIds,
+            layer: selectedLayer, isGroupChild: Boolean(selectedLayerParentGroup),
+            animationId: selectedAnimationId, canGroup,
+          }}
+          actions={{
+            setTab: setInspectorTab, onProjectChange: handleProjectChange,
+            onSceneChange: handleSceneChange, onAlign: handleAlign,
+            onGroup: handleGroupSelection, onDuplicate: handleDuplicateSelection,
+            onReorder: handleReorderSelection, onPatch: layerEdits.patchSelectedLayer,
+            onReplaceImage: handleReplaceImage,
+            onDeleteLayer: () => void handleDeleteSelection(),
+            onAnimationSelect: setSelectedAnimationId,
+            onAnimationsChange: layerEdits.changeSelectedLayerAnimations,
+          }}
+        />
       </div>
       {contextMenu ? (
         <div
@@ -1968,6 +1053,38 @@ function App() {
           </button>
           <button type="button" role="menuitem" onClick={() => handleReorderSelection("front")}>
             <span>Bring to front</span><kbd>⇧⌘]</kbd>
+          </button>
+        </div>
+      ) : null}
+      {slideMenu && project.kind === "slide" ? (
+        <div
+          className="layer-context-menu scene-context-menu"
+          role="menu"
+          aria-label="Page actions"
+          style={{ left: slideMenu.x, top: slideMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const index = project.scenes.findIndex((reference) => reference.id === slideMenu.sceneId);
+              setSlideMenu(null);
+              if (index !== -1) void sceneOperations.addScene(index + 1);
+            }}
+          >
+            New Page
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={project.scenes.length <= 1}
+            onClick={() => {
+              setSlideMenu(null);
+              void handleDeleteSelection();
+            }}
+          >
+            Delete Page
           </button>
         </div>
       ) : null}

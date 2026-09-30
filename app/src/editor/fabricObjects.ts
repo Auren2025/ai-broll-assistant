@@ -1,6 +1,7 @@
 import { FabricObject, Group as FabricGroup, LayoutManager, FixedLayout, Rect, Textbox, classRegistry } from "fabric";
 import { getShapeTextContentBox } from "../domain/shapeTextLayout";
 import type { ShapeText } from "../domain/shapeTextSchema";
+import { imagePlacement } from "./imagePlacement";
 import { applyTextCase, getCharSpacing } from "./textMetrics";
 
 export type CornerRadii = {
@@ -326,7 +327,9 @@ export class FabricImageLayerObject extends FabricObject {
   declare imageStrokeColor: string | null;
   declare imageStrokeWidth: number;
   declare imageCornerRadius: number;
-  declare imageFit: "fill" | "contain";
+  declare imageFit: "fill" | "contain" | "cover";
+  declare imageFocalX: number;
+  declare imageFocalY: number;
   declare imagePlaceholderColor: string;
 
   private htmlImage: HTMLImageElement | null = null;
@@ -342,7 +345,9 @@ export class FabricImageLayerObject extends FabricObject {
     this.imageCornerRadius =
       (options.imageCornerRadius as number | undefined) ?? 0;
     this.imageFit =
-      (options.imageFit as "fill" | "contain" | undefined) ?? "fill";
+      (options.imageFit as "fill" | "contain" | "cover" | undefined) ?? "fill";
+    this.imageFocalX = (options.imageFocalX as number | undefined) ?? 0.5;
+    this.imageFocalY = (options.imageFocalY as number | undefined) ?? 0.5;
     this.imagePlaceholderColor =
       (options.imagePlaceholderColor as string | undefined) ?? "#d1d5db";
     this.loadImage();
@@ -412,22 +417,22 @@ export class FabricImageLayerObject extends FabricObject {
     ctx.clip();
 
     if (this.htmlImage) {
-      if (this.imageFit === "contain") {
-        const naturalWidth = this.htmlImage.naturalWidth || this.htmlImage.width;
-        const naturalHeight = this.htmlImage.naturalHeight || this.htmlImage.height;
-        const ratio = Math.min(w / naturalWidth, h / naturalHeight);
-        const drawWidth = naturalWidth * ratio;
-        const drawHeight = naturalHeight * ratio;
-        ctx.drawImage(
-          this.htmlImage,
-          -drawWidth / 2,
-          -drawHeight / 2,
-          drawWidth,
-          drawHeight,
-        );
-      } else {
-        ctx.drawImage(this.htmlImage, -w / 2, -h / 2, w, h);
-      }
+      const placement = imagePlacement(
+        this.imageFit,
+        this.htmlImage.naturalWidth || this.htmlImage.width,
+        this.htmlImage.naturalHeight || this.htmlImage.height,
+        w,
+        h,
+        this.imageFocalX,
+        this.imageFocalY,
+      );
+      ctx.drawImage(
+        this.htmlImage,
+        placement.x,
+        placement.y,
+        placement.width,
+        placement.height,
+      );
     } else if (this.imageLoadFailed) {
       ctx.fillStyle = this.imageSrc ? "#d1d5db" : this.imagePlaceholderColor;
       ctx.fillRect(-w / 2, -h / 2, w, h);

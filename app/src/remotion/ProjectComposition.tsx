@@ -2,6 +2,7 @@ import { AbsoluteFill, Audio, Sequence } from "remotion";
 import { resolveAssetUrl } from "../assetUrl";
 import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
+import { sceneStartFrame } from "../domain/scenePlacement";
 import { SceneComposition } from "./SceneComposition";
 
 export interface ProjectCompositionProps {
@@ -26,16 +27,18 @@ export function ProjectComposition({
         overflow: "hidden"
       }}
     >
-      {includeAudio && project.audioFile ? (
+      {project.kind === "broll" && includeAudio && project.audioFile ? (
         <Audio
           src={resolveAssetUrl(assetBaseUrl, project.audioFile)}
           pauseWhenBuffering
         />
       ) : null}
-      {scenes.map((scene) => (
+      {scenes.map((scene, index) => (
         <Sequence
           key={scene.id}
-          from={scene.startFrame}
+          from={project.kind === "broll"
+            ? sceneStartFrame(project, scene)
+            : scenes.slice(0, index).reduce((sum, item) => sum + item.durationInFrames, 0)}
           durationInFrames={scene.durationInFrames}
           name={`${project.name} · ${scene.id}`}
         >

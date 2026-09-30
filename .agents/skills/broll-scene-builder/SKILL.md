@@ -11,7 +11,7 @@ description: 将 scene-plan.md 中获批的 B-roll 画面设计批量生成成 s
 
 ## 输入
 
-- 已获批的 `projects/<project-id>/scene-plan.md`
+- 已获批的 `projects/broll/<project-id>/scene-plan.md`
 - `source.srt`、音频和已有项目数据
 - `docs/BROLL_VISUAL_STYLE.md`
 - `src/domain/` 下的当前 Schema
@@ -21,12 +21,13 @@ description: 将 scene-plan.md 中获批的 B-roll 画面设计批量生成成 s
 
 1. 确认目标场景、画布版本和两次用户审查已经完成，批量写入前关闭编辑器。
 2. 按获批边界创建或更新 Project / Scene JSON；新项目需要替换 scaffold 生成的占位场景。
+   B-roll 的绝对起点写在 `project.json` 对应的场景引用 `startFrame` 中，Scene JSON 只写页内时长和动画；新数据使用 Schema v2。
 3. 严格按照 `画面设计` 生成图层、位置、尺寸、样式和动画。
 4. 对未提供的必要图片创建 `src: null` 占位，并添加清楚的可见素材提示。
 5. 运行：
 
    ```bash
-   pnpm validate:project projects/<project-id>
+   pnpm validate:project projects/broll/<project-id>
    ```
 
 6. 用编辑器预览检查单个场景的开场、关键变化和最终画面；用 Remotion Studio 检查完整时间线、音频对齐、透明区间和相邻衔接。修改后重新校验，并说明实际检查了哪些内容。

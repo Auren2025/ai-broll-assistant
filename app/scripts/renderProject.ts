@@ -6,6 +6,7 @@ import {
   buildFinalRenderProps,
 } from "../src/remotion/renderPolicy";
 import { DEFAULT_PROJECT_ID } from "../src/projectSelection";
+import { projectDirectory } from "./projectDirectory";
 import { assertLocalServerIsHealthy } from "./localServerHealth";
 import { validateProjectDirectory } from "./projectValidation";
 
@@ -17,12 +18,12 @@ async function main(): Promise<void> {
     throw new Error("Usage: pnpm render:project <project-id>");
   }
 
-  const projectDirectory = resolve("projects", projectId);
-  validateProjectDirectory(projectDirectory);
+  const directory = projectDirectory(resolve("projects"), projectId, "broll");
+  validateProjectDirectory(directory);
   console.log(`Project preflight passed for "${projectId}".`);
   await assertLocalServerIsHealthy();
 
-  const rendersDir = resolve(projectDirectory, "renders");
+  const rendersDir = resolve(directory, "renders");
   mkdirSync(rendersDir, { recursive: true });
   const result = spawnSync(
     resolve("node_modules", ".bin", "remotion"),

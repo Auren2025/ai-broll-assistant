@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { RemotionScenePlayer } from "../remotion/RemotionScenePlayer";
+import { sceneStartFrame } from "../domain/scenePlacement";
 import {
   PREVIEW_CHANNEL_NAME,
   type PreviewStateMessage,
@@ -96,7 +97,8 @@ export function PreviewWindow({ hostWindow = window }: PreviewWindowProps) {
             key={scene.id}
             scene={scene}
             projectId={project.id}
-            audioFile={project.audioFile}
+            audioFile={project.kind === "broll" ? project.audioFile : null}
+            timelineStartFrame={sceneStartFrame(project, scene)}
             projectWidth={project.width}
             projectHeight={project.height}
             fps={project.fps}

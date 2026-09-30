@@ -108,6 +108,8 @@ function buildImagePlaceholderLayer(project: Project, scene: Scene, id: string):
     animations: [],
     src: null,
     fit: "contain",
+    focalX: 0.5,
+    focalY: 0.5,
     placeholderColor: "#d1d5db",
     cornerRadius: 0,
     stroke: null,

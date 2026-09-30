@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { getAssetUrl } from "../api/projectApi";
 import type { ZOrderAction } from "../domain/groupOperations";
 import type { ImageFit } from "../domain/imageLayerSchema";
@@ -14,7 +14,11 @@ import {
 import { BufferedNumberInput } from "./BufferedNumberInput";
 import type { EditableLayerPatch } from "./layerEditing";
 import { fitFrameToImageSize, matchingImageSize } from "./imageSizing";
-import { IMAGE_CROP_ZOOM_MAX, IMAGE_CROP_ZOOM_MIN } from "./imageCrop";
+import {
+  IMAGE_CROP_ZOOM_MAX,
+  IMAGE_CROP_ZOOM_MIN,
+  clampImageCropZoom,
+} from "./imageCrop";
 
 const FONT_OPTIONS: { label: string; options: string[] }[] = [
   {
@@ -178,7 +182,48 @@ function useImageNaturalSize(
   return size && imageUrl && size.url === imageUrl ? size : null;
 }
 
-/** Zoom slider with buffered draft: commits once per drag (one undo step). */
+/**
+ * Zoom percent input with local text state: typing never fights the slider,
+ * and the value commits once on blur/Enter (one undo entry).
+ */
+function ZoomPercentInput({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (zoom: number) => void;
+}) {
+  const [text, setText] = useState<string | null>(null);
+  function commit() {
+    if (text !== null) {
+      const parsed = Number(text);
+      if (text.trim() !== "" && Number.isFinite(parsed)) {
+        onCommit(clampImageCropZoom(parsed / 100));
+      }
+      setText(null);
+    }
+  }
+  return (
+    <div className="layer-single-input">
+      <input
+        type="number"
+        aria-label="Image zoom percent"
+        min={Math.round(IMAGE_CROP_ZOOM_MIN * 100)}
+        max={Math.round(IMAGE_CROP_ZOOM_MAX * 100)}
+        step={10}
+        value={text ?? String(Math.round(value * 100))}
+        onChange={(event) => setText(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      <span>%</span>
+    </div>
+  );
+}
+
+/** Zoom control: label row with editable percent, full-width slider below. */
 function ImageZoomSlider({
   value,
   onCommit,
@@ -188,29 +233,35 @@ function ImageZoomSlider({
 }) {
   const [draft, setDraft] = useState<number | null>(null);
   const shown = draft ?? value;
-  const commit = () => {
+  const commitSlider = () => {
     if (draft !== null) {
       onCommit(draft);
       setDraft(null);
     }
   };
+  const fillPercent =
+    ((shown - IMAGE_CROP_ZOOM_MIN) /
+      (IMAGE_CROP_ZOOM_MAX - IMAGE_CROP_ZOOM_MIN)) *
+    100;
   return (
-    <div className="layer-design-row">
-      <span>Zoom</span>
-      <div className="layer-zoom-control">
-        <input
-          type="range"
-          min={IMAGE_CROP_ZOOM_MIN}
-          max={IMAGE_CROP_ZOOM_MAX}
-          step={0.1}
-          aria-label="Image crop zoom"
-          value={shown}
-          onChange={(event) => setDraft(Number(event.currentTarget.value))}
-          onPointerUp={commit}
-          onBlur={commit}
-        />
-        <span>{Math.round(shown * 100)}%</span>
+    <div className="layer-zoom-block">
+      <div className="layer-design-row">
+        <span>Zoom</span>
+        <ZoomPercentInput value={shown} onCommit={onCommit} />
       </div>
+      <input
+        type="range"
+        className="layer-zoom-slider"
+        min={IMAGE_CROP_ZOOM_MIN}
+        max={IMAGE_CROP_ZOOM_MAX}
+        step={0.1}
+        aria-label="Image crop zoom"
+        value={shown}
+        style={{ "--slider-fill": `${fillPercent}%` } as CSSProperties}
+        onChange={(event) => setDraft(Number(event.currentTarget.value))}
+        onPointerUp={commitSlider}
+        onBlur={commitSlider}
+      />
     </div>
   );
 }

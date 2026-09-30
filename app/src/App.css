@@ -1503,27 +1503,15 @@ button {
   background: #f8f8fa;
 }
 
-/* Zoom slider: same thin purple track as the Animate tab sliders. */
-.layer-design-panel .layer-zoom-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+/* Zoom slider row: full-width track under the label row. */
+.layer-zoom-block {
+  padding-bottom: 6px;
 }
 
-.layer-design-panel .layer-zoom-control input[type="range"] {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 4px;
-  padding: 0;
-  accent-color: #6857e5;
-  cursor: pointer;
-}
-
-.layer-design-panel .layer-zoom-control > span {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: #19171c;
+.layer-zoom-block input[type="range"].layer-zoom-slider {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 2px 16px 0;
 }
 
 .layer-design-section {
@@ -1865,9 +1853,58 @@ button {
   padding: 0 8px;
 }
 
+/* Unified inspector slider: thin track with purple fill, white thumb.
+   Fill amount comes from the inline --slider-fill variable (0-100%). */
 .inspector-panel input[type="range"] {
+  --slider-fill: 50%;
+  -webkit-appearance: none;
+  appearance: none;
   height: 20px;
   padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.inspector-panel input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    #6857e5 var(--slider-fill),
+    #e2e0e8 var(--slider-fill)
+  );
+}
+
+.inspector-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #6857e5;
+}
+
+.inspector-panel input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #e2e0e8;
+}
+
+.inspector-panel input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: #6857e5;
+}
+
+.inspector-panel input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #6857e5;
 }
 
 .inspector-panel textarea {
@@ -2562,9 +2599,6 @@ button {
 
 .animation-control-section input[type="range"] {
   width: 100%;
-  height: 4px;
-  accent-color: #6857e5;
-  cursor: pointer;
 }
 
 .animation-vector-inputs {

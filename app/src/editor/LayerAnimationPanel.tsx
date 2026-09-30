@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { Layer } from "../domain/sceneSchema";
 import type {
   AnimationEasing,
@@ -123,6 +123,8 @@ function BufferedRange({
     if (draft !== value) onCommit(draft);
   }
 
+  const fillPercent = max === min ? 0 : ((draft - min) / (max - min)) * 100;
+
   return (
     <input
       type="range"
@@ -131,6 +133,7 @@ function BufferedRange({
       max={max}
       step={step}
       value={draft}
+      style={{ "--slider-fill": `${fillPercent}%` } as CSSProperties}
       onChange={(event) => setDraft(Number(event.currentTarget.value))}
       onPointerUp={commit}
       onKeyUp={commit}

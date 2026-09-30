@@ -22,6 +22,17 @@ export const LayerSchema = z.union([AtomicLayerSchema, GroupLayerSchema]);
 
 export type Layer = z.infer<typeof LayerSchema>;
 
+// Page transition played by the exported HTML presentation when arriving at
+// this scene. B-roll scenes never set it; slide pages leave it undefined for
+// a hard cut.
+export const SceneTransitionSchema = z
+  .object({
+    type: z.enum(["none", "fade", "slide"]),
+  })
+  .strict();
+
+export type SceneTransition = z.infer<typeof SceneTransitionSchema>;
+
 export const SceneSchema = z
   .object({
     schemaVersion: z.union([z.literal(1), z.literal(2)]),
@@ -30,6 +41,7 @@ export const SceneSchema = z
     startFrame: z.number().int().nonnegative().optional(),
     durationInFrames: z.number().int().positive(),
     backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+    transition: SceneTransitionSchema.optional(),
     layers: z.array(LayerSchema),
   })
   .strict()

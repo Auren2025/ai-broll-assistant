@@ -277,6 +277,99 @@ test("scene creation and deletion preserve remaining IDs, contents and absolute 
   await assert.rejects(fs.access(path.join(f.directory, "scenes/scene-001.json")), { code: "ENOENT" });
 });
 
+test("scene duplication clones content with fresh ids and inserts after the source", async (t) => {
+  const f = await fixture(t);
+  const textLayerFixture = (id: string, zIndex: number, text: string) => ({
+    id,
+    name: id,
+    type: "text" as const,
+    x: 10,
+    y: 20,
+    width: 400,
+    height: 100,
+    rotation: 0,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal" as const,
+    zIndex,
+    visible: true,
+    locked: false,
+    animations: [],
+    text,
+    fontFamily: "Arial",
+    fontSize: 48,
+    fontWeight: 700,
+    fontStyle: "normal" as const,
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    textAlign: "center" as const,
+    verticalAlign: "middle" as const,
+    autoResize: "both" as const,
+    textCase: "normal" as const,
+    kerningPairs: true,
+    ligatures: true,
+    fill: "#ffffff",
+    fillEnabled: true,
+    stroke: null,
+    strokeWidth: 0,
+    strokePosition: "inside" as const,
+  });
+  const layered = parseScene({
+    ...JSON.parse(JSON.stringify(f.scene)),
+    layers: [textLayerFixture("text-7", 1, "Hello"), textLayerFixture("text-3", 0, "World")],
+  });
+  const created = await f.write(
+    f.sceneUrl,
+    layered,
+    (await f.request(f.sceneUrl)).headers.get("ETag"),
+  );
+  assert.equal(created.status, 200);
+
+  const duplicated = await f.request(`${f.projectUrl}/scenes/${f.scene.id}/duplicate`, {
+    method: "POST",
+    headers: { Origin: EDITOR_ORIGIN },
+  });
+  assert.equal(duplicated.status, 201);
+  const body = await responseObject(duplicated);
+  const scene = parseScene(body.scene);
+  assert.equal(scene.id, "scene-003");
+  assert.equal(scene.topic, "First scene copy");
+  assert.equal(scene.durationInFrames, layered.durationInFrames);
+
+  const project = parseProject(body.project);
+  assert.deepEqual(
+    project.scenes.map(({ id }) => id),
+    ["scene-001", "scene-003", "scene-002"],
+  );
+
+  // Layers are cloned with the same visual content but fresh ids.
+  assert.equal(scene.layers.length, 2);
+  const [firstLayer, secondLayer] = scene.layers;
+  assert.equal(firstLayer.type, "text");
+  assert.equal(firstLayer.id, "text-1");
+  assert.equal(secondLayer.type, "text");
+  assert.equal(secondLayer.id, "text-2");
+  if (firstLayer.type === "text" && secondLayer.type === "text") {
+    assert.equal(firstLayer.text, "Hello");
+    assert.equal(secondLayer.text, "World");
+    assert.equal(firstLayer.zIndex, 1);
+    assert.equal(secondLayer.zIndex, 0);
+  }
+
+  // Persisted files match the response; the source scene is untouched.
+  assert.deepEqual(await f.readScene(scene.id), scene);
+  assert.deepEqual(await f.readProject(), project);
+  assert.deepEqual(await f.readScene(), layered);
+
+  // Duplicating an unknown scene id is a 404.
+  const missing = await f.request(`${f.projectUrl}/scenes/scene-999/duplicate`, {
+    method: "POST",
+    headers: { Origin: EDITOR_ORIGIN },
+  });
+  assert.equal(missing.status, 404);
+  await responseError(missing);
+});
+
 test("the last scene cannot be deleted", async (t) => {
   const f = await fixture(t);
   const first = await f.request(`${f.projectUrl}/scenes/scene-002`, { method: "DELETE", headers: { Origin: EDITOR_ORIGIN } });

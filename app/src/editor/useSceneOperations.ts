@@ -1,5 +1,5 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { createScene, deleteScene as deleteSceneRequest, fetchScene } from "../api/projectApi";
+import { createScene, deleteScene as deleteSceneRequest, duplicateScene as duplicateSceneRequest, fetchScene } from "../api/projectApi";
 import type { Project } from "../domain/projectSchema";
 import { moveSceneReference } from "../domain/sceneOrder";
 import type { Scene } from "../domain/sceneSchema";
@@ -164,5 +164,32 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
     handleProjectChange({ ...project, scenes });
   }
 
-  return { selectScene, deleteScene, addScene, moveScene };
+  async function duplicateScene(sceneId: string): Promise<void> {
+    if (!project || isCreatingScene) return;
+    setSlideMenu(null);
+    setIsCreatingScene(true);
+    setCreateSceneError(null);
+    setSceneError(null);
+    recordHistory();
+    try {
+      await queueCurrentSave();
+      const { project: nextProject, scene: newScene } = await duplicateSceneRequest(project.id, sceneId);
+      setProject(nextProject);
+      setScene(newScene);
+      setScenesById((current) => ({ ...current, [newScene.id]: newScene }));
+      setSelectedLayerIds([]);
+      setSelectedAnimationId(null);
+      setInspectorScope("scene");
+      versions.markProjectChanged();
+      versions.markSceneChanged();
+      markCurrentStateSaved();
+    } catch (error: unknown) {
+      undoStack.current.pop();
+      setCreateSceneError(errorMessage(error));
+    } finally {
+      setIsCreatingScene(false);
+    }
+  }
+
+  return { selectScene, deleteScene, addScene, moveScene, duplicateScene };
 }

@@ -1078,6 +1078,17 @@ function App() {
           <button
             type="button"
             role="menuitem"
+            onClick={() => {
+              const sceneId = slideMenu.sceneId;
+              setSlideMenu(null);
+              void sceneOperations.duplicateScene(sceneId);
+            }}
+          >
+            Duplicate Page
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             disabled={project.scenes.length <= 1}
             onClick={() => {
               setSlideMenu(null);

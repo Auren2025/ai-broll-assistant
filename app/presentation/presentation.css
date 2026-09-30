@@ -71,6 +71,7 @@ button {
 }
 
 .presentation-player {
+  position: relative;
   max-height: 100%;
   overflow: hidden;
   background:
@@ -144,5 +145,64 @@ button {
   .presentation-controls button {
     min-width: 76px;
     padding-inline: 12px;
+  }
+}
+
+/* Page transition layers: the outgoing page stays frozen underneath while
+   the incoming page animates in on top. */
+.page-transition-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.page-transition-incoming-fade-forward,
+.page-transition-incoming-fade-backward {
+  animation: page-transition-fade 350ms ease-out;
+}
+
+.page-transition-incoming-slide-forward {
+  animation: page-transition-slide-from-right 350ms ease-out;
+}
+
+.page-transition-incoming-slide-backward {
+  animation: page-transition-slide-from-left 350ms ease-out;
+}
+
+@keyframes page-transition-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes page-transition-slide-from-right {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes page-transition-slide-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-incoming-fade-forward,
+  .page-transition-incoming-fade-backward,
+  .page-transition-incoming-slide-forward,
+  .page-transition-incoming-slide-backward {
+    animation: none;
   }
 }

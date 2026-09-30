@@ -522,3 +522,25 @@ test("parseProject rejects an audioFile in another directory", () => {
     }),
   );
 });
+
+test("parseScene accepts an optional page transition and defaults to undefined", () => {
+  const base = {
+    schemaVersion: 2,
+    id: "scene-001",
+    topic: "First scene",
+    durationInFrames: 30,
+    layers: [],
+  };
+  assert.equal(parseScene(base).transition, undefined);
+  assert.deepEqual(parseScene({ ...base, transition: { type: "fade" } }).transition, {
+    type: "fade",
+  });
+  assert.deepEqual(parseScene({ ...base, transition: { type: "slide" } }).transition, {
+    type: "slide",
+  });
+  assert.deepEqual(parseScene({ ...base, transition: { type: "none" } }).transition, {
+    type: "none",
+  });
+  assert.throws(() => parseScene({ ...base, transition: { type: "zoom" } }));
+  assert.throws(() => parseScene({ ...base, transition: { type: "fade", durationMs: 500 } }));
+});

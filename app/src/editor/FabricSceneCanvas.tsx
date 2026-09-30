@@ -1093,6 +1093,7 @@ export function FabricSceneCanvas({
     projectHeight,
     projectWidth,
     scene.id,
+    setDrillFrameVisible,
     syncDrillBoundary,
     syncObjectsToScene,
     updateHover,

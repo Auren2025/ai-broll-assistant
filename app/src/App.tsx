@@ -147,13 +147,19 @@ function App() {
   scenesByIdRef.current = scenesById;
   isSceneLoadingRef.current = isSceneLoading;
 
-  useEffect(() => {
+  // If the drilled group disappears, stops being a group, or gets locked
+  // (e.g. after undo, delete, or a scene switch), leave drill mode.
+  // Adjusted during render rather than in an effect so the canvas never
+  // commits a frame with a stale drill scope.
+  const [prevDrillValidationScene, setPrevDrillValidationScene] = useState(scene);
+  if (prevDrillValidationScene !== scene) {
+    setPrevDrillValidationScene(scene);
     setActiveInsertionGroupId((current) => {
       if (!current || !scene) return null;
       const group = findLayerById(scene.layers, current);
       return group?.type === "group" && !group.locked ? current : null;
     });
-  }, [scene]);
+  }
 
   const updateDirtyState = useCallback(() => {
     setIsDirty(documentVersions.isDirty());

@@ -1,5 +1,5 @@
 import type { Layer, Scene } from "../domain/sceneSchema";
-import { getCombinedBounds, getLayerBounds } from "../domain/groupOperations";
+import { getCombinedBounds, getLayerBounds, hugGroupToChildren } from "../domain/groupOperations";
 
 export type AlignmentAction =
   | "left"
@@ -357,7 +357,8 @@ export function alignSceneLayers(
           y: nextY,
         };
       });
-      return { ...layer, children };
+      // Keep the group's frame hugging its children after the move.
+      return hugGroupToChildren({ ...layer, children });
     }
 
     return layer;

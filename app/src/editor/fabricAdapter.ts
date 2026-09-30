@@ -131,6 +131,16 @@ export function applyLayerToFabricObject(
     moveCursor: "move",
   });
 
+  if (layer.type === "group") {
+    // Groups select with a thin blue border (Keynote), distinct from the
+    // purple border used for atomic layers.
+    object.set({
+      borderColor: "#0a84ff",
+      borderScaleFactor: 1,
+      cornerStrokeColor: "#0a84ff",
+    });
+  }
+
   if (
     (layer.type === "rectangle" || layer.type === "circle") &&
     object instanceof FabricShapeTextObject

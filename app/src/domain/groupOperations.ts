@@ -206,6 +206,57 @@ export function scaleGroupChildren(
   return { ...group, width: newWidth, height: newHeight, children };
 }
 
+/**
+ * Re-fit a group's frame so it tightly hugs its children (Keynote): the
+ * frame becomes the children's bounding box and the children are re-based
+ * to the new frame origin, so nothing moves visually.
+ *
+ * Rotation-aware: re-fitting moves the rotation pivot (the frame center),
+ * so the frame origin is shifted by the rotated pivot delta to keep every
+ * child visually stationary. With rotation = 0 this reduces to x + minX.
+ */
+export function hugGroupToChildren(group: GroupLayer): GroupLayer {
+  const children = group.children;
+  if (children.length === 0) return group;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const child of children) {
+    if (child.x < minX) minX = child.x;
+    if (child.y < minY) minY = child.y;
+    const right = child.x + child.width;
+    const bottom = child.y + child.height;
+    if (right > maxX) maxX = right;
+    if (bottom > maxY) maxY = bottom;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return group;
+  const newWidth = Math.max(1, round(maxX - minX));
+  const newHeight = Math.max(1, round(maxY - minY));
+  const theta = (group.rotation * Math.PI) / 180;
+  const deltaX = (minX + maxX) / 2 - group.width / 2;
+  const deltaY = (minY + maxY) / 2 - group.height / 2;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const centerX = group.x + group.width / 2 + cos * deltaX - sin * deltaY;
+  const centerY = group.y + group.height / 2 + sin * deltaX + cos * deltaY;
+  const nextChildren = children.map(
+    (child): AtomicLayer => ({
+      ...child,
+      x: round(child.x - minX),
+      y: round(child.y - minY),
+    }),
+  );
+  return {
+    ...group,
+    x: round(centerX - newWidth / 2),
+    y: round(centerY - newHeight / 2),
+    width: newWidth,
+    height: newHeight,
+    children: nextChildren,
+  };
+}
+
 export function transformGroupChildToScene(
   group: GroupLayer,
   child: AtomicLayer,

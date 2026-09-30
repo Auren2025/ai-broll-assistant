@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { findLayerById, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
+import { findLayerById, hugGroupToChildren, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
 import { isLineDrawEligible } from "../domain/lineDraw";
 import type { Layer, Scene } from "../domain/sceneSchema";
@@ -13,6 +13,16 @@ function findParentGroup(layers: readonly Layer[], layerId: string) {
 
 function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+// Keep a group's frame hugging its children after a child geometry change
+// (Keynote behavior): the frame re-fits, children are re-based, nothing moves.
+function hugGroupInLayers(layers: Layer[], groupId: string): Layer[] {
+  return layers.map((layer) =>
+    layer.type === "group" && layer.id === groupId
+      ? hugGroupToChildren(layer)
+      : layer
+  );
 }
 
 export function useLayerEdits(
@@ -68,7 +78,15 @@ export function useLayerEdits(
         ? { ...merged, animations: merged.animations.filter((animation) => animation.preset !== "line-draw") }
         : merged;
     });
-    if (changed) handleSceneChange({ ...scene, layers });
+    if (changed) {
+      const touchesGeometry = patchKeys.some((key) =>
+        key === "x" || key === "y" || key === "width" || key === "height"
+      );
+      const finalLayers = parentGroup && touchesGeometry
+        ? hugGroupInLayers(layers, parentGroup.id)
+        : layers;
+      handleSceneChange({ ...scene, layers: finalLayers });
+    }
   }, [handleSceneChange, scene]);
 
   const patchSelectedLayer = useCallback((patch: EditableLayerPatch) => {
@@ -120,7 +138,10 @@ export function useLayerEdits(
         y: layer.y - (nextHeight - layer.height) / 2,
       };
     });
-    handleSceneChange({ ...scene, layers });
+    const finalLayers = parentGroup
+      ? hugGroupInLayers(layers, parentGroup.id)
+      : layers;
+    handleSceneChange({ ...scene, layers: finalLayers });
   }, [handleSceneChange, scene]);
 
   const changeAnimationTiming = useCallback((

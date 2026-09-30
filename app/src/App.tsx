@@ -519,6 +519,10 @@ function App() {
       }
 
       if (event.key === "Escape") {
+        // Keynote: Esc exits group editing and deselects everything.
+        if (activeInsertionGroupId !== null) {
+          setSelectedLayerIds([]);
+        }
         setActiveInsertionGroupId(null);
         setSlideMenu(null);
         setCroppingLayerId(null);
@@ -590,6 +594,7 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
+    activeInsertionGroupId,
     handleCopySelection,
     handleDeleteSelection,
     handleDuplicateSelection,
@@ -1104,7 +1109,10 @@ function App() {
                     <button
                       type="button"
                       className="drill-breadcrumb-exit"
-                      onClick={() => setActiveInsertionGroupId(null)}
+                      onClick={() => {
+                        setActiveInsertionGroupId(null);
+                        setSelectedLayerIds([]);
+                      }}
                       title="Exit group"
                     >
                       {scene.name}

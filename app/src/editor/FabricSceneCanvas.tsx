@@ -13,6 +13,7 @@ import {
   Rect,
 } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
+import { hugGroupToChildren } from "../domain/groupOperations";
 import { resolveDragTarget } from "./fabricTargetResolution";
 import {
   DRILL_DIM_FACTOR,
@@ -193,7 +194,7 @@ export function FabricSceneCanvas({
   // group's children and follows them live. It is not a layer, so it stays
   // out of the layer<->object maps and the structural-diff check.
   // Index 0 is the border rect; the rest are the corner/edge handles.
-  const drillFrameRef = useRef<Rect[] | null>(null);
+  const drillFrameRef = useRef<Rect | null>(null);
   const isApplyingSelectionRef = useRef(false);
   const pendingTextEditRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
@@ -406,7 +407,9 @@ export function FabricSceneCanvas({
                 childObject,
               );
             });
-            return childChanged ? { ...nextGroup, children } : nextGroup;
+            return childChanged
+              ? hugGroupToChildren({ ...nextGroup, children })
+              : nextGroup;
           }
           const object = objectByLayerId.get(layer.id);
           return object ? updateLayerFromFabricObject(layer, object) : layer;
@@ -420,10 +423,11 @@ export function FabricSceneCanvas({
   );
 
   /**
-   * Keep the drill frame in sync with the drilled group: create it when
-   * drill-in starts, hug the children's union while drilling, remove it when
-   * drill-in ends. Called after every scene sync and live while a child is
-   * being transformed.
+   * Keep the drill frame in sync with the drilled group (Keynote): a plain
+   * white border hugging the children's union while drilling, removed when
+   * drill-in ends. The border hides while a child is being dragged and
+   * reappears fitted once the gesture completes. Called after every scene
+   * sync and on gesture end.
    */
   const syncDrillBoundary = useCallback((canvas: Canvas): void => {
     const drillId = drillGroupIdRef.current;
@@ -432,9 +436,7 @@ export function FabricSceneCanvas({
     const clearFrame = (): void => {
       const frame = drillFrameRef.current;
       if (frame) {
-        for (const object of frame) {
-          canvas.remove(object);
-        }
+        canvas.remove(frame);
         drillFrameRef.current = null;
       }
     };
@@ -456,68 +458,42 @@ export function FabricSceneCanvas({
 
     let frame = drillFrameRef.current;
     if (!frame) {
-      const border = new Rect({
+      frame = new Rect({
         originX: "left",
         originY: "top",
         fill: "rgba(0,0,0,0)",
-        // Thin solid neutral border (Keynote), distinct from the purple
-        // selection border.
-        stroke: "#8e8e93",
+        // Plain white border (Keynote): marks the drill scope, distinct
+        // from the purple selection border. No handles — the frame is not
+        // interactive.
+        stroke: "#ffffff",
         strokeWidth: 1.5,
         selectable: false,
         evented: false,
         excludeFromExport: true,
         hoverCursor: "default",
       });
-      const handles = Array.from(
-        { length: 8 },
-        () =>
-          new Rect({
-            originX: "center",
-            originY: "center",
-            width: 8,
-            height: 8,
-            fill: "#ffffff",
-            stroke: "#8e8e93",
-            strokeWidth: 1,
-            selectable: false,
-            evented: false,
-            excludeFromExport: true,
-            hoverCursor: "default",
-          }),
-      );
-      frame = [border, ...handles];
-      for (const object of frame) {
-        canvas.add(object);
-      }
+      canvas.add(frame);
       drillFrameRef.current = frame;
     }
-    const [border, ...handles] = frame;
-    border.set({ left, top, width, height });
-    border.setCoords();
-    // Corners + edge midpoints, in the same order as the handles array.
-    const xs = [left, left + width / 2, left + width];
-    const ys = [top, top + height / 2, top + height];
-    const positions: ReadonlyArray<readonly [number, number]> = [
-      [xs[0], ys[0]],
-      [xs[1], ys[0]],
-      [xs[2], ys[0]],
-      [xs[0], ys[1]],
-      [xs[2], ys[1]],
-      [xs[0], ys[2]],
-      [xs[1], ys[2]],
-      [xs[2], ys[2]],
-    ];
-    handles.forEach((handle, index) => {
-      const [handleLeft, handleTop] = positions[index];
-      handle.set({ left: handleLeft, top: handleTop });
-      handle.setCoords();
-    });
-    // Keep the frame (border first, handles on top) above everything else.
-    for (const object of frame) {
-      canvas.bringObjectToFront(object);
-    }
+    frame.set({ left, top, width, height, visible: true });
+    frame.setCoords();
+    canvas.bringObjectToFront(frame);
+    canvas.requestRenderAll();
   }, []);
+
+  /**
+   * Show/hide the drill frame without recomputing it. Used to hide the
+   * border while a child is being dragged (Keynote).
+   */
+  const setDrillFrameVisible = useCallback(
+    (canvas: Canvas, visible: boolean): void => {
+      const frame = drillFrameRef.current;
+      if (!frame) return;
+      frame.set({ visible });
+      canvas.requestRenderAll();
+    },
+    [],
+  );
 
   const registerTextEvents = useCallback(
     (canvas: Canvas, object: FabricObject): void => {
@@ -746,6 +722,11 @@ export function FabricSceneCanvas({
               selectedIds,
               layerIdToObjectRef.current,
             );
+            // The gesture is done: re-show the drill frame, fitted to the
+            // children's new union.
+            if (drillGroupIdRef.current) {
+              syncDrillBoundary(canvas);
+            }
             canvas.requestRenderAll();
           } finally {
             isApplyingSelectionRef.current = false;
@@ -755,6 +736,11 @@ export function FabricSceneCanvas({
       }
 
       syncObjectsToScene([target]);
+      // The gesture is done: re-show the drill frame, fitted to the
+      // children's new union.
+      if (drillGroupIdRef.current) {
+        syncDrillBoundary(canvas);
+      }
     });
 
     canvas.on("object:resizing", (event) => {
@@ -777,10 +763,10 @@ export function FabricSceneCanvas({
       if (target.parent instanceof FabricGroup) {
         target.parent.dirty = true;
       }
-      // Resizing a shape-text child changes its box; keep the drill frame
-      // hugging the children live.
+      // Resizing a shape-text child changes its box; the drill frame stays
+      // hidden during the gesture and re-hugs on mouse-up.
       if (drillGroupIdRef.current) {
-        syncDrillBoundary(canvas);
+        setDrillFrameVisible(canvas, false);
       }
       canvas.requestRenderAll();
     });
@@ -825,25 +811,24 @@ export function FabricSceneCanvas({
           target.setCoords();
         }
       }
-      // While drilling, keep the drill frame hugging the children live as a
-      // child is transformed (the scene commit on mouse-up re-syncs
-      // everything anyway).
+      // While drilling, the drill frame hides while a child is being
+      // transformed (Keynote); it reappears fitted on mouse-up.
       if (drillGroupIdRef.current) {
-        syncDrillBoundary(canvas);
+        setDrillFrameVisible(canvas, false);
       }
     });
 
     canvas.on("object:scaling", () => {
       if (drillGroupIdRef.current) {
-        syncDrillBoundary(canvas);
+        setDrillFrameVisible(canvas, false);
       }
     });
 
     canvas.on("object:rotating", () => {
-      // Rotating a child changes its bounding box, so the drill frame must
-      // re-hug the children live.
+      // Rotating a child changes its bounding box; the frame stays hidden
+      // during the gesture and re-hugs on mouse-up.
       if (drillGroupIdRef.current) {
-        syncDrillBoundary(canvas);
+        setDrillFrameVisible(canvas, false);
       }
     });
 
@@ -972,6 +957,11 @@ export function FabricSceneCanvas({
     canvas.on("mouse:up", () => {
       lockedAxisRef.current = null;
       lockOriginRef.current = null;
+      // Safety net: any child gesture that didn't end in object:modified
+      // (e.g. a click without a drag) leaves the drill frame visible.
+      if (drillGroupIdRef.current) {
+        syncDrillBoundary(canvas);
+      }
     });
     canvas.on("mouse:dblclick", (event) => {
       // Double-click an image toggles its crop mode (frame stays fixed,
@@ -1204,15 +1194,9 @@ export function FabricSceneCanvas({
         }
       }
       if (!event.target) {
-        // Drill-in: a click inside the drilled group's frame clears the
-        // selection but stays drilled (Keynote); a click outside exits.
-        const drillId = drillGroupIdRef.current;
-        if (drillId && event.scenePoint) {
-          const groupObject = layerIdToObjectRef.current.get(drillId);
-          if (groupObject?.containsPoint(event.scenePoint)) {
-            onSelectedLayerIdsChange([]);
-            return;
-          }
+        // Keynote: clicking any blank area exits group editing and
+        // deselects everything.
+        if (drillGroupIdRef.current) {
           onDrillExitRef.current?.();
         }
         onSelectedLayerIdsChange([]);
@@ -1465,13 +1449,9 @@ export function FabricSceneCanvas({
       }
 
       const hasStructuralMismatch = canvas.getObjects().some((object) => {
-        // The drill frame objects are not layers; never treat them as a
-        // structural change.
-        if (
-          drillFrameRef.current?.some(
-            (frameObject) => frameObject === object,
-          )
-        ) {
+        // The drill frame is not a layer; never treat it as a structural
+        // change.
+        if (drillFrameRef.current && drillFrameRef.current === object) {
           return false;
         }
         const layerId = objectToLayerId.get(object);
@@ -1527,6 +1507,10 @@ export function FabricSceneCanvas({
         for (const object of [...canvas.getObjects()]) {
           canvas.remove(object);
         }
+        // The removal above also drops the drill frame objects; clear the
+        // ref so syncDrillBoundary recreates them instead of reusing the
+        // detached ones.
+        drillFrameRef.current = null;
         objectToLayerId.clear();
         layerIdToObject.clear();
         hoveredObjectRef.current = null;

@@ -540,7 +540,6 @@ export function LayerPropertiesPanel({
         <section className="layer-design-section">
           <h4>Group</h4>
           <div className="layer-design-row"><span>Layers</span><strong>{layer.children.length}</strong></div>
-          <p className="layer-group-hint">Group resizing keeps its aspect ratio.</p>
         </section>
       ) : null}
 

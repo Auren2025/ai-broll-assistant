@@ -2688,13 +2688,6 @@ button {
   min-width: 190px;
 }
 
-.layer-group-hint {
-  color: #8d8793;
-  font-size: 11px;
-  line-height: 1.4;
-  margin: 8px 0 0;
-}
-
 .layer-image-source {
   overflow: hidden;
   max-width: 60%;

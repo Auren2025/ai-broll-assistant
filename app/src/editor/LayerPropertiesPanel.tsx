@@ -786,7 +786,7 @@ export function LayerPropertiesPanel({
                     ? "Ungroup the image first to crop it"
                     : "Double-click the image on canvas to enter as well"}
                 >
-                  Crop image
+                  Crop
                 </button>
                 <button
                   type="button"
@@ -794,7 +794,7 @@ export function LayerPropertiesPanel({
                   onClick={onReplaceImage}
                   title={layer.src ?? undefined}
                 >
-                  {layer.src === null ? "Load image…" : "Replace image…"}
+                  {layer.src === null ? "Load" : "Replace"}
                 </button>
               </div>
             </>

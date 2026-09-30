@@ -145,11 +145,20 @@ export function EditorToolbar({
           className={`editor-tool${isPreviewActive ? " is-active" : ""}`}
           type="button"
           aria-pressed={isPreviewActive}
-          title="Toggle preview in the canvas"
+          title={isPreviewActive ? "Back to editing" : "Preview the scene"}
           onClick={onTogglePreview}
         >
-          <span className="tool-symbol">▶</span>
-          Preview
+          {isPreviewActive ? (
+            <>
+              <span className="tool-symbol">✎</span>
+              Edit
+            </>
+          ) : (
+            <>
+              <span className="tool-symbol">▶</span>
+              Preview
+            </>
+          )}
         </button>
         <button
           className="editor-tool editor-tool-icon"

@@ -2146,7 +2146,7 @@ button {
   pointer-events: none;
 }
 
-.subtitle-split-menu {
+.timeline-split-menu {
   position: fixed;
   z-index: 60;
   min-width: 190px;
@@ -2157,7 +2157,7 @@ button {
   box-shadow: 0 8px 24px rgba(35, 28, 48, 0.16);
 }
 
-.subtitle-split-menu button {
+.timeline-split-menu button {
   display: block;
   width: 100%;
   padding: 8px 12px;
@@ -2170,7 +2170,7 @@ button {
   cursor: pointer;
 }
 
-.subtitle-split-menu button:hover {
+.timeline-split-menu button:hover {
   color: #5140c8;
   background: #f0edff;
 }

@@ -191,7 +191,7 @@ export function SceneAnimationTimeline({
     };
   }, [splitMenu]);
 
-  function handleSubtitleContextMenu(event: ReactMouseEvent<HTMLDivElement>): void {
+  function handleSplitContextMenu(event: ReactMouseEvent<HTMLDivElement>): void {
     if (!onSplitScene) return;
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -408,6 +408,8 @@ export function SceneAnimationTimeline({
             aria-valuetext={isPreviewMode ? `${currentFrame} frames` : undefined}
             onKeyDown={isPreviewMode ? handleRulerKeyDown : undefined}
             onPointerDown={isPreviewMode ? beginScrub : undefined}
+            onContextMenu={handleSplitContextMenu}
+            title="Right-click to split the scene here, or on the playhead to split at the playhead"
           >
             {ticks.map((frame) => (
               <span
@@ -435,9 +437,7 @@ export function SceneAnimationTimeline({
               </div>
               <div
                 className="animation-timeline-track subtitle-timeline-track"
-                onContextMenu={handleSubtitleContextMenu}
                 onClick={handleTrackEmptyClick}
-                title="Right-click to split the scene here, or near the playhead to split at the playhead"
               >
                 {ticks
                   .filter((frame) => frame !== 0)
@@ -559,7 +559,7 @@ export function SceneAnimationTimeline({
       )}
       {splitMenu && onSplitScene ? (
         <div
-          className="subtitle-split-menu"
+          className="timeline-split-menu"
           style={{ left: splitMenu.x, top: splitMenu.y }}
           role="menu"
         >

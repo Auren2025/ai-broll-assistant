@@ -40,9 +40,9 @@ export const SceneExitTransitionSchema = z.object({
 
 export type SceneExitTransition = z.infer<typeof SceneExitTransitionSchema>;
 
-// Page transition played by the exported HTML presentation when arriving at
-// this scene. B-roll scenes never set it; slide pages leave it undefined for
-// a hard cut.
+// Legacy page transition, superseded by the unified scene exitTransition.
+// Nothing reads it anymore (the inspector no longer exposes it); it is kept
+// only so older project files still parse under SceneSchema's .strict().
 export const SceneTransitionSchema = z
   .object({
     type: z.enum(["none", "fade", "slide"]),

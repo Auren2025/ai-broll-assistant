@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { AbsoluteFill, useCurrentFrame } from "remotion";
 import type { Scene } from "../domain/sceneSchema";
-import { getExitTransitionOpacity } from "./sceneExitTransition";
+import { getExitTransitionOpacity } from "./exitTransitionOpacity";
 
 interface SceneExitTransitionProps {
   scene: Scene;

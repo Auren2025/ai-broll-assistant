@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getExitTransitionOpacity } from "../src/remotion/sceneExitTransition";
+import { getExitTransitionOpacity } from "../src/remotion/exitTransitionOpacity";
 
 test("exit transition opacity stays at 1 before the outro starts", () => {
   assert.equal(getExitTransitionOpacity(0, 100, 15), 1);

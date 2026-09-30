@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Project } from "../domain/projectSchema";
-import type { Scene } from "../domain/sceneSchema";
+import type { Scene, SceneTransition } from "../domain/sceneSchema";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 
 interface ScenePropertiesPanelProps {
@@ -17,6 +17,12 @@ const FORMAT_PRESETS = [
   { label: "Square", width: 1080, height: 1080 },
   { label: "Vertical", width: 1080, height: 1920 },
 ] as const;
+
+const TRANSITION_OPTIONS: Array<{ value: SceneTransition["type"]; label: string }> = [
+  { value: "none", label: "None" },
+  { value: "fade", label: "Fade" },
+  { value: "slide", label: "Slide" },
+];
 
 function getFormatValue(width: number, height: number): string {
   return (
@@ -246,6 +252,7 @@ export function ScenePropertiesPanel({
         ) : null}
       </section>
 
+<<<<<<< HEAD
       <section className="scene-design-section scene-exit-transition-section">
         <h4>Exit transition</h4>
         <div className="scene-duration-control">
@@ -304,6 +311,35 @@ export function ScenePropertiesPanel({
           Plays at the end of this scene, then cuts to the next scene.
         </p>
       </section>
+
+      {project.kind === "slide" ? (
+        <section className="scene-design-section scene-transition-section">
+          <h4>Transition</h4>
+          <label className="scene-design-row">
+            <span>Effect</span>
+            <select
+              aria-label="Page transition effect"
+              value={scene.transition?.type ?? "none"}
+              onChange={(event) => {
+                const type = event.currentTarget.value as SceneTransition["type"];
+                onSceneChange({
+                  ...scene,
+                  transition: type === "none" ? undefined : { type },
+                });
+              }}
+            >
+              {TRANSITION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="layer-group-hint">
+            Plays when arriving at this page.
+          </p>
+        </section>
+      ) : null}
     </section>
   );
 }

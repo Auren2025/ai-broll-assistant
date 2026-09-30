@@ -1273,6 +1273,164 @@ async function handleSplitScene(
   })
 }
 
+async function handleDuplicateScene(
+  res: http.ServerResponse,
+  projectId: string,
+  sceneId: string,
+): Promise<void> {
+  const project = await readAndParseProject(res, projectId)
+  if (project === null) return
+
+  const sourceIndex = project.scenes.findIndex(
+    (reference) => reference.id === sceneId,
+  )
+  if (sourceIndex === -1) {
+    sendJson(res, 404, { error: 'Scene not found' })
+    return
+  }
+  const sourceReference = project.scenes[sourceIndex]
+
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
+  const sourcePath = path.join(projectDir, sourceReference.file)
+
+  let raw: string
+  try {
+    raw = await fs.readFile(sourcePath, 'utf-8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Scene not found' })
+    } else {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+    }
+    return
+  }
+
+  let sourceScene: SceneType
+  try {
+    sourceScene = parseScene(JSON.parse(raw))
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 500, { error: 'Invalid scene data' })
+    return
+  }
+
+  let maxNumber = 0
+  for (const reference of project.scenes) {
+    const match = SCENE_ID_PATTERN.exec(reference.id)
+    if (match) {
+      maxNumber = Math.max(maxNumber, Number(match[1]))
+    }
+  }
+  const nextNumber = maxNumber + 1
+  const nextId = `scene-${String(nextNumber).padStart(3, '0')}`
+
+  if (project.scenes.some((reference) => reference.id === nextId)) {
+    sendJson(res, 409, { error: `Scene id "${nextId}" already exists` })
+    return
+  }
+
+  const endFrameResult =
+    project.kind === 'broll'
+      ? await readExistingSceneEndFrames(project, projectDir)
+      : { value: 0, ok: true as const }
+  if (!endFrameResult.ok) {
+    sendJson(res, endFrameResult.error.status, {
+      error: endFrameResult.error.message,
+    })
+    return
+  }
+
+  const duplicatedScene: SceneType = structuredClone(sourceScene)
+  duplicatedScene.id = nextId
+  duplicatedScene.name = `${sourceScene.name} copy`
+  reassignDuplicatedLayerIds(duplicatedScene.layers)
+
+  let validatedScene: SceneType
+  try {
+    validatedScene = parseScene(duplicatedScene)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to construct duplicated scene' })
+    return
+  }
+
+  const sceneRelPath = `${SCENES_PREFIX}${nextId}.json`
+  const sceneAbsPath = path.join(projectDir, sceneRelPath)
+
+  try {
+    await fs.access(sceneAbsPath)
+    sendJson(res, 409, { error: 'Scene file already exists' })
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+      return
+    }
+  }
+
+  const nextProject: Project = {
+    ...project,
+    scenes: [...project.scenes],
+  }
+  nextProject.scenes.splice(sourceIndex + 1, 0, {
+    id: nextId,
+    file: sceneRelPath,
+    ...(project.kind === 'broll' ? { startFrame: endFrameResult.value } : {}),
+  })
+
+  let validatedProject: Project
+  try {
+    validatedProject = parseProject(nextProject)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to construct new project' })
+    return
+  }
+
+  const sceneContent = JSON.stringify(validatedScene, null, 2) + '\n'
+  const projectContent = JSON.stringify(validatedProject, null, 2) + '\n'
+
+  const projectJsonPath = path.join(projectDir, 'project.json')
+
+  const sceneTempPath = buildSceneTempPath(sceneAbsPath)
+  const projectTempPath = buildSceneTempPath(projectJsonPath)
+
+  let sceneTempWritten = false
+  try {
+    await fs.writeFile(sceneTempPath, sceneContent, 'utf-8')
+    sceneTempWritten = true
+    await fs.rename(sceneTempPath, sceneAbsPath)
+  } catch (err) {
+    console.error(err)
+    if (sceneTempWritten) {
+      await fs.unlink(sceneTempPath).catch(() => {})
+    }
+    sendJson(res, 500, { error: 'Failed to save scene' })
+    return
+  }
+
+  let projectTempWritten = false
+  try {
+    await fs.writeFile(projectTempPath, projectContent, 'utf-8')
+    projectTempWritten = true
+    await fs.rename(projectTempPath, projectJsonPath)
+  } catch (err) {
+    console.error(err)
+    if (projectTempWritten) {
+      await fs.unlink(projectTempPath).catch(() => {})
+    }
+    await fs.unlink(sceneAbsPath).catch(() => {})
+    sendJson(res, 500, { error: 'Failed to update project' })
+    return
+  }
+
+  sendJson(res, 201, { project: validatedProject, scene: validatedScene })
+}
+
 const server = http.createServer((req, res) => {
   const method = req.method ?? 'GET'
   const url = req.url ?? ''
@@ -1421,6 +1579,20 @@ const server = http.createServer((req, res) => {
         }
         if (method === 'POST') {
           void handleSplitScene(req, res, projectIdPart, sceneId)
+          return
+        }
+        sendJson(res, 405, { error: 'Method not allowed' })
+        return
+      }
+      const duplicateSuffix = '/duplicate'
+      if (afterScenes.endsWith(duplicateSuffix)) {
+        const sceneId = afterScenes.slice(0, -duplicateSuffix.length)
+        if (!ID_PATTERN.test(sceneId)) {
+          sendJson(res, 400, { error: 'Invalid scene id' })
+          return
+        }
+        if (method === 'POST') {
+          void handleDuplicateScene(res, projectIdPart, sceneId)
           return
         }
         sendJson(res, 405, { error: 'Method not allowed' })

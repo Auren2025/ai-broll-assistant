@@ -170,6 +170,37 @@ export interface CreateSceneResult {
   scene: Scene;
 }
 
+export async function duplicateScene(
+  projectId: string,
+  sceneId: string,
+): Promise<CreateSceneResult> {
+  const { body: input } = await fetchJson(
+    `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/duplicate`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("project" in input) ||
+    !("scene" in input)
+  ) {
+    throw new Error("Server returned an unexpected payload for duplicate scene");
+  }
+
+  const payload = input as { project: unknown; scene: unknown };
+  const duplicatedProject = parseProject(payload.project);
+  const duplicatedScene = parseScene(payload.scene);
+  const [project, scene] = await Promise.all([
+    fetchProject(duplicatedProject.id),
+    fetchScene(duplicatedProject.id, duplicatedScene.id),
+  ]);
+
+  return { project, scene };
+}
+
 export async function createScene(
   projectId: string,
   index?: number,

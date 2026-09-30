@@ -69,22 +69,34 @@ function layersWith(
   }).layers;
 }
 
-test("no drill: entries mirror top-level layers, nothing dimmed", () => {
+test("no drill: entries mirror top-level layers, nothing dimmed or drilled", () => {
   const layers = layersWith(rect("a", 1), group("g", 2, [rect("c1", 1)]), rect("b", 3));
   const entries = computeDrillEntries(layers, null);
   assert.deepEqual(entries.map((entry) => entry.layer.id), ["a", "g", "b"]);
   assert.ok(entries.every((entry) => !entry.dimmed));
+  assert.ok(entries.every((entry) => !entry.drilled));
 });
 
-test("drill: group expands to children at the group's position, others dimmed", () => {
+test("drill: the group keeps its entry (no ungrouping), others dimmed", () => {
   const layers = layersWith(
     rect("a", 1),
     group("g", 2, [rect("c2", 2), rect("c1", 1)]),
     rect("b", 3),
   );
   const entries = computeDrillEntries(layers, "g");
-  assert.deepEqual(entries.map((entry) => entry.layer.id), ["a", "c1", "c2", "b"]);
-  assert.deepEqual(entries.map((entry) => entry.dimmed), [true, false, false, true]);
+  assert.deepEqual(entries.map((entry) => entry.layer.id), ["a", "g", "b"]);
+  assert.deepEqual(entries.map((entry) => entry.dimmed), [true, false, true]);
+  assert.deepEqual(entries.map((entry) => entry.drilled), [false, true, false]);
+});
+
+test("drill: entry order follows zIndex", () => {
+  const layers = layersWith(
+    rect("b", 3),
+    group("g", 2, [rect("c1", 1)]),
+    rect("a", 1),
+  );
+  const entries = computeDrillEntries(layers, "g");
+  assert.deepEqual(entries.map((entry) => entry.layer.id), ["a", "g", "b"]);
 });
 
 test("drill: stale group id renders as if not drilling", () => {
@@ -92,6 +104,7 @@ test("drill: stale group id renders as if not drilling", () => {
   const entries = computeDrillEntries(layers, "missing");
   assert.deepEqual(entries.map((entry) => entry.layer.id), ["a"]);
   assert.ok(entries.every((entry) => !entry.dimmed));
+  assert.ok(entries.every((entry) => !entry.drilled));
 });
 
 test("drill: non-group id renders as if not drilling", () => {
@@ -99,6 +112,7 @@ test("drill: non-group id renders as if not drilling", () => {
   const entries = computeDrillEntries(layers, "a");
   assert.deepEqual(entries.map((entry) => entry.layer.id), ["a"]);
   assert.ok(entries.every((entry) => !entry.dimmed));
+  assert.ok(entries.every((entry) => !entry.drilled));
 });
 
 test("isLayerInDrillScope: group, children, and outsiders", () => {

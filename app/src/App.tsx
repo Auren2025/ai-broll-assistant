@@ -730,8 +730,8 @@ function App() {
     setCroppingLayerId(layerId);
   }, [activeInsertionGroupId, layerEdits, scene]);
 
-  // Drill-in rebuilds the canvas (children become top-level objects), which
-  // crop mode cannot survive: leave crop mode whenever drill-in changes.
+  // Drill-in changes the canvas presentation (dimming + boundary overlay),
+  // which crop mode cannot survive: leave crop mode whenever drill-in changes.
   useEffect(() => {
     setCroppingLayerId(null);
   }, [activeInsertionGroupId]);
@@ -1078,6 +1078,7 @@ function App() {
                     onHoveredLayerIdChange={setHoveredLayerId}
                     onGroupEditEnter={selection.onGroupEditEnter}
                     drillGroupId={activeInsertionGroupId}
+                    onDrillExit={() => setActiveInsertionGroupId(null)}
                     onContextMenuRequest={openLayerContextMenu}
                     selectedLayerIds={selectedLayerIds}
                     selectedAnimationId={

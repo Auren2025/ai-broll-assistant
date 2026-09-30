@@ -1,18 +1,21 @@
 import type { GroupLayer } from "../domain/groupLayerSchema";
 import type { Layer } from "../domain/sceneSchema";
-import { sortChildrenByZIndex } from "./magicMove";
 
 /**
  * One row of what the canvas should render as a top-level object.
  *
- * When drilling into a group (`drillGroupId` set), the drilled group's
- * children are promoted to top-level canvas objects (absolute coordinates,
- * directly selectable) and every other entry is dimmed and non-interactive.
+ * When drilling into a group (`drillGroupId` set), the drilled group stays
+ * a single FabricGroup on the canvas: its children are edited in place via
+ * the group's interactive sub-targets, so nothing ever moves and the group
+ * frame can stay visible as a boundary overlay. Every other top-level entry
+ * is dimmed and non-interactive while drilling.
  */
 export interface DrillEntry {
   layer: Layer;
   /** True when the entry is outside the drilled group and should be dimmed. */
   dimmed: boolean;
+  /** True when the entry is the group currently drilled into. */
+  drilled: boolean;
 }
 
 /** Fraction of the original opacity applied to layers outside the drilled group. */
@@ -43,9 +46,9 @@ export function isLayerInDrillScope(
 }
 
 /**
- * Flatten the scene's top-level layers into canvas entries. A drilled group
- * is replaced by its children (in z-order, at the group's position);
- * everything else renders normally but dimmed while drilling.
+ * Flatten the scene's top-level layers into canvas entries, in z-order.
+ * Drilling never restructures the scene: the drilled group keeps its entry
+ * (flagged `drilled`) and everything else is flagged `dimmed`.
  */
 export function computeDrillEntries(
   layers: readonly Layer[],
@@ -55,16 +58,11 @@ export function computeDrillEntries(
   const drillGroup = drilling ? findDrillGroup(layers, drillGroupId) : null;
   // A stale drill id (group deleted) renders as if not drilling.
   const effectiveDrillGroupId = drillGroup ? drillGroupId : null;
-  const sortedLayers = [...layers].sort((first, second) => first.zIndex - second.zIndex);
-  const entries: DrillEntry[] = [];
-  for (const layer of sortedLayers) {
-    if (layer.type === "group" && layer.id === effectiveDrillGroupId) {
-      for (const child of sortChildrenByZIndex(layer.children)) {
-        entries.push({ layer: child, dimmed: false });
-      }
-      continue;
-    }
-    entries.push({ layer, dimmed: effectiveDrillGroupId !== null });
-  }
-  return entries;
+  return [...layers]
+    .sort((first, second) => first.zIndex - second.zIndex)
+    .map((layer) => ({
+      layer,
+      dimmed: effectiveDrillGroupId !== null && layer.id !== effectiveDrillGroupId,
+      drilled: layer.id === effectiveDrillGroupId,
+    }));
 }

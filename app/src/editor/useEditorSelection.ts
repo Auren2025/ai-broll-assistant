@@ -33,7 +33,9 @@ export function useEditorSelection({
     setSelectedAnimationId(null);
     setInspectorScope(layerIds.length > 0 ? "layer" : "scene");
     setActiveInsertionGroupId((current) => {
-      if (!current || layerIds.length === 0) return null;
+      // Clearing the selection never exits drill-in: the canvas decides
+      // explicitly (click outside the drilled group exits via onDrillExit).
+      if (!current) return null;
       const currentScene = sceneRef.current;
       const group = currentScene ? findLayerById(currentScene.layers, current) : null;
       if (!group || group.type !== "group") return null;

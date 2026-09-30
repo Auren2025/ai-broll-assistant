@@ -18,6 +18,14 @@ import {
 } from "./animationCatalog";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 
+/**
+ * Spinner step (seconds) for the animation duration/start number inputs.
+ * The underlying model stores whole frames, so typed values still round to
+ * the nearest frame; this only controls how far each spinner click moves.
+ * 0.1s feels snappier than a single frame (1/30s) for timing tweaks.
+ */
+const ANIMATION_TIME_STEP_SECONDS = 0.1;
+
 const EASINGS = [
   { value: "linear", label: "None" },
   { value: "ease-in", label: "Ease In" },
@@ -277,7 +285,7 @@ export function LayerAnimationPanel({
                   max={
                     (sceneDurationInFrames - selectedAnimation.startFrame) / fps
                   }
-                  step={1 / fps}
+                  step={ANIMATION_TIME_STEP_SECONDS}
                   value={Number(
                     (selectedAnimation.durationInFrames / fps).toFixed(3),
                   )}
@@ -315,7 +323,7 @@ export function LayerAnimationPanel({
                       selectedAnimation.durationInFrames) /
                     fps
                   }
-                  step={1 / fps}
+                  step={ANIMATION_TIME_STEP_SECONDS}
                   value={Number((selectedAnimation.startFrame / fps).toFixed(3))}
                   onValueChange={(seconds) => {
                     const startFrame = Math.min(

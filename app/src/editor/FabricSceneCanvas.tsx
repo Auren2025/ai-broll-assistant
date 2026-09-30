@@ -45,6 +45,7 @@ import {
   sortChildrenByZIndex,
 } from "./magicMove";
 import { useMagicMoveDrag } from "./useMagicMoveDrag";
+import { useCanvasHover } from "./useCanvasHover";
 import { clampFocal, clampImageCropZoom } from "./imageCrop";
 import { computeTextBoxSize } from "./textMetrics";
 
@@ -136,7 +137,6 @@ export function FabricSceneCanvas({
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
-  const hoveredObjectRef = useRef<FabricObject | null>(null);
   // Distinguish a true double-click from drag-then-click: browsers fire
   // `dblclick` for both, but only the former may enter group drill-in.
   // pointerDownPosRef records where the current press started; each
@@ -218,6 +218,19 @@ export function FabricSceneCanvas({
     isApplyingSelectionRef,
     onMagicMoveTranslationCommit,
   });
+  const {
+    updateHover,
+    clearHoverOnMouseOut,
+    paintHoverBorder,
+    clearHover,
+    clearHoverForObject,
+  } = useCanvasHover({
+    drillGroupId,
+    drillGroupIdRef,
+    fabricCanvasRef,
+    objectToLayerIdRef,
+    onHoveredLayerIdChange,
+  });
 
   selectedLayerIdsRef.current = selectedLayerIds;
 
@@ -236,18 +249,6 @@ export function FabricSceneCanvas({
   useEffect(() => {
     groupEditEnterRef.current = onGroupEditEnter;
   }, [onGroupEditEnter]);
-
-  useEffect(() => {
-    if (drillGroupIdRef.current !== drillGroupId) {
-      // Entering or exiting drill-in invalidates hover state: the purple
-      // hover border would otherwise linger (e.g. blank-click exits drill
-      // without any mousemove to clear it).
-      hoveredObjectRef.current = null;
-      onHoveredLayerIdChange(null);
-      fabricCanvasRef.current?.requestRenderAll();
-    }
-    drillGroupIdRef.current = drillGroupId;
-  }, [drillGroupId, onHoveredLayerIdChange]);
 
   useEffect(() => {
     onDrillExitRef.current = onDrillExit;
@@ -773,13 +774,6 @@ export function FabricSceneCanvas({
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
-    const resolveHoverTarget = (
-      target: FabricObject | null | undefined,
-    ): FabricObject | null => {
-      if (!target) return null;
-      const parent = target.parent;
-      return parent instanceof FabricGroup ? parent : target;
-    };
 
     canvas.on("mouse:move", (event) => {
       const cropSession = cropSessionRef.current;
@@ -857,50 +851,13 @@ export function FabricSceneCanvas({
           }
         }
       }
-      const hoverTarget = resolveHoverTarget(event.target);
-      if (hoverTarget === hoveredObjectRef.current) return;
-
-      hoveredObjectRef.current = hoverTarget;
-      onHoveredLayerIdChange(
-        hoverTarget
-          ? (objectToLayerIdRef.current.get(hoverTarget) ?? null)
-          : null,
-      );
-      canvas.requestRenderAll();
+      updateHover(canvas, event.target);
     });
     canvas.on("mouse:out", () => {
-      if (!hoveredObjectRef.current) return;
-
-      hoveredObjectRef.current = null;
-      onHoveredLayerIdChange(null);
-      canvas.requestRenderAll();
+      clearHoverOnMouseOut(canvas);
     });
     canvas.on("after:render", ({ ctx }) => {
-      const hoveredObject = hoveredObjectRef.current;
-      // During drill-in, hovering a child resolves to the drilled group;
-      // never paint a hover border for the group being drilled.
-      const hoveredLayerId = hoveredObject
-        ? objectToLayerId.get(hoveredObject)
-        : undefined;
-      if (
-        !hoveredObject ||
-        !hoveredObject.visible ||
-        !canvas.getObjects().includes(hoveredObject) ||
-        // Never outline an object the layer map no longer knows: a stale
-        // reference must not paint a ghost border.
-        hoveredLayerId === undefined ||
-        canvas.getActiveObjects().includes(hoveredObject) ||
-        (drillGroupIdRef.current !== null &&
-          hoveredLayerId === drillGroupIdRef.current)
-      ) {
-        return;
-      }
-
-      hoveredObject._renderControls(ctx, {
-        borderColor: "#7147e8",
-        hasBorders: true,
-        hasControls: false,
-      });
+      paintHoverBorder(canvas, ctx);
     });
     canvas.on("mouse:up", (event) => {
       lockedAxisRef.current = null;
@@ -1184,8 +1141,7 @@ export function FabricSceneCanvas({
         if (drillGroupIdRef.current) {
           onDrillExitRef.current?.();
         }
-        hoveredObjectRef.current = null;
-        onHoveredLayerIdChange(null);
+        clearHover();
         onSelectedLayerIdsChange([]);
         return;
       }
@@ -1313,8 +1269,6 @@ export function FabricSceneCanvas({
     canvas.requestRenderAll();
 
     return () => {
-      hoveredObjectRef.current = null;
-      onHoveredLayerIdChange(null);
       canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
       void canvas.dispose();
       fabricCanvasRef.current = null;
@@ -1323,14 +1277,17 @@ export function FabricSceneCanvas({
     };
   }, [
     addFabricObject,
+    clearHover,
+    clearHoverOnMouseOut,
     displayScale,
     onSelectedLayerIdsChange,
-    onHoveredLayerIdChange,
+    paintHoverBorder,
     projectHeight,
     projectWidth,
     scene.id,
     syncDrillBoundary,
     syncObjectsToScene,
+    updateHover,
   ]);
 
   useEffect(() => {
@@ -1400,10 +1357,7 @@ export function FabricSceneCanvas({
     const removeAndForget = (object: FabricObject): void => {
       canvas.remove(object);
       forgetObject(object);
-      if (hoveredObjectRef.current === object) {
-        hoveredObjectRef.current = null;
-        onHoveredLayerIdChange(null);
-      }
+      clearHoverForObject(object);
     };
     isApplyingSelectionRef.current = true;
 
@@ -1502,8 +1456,7 @@ export function FabricSceneCanvas({
         drillFrameRef.current = null;
         objectToLayerId.clear();
         layerIdToObject.clear();
-        hoveredObjectRef.current = null;
-        onHoveredLayerIdChange(null);
+        clearHover();
 
         entries.forEach((entry) => {
           const object = addFabricObject(canvas, entry.layer);
@@ -1658,7 +1611,7 @@ export function FabricSceneCanvas({
     } finally {
       isApplyingSelectionRef.current = false;
     }
-  }, [addFabricObject, drillGroupId, onHoveredLayerIdChange, scene, selectedLayerIds, syncDrillBoundary]);
+  }, [addFabricObject, clearHover, clearHoverForObject, drillGroupId, scene, selectedLayerIds, syncDrillBoundary]);
 
   const canvasWidth = projectWidth * displayScale * zoom;
   const canvasHeight = projectHeight * displayScale * zoom;

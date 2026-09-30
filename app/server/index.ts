@@ -1059,6 +1059,21 @@ function reassignSplitLayerIds(layers: SceneType['layers']): void {
   visit(layers)
 }
 
+function reassignDuplicatedLayerIds(layers: SceneType['layers']): void {
+  const counters = new Map<string, number>()
+  const visit = (list: SceneType['layers']): void => {
+    for (const layer of list) {
+      const count = (counters.get(layer.type) ?? 0) + 1
+      counters.set(layer.type, count)
+      layer.id = `${layer.type}-${count}`
+      if (layer.type === 'group') {
+        visit(layer.children)
+      }
+    }
+  }
+  visit(layers)
+}
+
 async function handleSplitScene(
   req: http.IncomingMessage,
   res: http.ServerResponse,

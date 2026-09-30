@@ -252,7 +252,6 @@ export function ScenePropertiesPanel({
         ) : null}
       </section>
 
-<<<<<<< HEAD
       <section className="scene-design-section scene-exit-transition-section">
         <h4>Exit transition</h4>
         <div className="scene-duration-control">

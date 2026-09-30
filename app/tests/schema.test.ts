@@ -523,7 +523,6 @@ test("parseProject rejects an audioFile in another directory", () => {
   );
 });
 
-<<<<<<< HEAD
 test("parseScene still requires a scene name", () => {
   assert.throws(() =>
     parseScene({

@@ -1,6 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { createScene, deleteScene as deleteSceneRequest, duplicateScene as duplicateSceneRequest, fetchScene, splitScene as splitSceneRequest } from "../api/projectApi";
 import { moveSceneReference } from "../domain/sceneOrder";
+import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
 import type { InspectorScope } from "./useEditorSelection";
 import type { DocumentVersionTracker } from "./versionTracker";

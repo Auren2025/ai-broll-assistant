@@ -411,6 +411,22 @@ function App() {
     else await sceneOperations.deleteScene();
   }, [project, scene, isSceneLoading, inspectorScope, layerCommands, sceneOperations]);
 
+  const handleSceneRename = useCallback(async (sceneId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || !project || isSceneLoading || hasSaveConflict) return;
+    // Renames flow through the current-scene edit path so history and
+    // autosave keep working: select the target scene first when needed.
+    let target = scene?.id === sceneId ? scene : null;
+    if (!target) {
+      const loaded = await sceneOperations.selectScene(sceneId);
+      if (!loaded) return;
+      target = loaded;
+    }
+    if (target.name !== trimmed) {
+      handleSceneChange({ ...target, name: trimmed });
+    }
+  }, [project, scene, isSceneLoading, hasSaveConflict, sceneOperations, handleSceneChange]);
+
   const handleGroupSelection = useCallback(() => {
     layerCommands.groupSelection();
   }, [layerCommands]);
@@ -729,8 +745,6 @@ function App() {
     ...scenesById,
     [scene.id]: scene,
   };
-  const sceneNumber =
-    project.scenes.findIndex((reference) => reference.id === scene.id) + 1;
   const currentSceneIndex =
     project.scenes.findIndex((reference) => reference.id === scene.id);
   const nextSceneReference = project.scenes[currentSceneIndex + 1];
@@ -873,6 +887,7 @@ function App() {
             }}
             onSceneContextMenu={(sceneId, x, y) => void handleSlideContextMenu(sceneId, x, y)}
             onSceneMove={sceneOperations.moveScene}
+            onSceneRename={handleSceneRename}
             onLayerSelect={selection.onTreeLayerSelect}
             onGroupEditEnter={selection.onTreeGroupEditEnter}
             onLayerMove={handleTreeLayerMove}
@@ -997,7 +1012,7 @@ function App() {
         </section>
 
         <EditorInspector
-          project={project} scene={scene} sceneNumber={sceneNumber}
+          project={project} scene={scene}
           maximumDurationInFrames={maximumDurationInFrames}
           selection={{
             tab: inspectorTab, scope: inspectorScope, layerIds: selectedLayerIds,

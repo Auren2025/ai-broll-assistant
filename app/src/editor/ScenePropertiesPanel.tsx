@@ -6,7 +6,6 @@ import { BufferedNumberInput } from "./BufferedNumberInput";
 interface ScenePropertiesPanelProps {
   scene: Scene;
   project: Project;
-  sceneNumber: number;
   maximumDurationInFrames: number;
   onProjectChange: (project: Project) => void;
   onSceneChange: (scene: Scene) => void;
@@ -30,7 +29,6 @@ function getFormatValue(width: number, height: number): string {
 export function ScenePropertiesPanel({
   scene,
   project,
-  sceneNumber,
   maximumDurationInFrames,
   onProjectChange,
   onSceneChange,
@@ -42,7 +40,6 @@ export function ScenePropertiesPanel({
   const [colorInput, setColorInput] = useState(
     (scene.backgroundColor ?? "#ffffff").slice(1).toUpperCase(),
   );
-  const [topicInput, setTopicInput] = useState(scene.topic);
   const [projectNameInput, setProjectNameInput] = useState(project.name);
   const color = scene.backgroundColor ?? lastColor;
   const maximumAnimationEnd = Math.max(
@@ -69,10 +66,6 @@ export function ScenePropertiesPanel({
   }, [scene.backgroundColor]);
 
   useEffect(() => {
-    setTopicInput(scene.topic);
-  }, [scene.topic]);
-
-  useEffect(() => {
     setProjectNameInput(project.name);
   }, [project.name]);
 
@@ -95,32 +88,12 @@ export function ScenePropertiesPanel({
     <section className="scene-design-panel" aria-label="Scene properties">
       <header className="scene-design-header">
         <span className="scene-design-icon" aria-hidden="true" />
-        <h3>{project.kind === "slide" ? "Page" : "Scene"} {sceneNumber}</h3>
+        <h3>{scene.name}</h3>
       </header>
-
-      <section className="scene-design-section scene-topic-section">
-        <label className="scene-design-row scene-topic-row">
-          <span>Topic</span>
-          <input
-            type="text"
-            aria-label="Scene topic"
-            maxLength={120}
-            value={topicInput}
-            onChange={(event) => {
-              setTopicInput(event.currentTarget.value);
-              const value = event.currentTarget.value.trim();
-              if (value.length > 0) {
-                onSceneChange({ ...scene, topic: value });
-              }
-            }}
-            onBlur={() => setTopicInput(scene.topic)}
-          />
-        </label>
-      </section>
 
       <section className="scene-design-section scene-project-section">
         <h4>Project</h4>
-        <label className="scene-design-row scene-topic-row">
+        <label className="scene-design-row">
           <span>Name</span>
           <input
             type="text"

@@ -5,11 +5,11 @@ export function makeProjectFixture(id = "test-project") {
   const scene = parseScene({
     schemaVersion: 2,
     id: "scene-001",
-    topic: "First scene",
+    name: "First scene",
     durationInFrames: 30,
     layers: [],
   });
-  const secondScene = parseScene({ ...scene, id: "scene-002", topic: "Second scene" });
+  const secondScene = parseScene({ ...scene, id: "scene-002", name: "Second scene" });
   const project = parseProject({
     schemaVersion: 2,
     id,

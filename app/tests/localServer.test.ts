@@ -144,7 +144,7 @@ test("project and scene PUT persist validated JSON and return fresh ETags withou
   const f = await fixture(t);
   for (const [url, updated, filename] of [
     [f.projectUrl, { ...f.project, name: "Renamed" }, "project.json"],
-    [f.sceneUrl, { ...f.scene, topic: "Edited" }, "scenes/scene-001.json"],
+    [f.sceneUrl, { ...f.scene, name: "Edited" }, "scenes/scene-001.json"],
   ] as const) {
     const original = await f.request(url);
     await original.json();
@@ -164,7 +164,7 @@ test("external project and scene edits reject stale ETags without overwriting di
   const f = await fixture(t);
   for (const [url, local, external, filename] of [
     [f.projectUrl, { ...f.project, name: "Local" }, { ...f.project, name: "External" }, "project.json"],
-    [f.sceneUrl, { ...f.scene, topic: "Local" }, { ...f.scene, topic: "External" }, "scenes/scene-001.json"],
+    [f.sceneUrl, { ...f.scene, name: "Local" }, { ...f.scene, name: "External" }, "scenes/scene-001.json"],
   ] as const) {
     const original = await f.request(url);
     await original.json();
@@ -243,7 +243,7 @@ test("failed atomic replacement reports failure and leaves original project/scen
     if (targets.includes(String(to))) throw Object.assign(new Error("simulated rename failure"), { code: "EACCES" });
     return rename(from, to);
   });
-  for (const [url, updated] of [[f.projectUrl, { ...f.project, name: "Lost" }], [f.sceneUrl, { ...f.scene, topic: "Lost" }]] as const) {
+  for (const [url, updated] of [[f.projectUrl, { ...f.project, name: "Lost" }], [f.sceneUrl, { ...f.scene, name: "Lost" }]] as const) {
     const response = await f.write(url, updated);
     assert.equal(response.status, 500);
     assert.match(await responseError(response), /Failed to save/);

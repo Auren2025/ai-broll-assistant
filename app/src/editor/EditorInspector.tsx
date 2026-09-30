@@ -9,7 +9,6 @@ import type { InspectorScope } from "./useEditorSelection";
 interface EditorInspectorProps {
   project: Project;
   scene: Scene;
-  sceneNumber: number;
   maximumDurationInFrames: number;
   selection: {
     tab: "design" | "animate";
@@ -37,7 +36,7 @@ interface EditorInspectorProps {
 }
 
 export function EditorInspector({
-  project, scene, sceneNumber, maximumDurationInFrames, selection, actions,
+  project, scene, maximumDurationInFrames, selection, actions,
 }: EditorInspectorProps) {
   return (
     <aside className="sidebar sidebar-right">
@@ -53,7 +52,7 @@ export function EditorInspector({
         {selection.tab === "design" ? (
           selection.scope === "scene" ? (
             <ScenePropertiesPanel key={scene.id} scene={scene} project={project}
-              sceneNumber={sceneNumber} maximumDurationInFrames={maximumDurationInFrames}
+              maximumDurationInFrames={maximumDurationInFrames}
               onProjectChange={actions.onProjectChange} onSceneChange={actions.onSceneChange} />
           ) : selection.layerIds.length > 1 ? (
             <MultiLayerPropertiesPanel selectionCount={selection.layerIds.length}

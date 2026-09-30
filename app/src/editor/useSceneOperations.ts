@@ -58,16 +58,16 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
 
   async function selectScene(
     sceneId: string, nextSelectedLayerIds: string[] = [], nextScope: InspectorScope = "scene",
-  ): Promise<boolean> {
-    if (!project) return false;
+  ): Promise<Scene | null> {
+    if (!project) return null;
     if (sceneId === scene?.id) {
       setActiveInsertionGroupId(null);
       setSelectedLayerIds(nextSelectedLayerIds);
       setSelectedAnimationId(null);
       setInspectorScope(nextScope);
-      return true;
+      return scene;
     }
-    if (isSceneLoading || hasSaveConflict) return false;
+    if (isSceneLoading || hasSaveConflict) return null;
     setIsSceneLoading(true);
     setSceneError(null);
     try {
@@ -82,10 +82,10 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       versions.markSceneChanged();
       markCurrentStateSaved();
       clearHistory();
-      return true;
+      return loadedScene;
     } catch (error: unknown) {
       setSceneError(errorMessage(error));
-      return false;
+      return null;
     } finally {
       setIsSceneLoading(false);
     }

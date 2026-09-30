@@ -33,7 +33,7 @@ export function groupCues(
 /**
  * Legacy deterministic helper retained for focused grouping tests. It builds
  * contiguous pause-based scenes, forces scene-001 to frame 0, absorbs silence,
- * and derives topics from cue text. This is not the canonical semantic planning
+ * and derives names from cue text. This is not the canonical semantic planning
  * workflow. The `npm run skeleton` CLI uses `groupCues()` only and prints
  * non-mutating candidates for human/Agent review.
  */
@@ -57,12 +57,12 @@ export function buildSceneSkeleton(
       index < groups.length - 1 ? groupStarts[index + 1] : groupEnds[index];
     const durationInFrames = Math.max(MIN_SCENE_FRAMES, nextStart - startFrame);
     const firstLine = group[0].text.split("\n")[0].trim();
-    const topic = firstLine.slice(0, 60) || `Scene ${index + 1}`;
+    const name = firstLine.slice(0, 60) || `Scene ${index + 1}`;
 
     return { ...parseScene({
       schemaVersion: 1,
       id: `scene-${String(index + 1).padStart(3, "0")}`,
-      topic,
+      name,
       startFrame,
       durationInFrames,
       layers: [],

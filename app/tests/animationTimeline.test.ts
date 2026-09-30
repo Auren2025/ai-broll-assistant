@@ -70,7 +70,7 @@ function sceneWith(...layers: unknown[]): Scene {
   return parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 200,
     layers,

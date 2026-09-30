@@ -63,7 +63,7 @@ test("parseScene accepts a valid scene with a rectangle layer", () => {
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [rectLayer("rectangle-1", 0)],
@@ -78,7 +78,7 @@ test("parseScene accepts nested shape text without layer-only fields", () => {
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [{ ...rectLayer("rectangle-1", 0), shapeText: { ...DEFAULT_SHAPE_TEXT, text: "Hello" } }],
@@ -89,7 +89,7 @@ test("parseScene accepts nested shape text without layer-only fields", () => {
   assert.throws(() => parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [{ ...rectLayer("rectangle-1", 0), shapeText: { ...DEFAULT_SHAPE_TEXT, text: "Hello", id: "not-a-layer" } }],
@@ -111,7 +111,7 @@ test("parseScene rejects effective text on a donut or partial circle", () => {
   assert.throws(() => parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [circle],
@@ -123,7 +123,7 @@ test("parseScene rejects duplicate layer ids", () => {
     parseScene({
       schemaVersion: 1,
       id: "scene-001",
-      topic: "t",
+      name: "t",
       startFrame: 0,
       durationInFrames: 100,
       layers: [rectLayer("rectangle-1", 0), rectLayer("rectangle-1", 1)],
@@ -136,7 +136,7 @@ test("parseScene rejects an animation past the scene duration", () => {
     parseScene({
       schemaVersion: 1,
       id: "scene-001",
-      topic: "t",
+      name: "t",
       startFrame: 0,
       durationInFrames: 10,
       layers: [
@@ -164,7 +164,7 @@ test("parseScene enforces one preset and parameter shape per animation phase", (
   const baseScene = {
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
   } as const;
@@ -233,7 +233,7 @@ test("parseScene accepts Line Draw only on shapes with an effective stroke", () 
   const scene = {
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
   } as const;
@@ -343,7 +343,7 @@ test("parseScene accepts an unfilled image placeholder", () => {
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [imageLayer(null, "contain")],
@@ -359,7 +359,7 @@ test("parseScene keeps legacy image stretching when fit is absent", () => {
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [imageLayer("assets/example.png")],
@@ -376,7 +376,7 @@ test("parseScene accepts cover crop focus and rejects positions outside the imag
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [{ ...imageLayer("assets/example.png", "cover"), focalX: 0.2, focalY: 1 }],
@@ -400,7 +400,7 @@ test("parseScene defaults the image placeholder color to light gray", () => {
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [imageLayer(null)],
@@ -415,7 +415,7 @@ test("parseScene accepts a custom image placeholder color", () => {
   const scene = parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 100,
     layers: [{ ...imageLayer(null), placeholderColor: "#3366ff" }],
@@ -431,7 +431,7 @@ test("parseScene rejects an image source outside assets", () => {
     parseScene({
       schemaVersion: 1,
       id: "scene-001",
-      topic: "t",
+      name: "t",
       startFrame: 0,
       durationInFrames: 100,
       layers: [imageLayer("../example.png", "contain")],
@@ -519,6 +519,44 @@ test("parseProject rejects an audioFile in another directory", () => {
       fps: 30,
       scenes: [{ id: "scene-001", file: "scenes/scene-001.json" }],
       audioFile: "media/voiceover.mp3",
+    }),
+  );
+});
+
+test("parseScene migrates the legacy topic field to name", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    topic: "Legacy title",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [],
+  });
+  assert.equal(scene.name, "Legacy title");
+  assert.ok(!("topic" in scene));
+});
+
+test("parseScene prefers name over legacy topic when both are present", () => {
+  const scene = parseScene({
+    schemaVersion: 1,
+    id: "scene-001",
+    name: "Current title",
+    topic: "Legacy title",
+    startFrame: 0,
+    durationInFrames: 100,
+    layers: [],
+  });
+  assert.equal(scene.name, "Current title");
+});
+
+test("parseScene still requires a scene name", () => {
+  assert.throws(() =>
+    parseScene({
+      schemaVersion: 1,
+      id: "scene-001",
+      startFrame: 0,
+      durationInFrames: 100,
+      layers: [],
     }),
   );
 });

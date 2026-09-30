@@ -82,7 +82,7 @@ export function PreviewWindow({ hostWindow = window }: PreviewWindowProps) {
     <main className="preview-app">
       <header className="preview-toolbar">
         <div>
-          <h1>{scene.topic}</h1>
+          <h1>{scene.name}</h1>
           <p>
             {project.name} · {scene.id}
           </p>

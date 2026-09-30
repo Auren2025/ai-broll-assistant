@@ -26,7 +26,7 @@ export const SceneSchema = z
   .object({
     schemaVersion: z.union([z.literal(1), z.literal(2)]),
     id: z.string().min(1),
-    topic: z.string().min(1),
+    name: z.string().min(1),
     startFrame: z.number().int().nonnegative().optional(),
     durationInFrames: z.number().int().positive(),
     backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
@@ -112,5 +112,12 @@ export const SceneSchema = z
 export type Scene = z.infer<typeof SceneSchema>;
 
 export function parseScene(input: unknown): Scene {
+  if (input !== null && typeof input === "object" && "topic" in input) {
+    // Migrate scenes saved before the topic field was renamed to name.
+    const { topic, ...rest } = input as Record<string, unknown>;
+    return SceneSchema.parse(
+      "name" in rest ? rest : { ...rest, name: topic },
+    );
+  }
   return SceneSchema.parse(input);
 }

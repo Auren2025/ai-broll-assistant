@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type DragEvent,
   type MouseEvent,
@@ -37,6 +38,49 @@ interface DraggedLayer {
   parentGroupId: string | null;
 }
 
+function SceneNameEditor({ initialName, onCommit, onCancel }: {
+  initialName: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(initialName);
+  const finishedRef = useRef(false);
+
+  function finish(commit: boolean): void {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    if (commit) {
+      onCommit(draft);
+    } else {
+      onCancel();
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      className="scene-rename-input"
+      aria-label="Scene name"
+      maxLength={120}
+      value={draft}
+      autoFocus
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          finish(true);
+        } else if (event.key === "Escape") {
+          finish(false);
+        }
+      }}
+      onBlur={() => finish(true)}
+    />
+  );
+}
+
 export interface LayerMoveRequest {
   layerId: string;
   parentGroupId: string | null;
@@ -56,6 +100,7 @@ interface SceneLayerTreeProps {
   onSceneSelect: (sceneId: string) => void;
   onSceneContextMenu: (sceneId: string, x: number, y: number) => void;
   onSceneMove: (sceneId: string, insertionIndex: number) => void;
+  onSceneRename: (sceneId: string, name: string) => void;
   onLayerSelect: (sceneId: string, layerId: string, additive: boolean) => void;
   onGroupEditEnter: (sceneId: string, groupId: string) => void;
   onLayerMove: (sceneId: string, request: LayerMoveRequest) => void;
@@ -79,6 +124,7 @@ export function SceneLayerTree({
   onSceneSelect,
   onSceneContextMenu,
   onSceneMove,
+  onSceneRename,
   onLayerSelect,
   onGroupEditEnter,
   onLayerMove,
@@ -95,6 +141,7 @@ export function SceneLayerTree({
     sceneId: string;
     side: "before" | "after";
   } | null>(null);
+  const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null);
 
   useEffect(() => {
     setExpandedSceneIds((current) =>
@@ -444,19 +491,41 @@ export function SceneLayerTree({
                 >
                   {isExpanded ? "▾" : "▸"}
                 </button>
-                <button
-                  className="scene-tree-main"
-                  type="button"
-                  aria-current={isCurrent ? "page" : undefined}
-                  disabled={isSceneSwitchDisabled}
-                  onClick={() => onSceneSelect(sceneReference.id)}
-                >
-                  <span className="scene-number">{index + 1}</span>
-                  <span className="scene-copy">
-                    <strong>{isSlideProject ? "Page" : "Scene"} {index + 1}</strong>
-                  </span>
-                  {isCurrent ? <span className="current-marker" /> : null}
-                </button>
+                {renamingSceneId === sceneReference.id ? (
+                  <div className="scene-tree-main is-renaming">
+                    <span className="scene-number">{index + 1}</span>
+                    <SceneNameEditor
+                      key={sceneReference.id}
+                      initialName={scene?.name ?? ""}
+                      onCommit={(name) => {
+                        setRenamingSceneId(null);
+                        onSceneRename(sceneReference.id, name);
+                      }}
+                      onCancel={() => setRenamingSceneId(null)}
+                    />
+                    {isCurrent ? <span className="current-marker" /> : null}
+                  </div>
+                ) : (
+                  <button
+                    className="scene-tree-main"
+                    type="button"
+                    aria-current={isCurrent ? "page" : undefined}
+                    disabled={isSceneSwitchDisabled}
+                    onClick={() => onSceneSelect(sceneReference.id)}
+                    onDoubleClick={() => {
+                      if (isSceneSwitchDisabled || renamingSceneId) return;
+                      setRenamingSceneId(sceneReference.id);
+                    }}
+                  >
+                    <span className="scene-number">{index + 1}</span>
+                    <span className="scene-copy" title="Double-click to rename">
+                      <strong>
+                        {scene?.name ?? `${isSlideProject ? "Page" : "Scene"} ${index + 1}`}
+                      </strong>
+                    </span>
+                    {isCurrent ? <span className="current-marker" /> : null}
+                  </button>
+                )}
               </div>
 
               {isExpanded ? (

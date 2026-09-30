@@ -553,6 +553,25 @@ button {
   white-space: nowrap;
 }
 
+.scene-tree-main.is-renaming {
+  cursor: text;
+}
+
+.scene-rename-input {
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #6556d8;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.scene-rename-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(101, 86, 216, 0.25);
+}
+
 .scene-copy small,
 .layer-copy small {
   overflow: hidden;

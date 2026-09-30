@@ -21,7 +21,7 @@ interface SelectionOptions {
   setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
   setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
   setInspectorTab: Dispatch<SetStateAction<"design" | "animate">>;
-  selectScene: (sceneId: string, layerIds?: string[], scope?: InspectorScope) => Promise<boolean>;
+  selectScene: (sceneId: string, layerIds?: string[], scope?: InspectorScope) => Promise<Scene | null>;
 }
 
 export function useEditorSelection({

@@ -59,7 +59,7 @@ export function Presentation({ data }: { data: PresentationData }) {
 
       <section
         className="presentation-stage"
-        aria-label={`第 ${pageIndex + 1} 页：${scene.topic}`}
+        aria-label={`第 ${pageIndex + 1} 页：${scene.name}`}
         onClick={() => goToPage(pageIndex + 1)}
       >
         <div

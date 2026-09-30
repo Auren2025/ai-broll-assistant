@@ -10,7 +10,7 @@ function snapshots() {
     project, scene, scenesById: { [scene.id]: scene, [secondScene.id]: secondScene },
     selectedLayerIds: ["text-1"], inspectorScope: "layer", isDirty: false,
   };
-  const changedScene = { ...scene, topic: "Changed topic" };
+  const changedScene = { ...scene, name: "Changed topic" };
   const after: typeof before = {
     ...before, scene: changedScene,
     scenesById: { ...before.scenesById, [scene.id]: changedScene },
@@ -94,7 +94,7 @@ test("history-applied content can be persisted through the same versioned save p
     savedVersions,
     {
       saveProject: async () => assert.fail("project is unchanged"),
-      saveScene: async (_id, scene) => { written.push(scene.topic); },
+      saveScene: async (_id, scene) => { written.push(scene.name); },
       onSceneSaved: () => {},
     },
   );
@@ -103,6 +103,6 @@ test("history-applied content can be persisted through the same versioned save p
   await save();
   await applyHistoryStep(redo, undo, current, apply);
   await save();
-  assert.deepEqual(written, [before.scene.topic, after.scene.topic]);
+  assert.deepEqual(written, [before.scene.name, after.scene.name]);
   assert.equal(savedVersions.scene.current, sceneVersion);
 });

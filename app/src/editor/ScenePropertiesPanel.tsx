@@ -3,6 +3,14 @@ import type { Project } from "../domain/projectSchema";
 import type { Scene, SceneTransition } from "../domain/sceneSchema";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 
+/**
+ * Spinner step (seconds) for the scene duration / exit-transition duration
+ * number inputs. The underlying model stores whole frames, so typed values
+ * still round to the nearest frame; this only controls how far each spinner
+ * click moves. 0.1s feels snappier than a single frame (1/30s).
+ */
+const TIME_STEP_SECONDS = 0.1;
+
 interface ScenePropertiesPanelProps {
   scene: Scene;
   project: Project;
@@ -227,7 +235,7 @@ export function ScenePropertiesPanel({
                 ? maximumDurationInFrames / project.fps
                 : undefined
             }
-            step={1 / project.fps}
+            step={TIME_STEP_SECONDS}
             aria-label="Scene duration in seconds"
             value={Number((scene.durationInFrames / project.fps).toFixed(3))}
             onValueChange={(value) => {
@@ -281,7 +289,7 @@ export function ScenePropertiesPanel({
               <BufferedNumberInput
                 min={1 / project.fps}
                 max={scene.durationInFrames / project.fps}
-                step={1 / project.fps}
+                step={TIME_STEP_SECONDS}
                 aria-label="Exit transition duration in seconds"
                 value={Number(
                   (scene.exitTransition.durationInFrames / project.fps).toFixed(3),

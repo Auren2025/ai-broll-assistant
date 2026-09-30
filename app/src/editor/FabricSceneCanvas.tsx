@@ -267,8 +267,16 @@ export function FabricSceneCanvas({
   }, [onGroupEditEnter]);
 
   useEffect(() => {
+    if (drillGroupIdRef.current !== drillGroupId) {
+      // Entering or exiting drill-in invalidates hover state: the purple
+      // hover border would otherwise linger (e.g. blank-click exits drill
+      // without any mousemove to clear it).
+      hoveredObjectRef.current = null;
+      onHoveredLayerIdChange(null);
+      fabricCanvasRef.current?.requestRenderAll();
+    }
     drillGroupIdRef.current = drillGroupId;
-  }, [drillGroupId]);
+  }, [drillGroupId, onHoveredLayerIdChange]);
 
   useEffect(() => {
     onDrillExitRef.current = onDrillExit;
@@ -943,6 +951,9 @@ export function FabricSceneCanvas({
         !hoveredObject ||
         !hoveredObject.visible ||
         !canvas.getObjects().includes(hoveredObject) ||
+        // Never outline an object the layer map no longer knows: a stale
+        // reference must not paint a ghost border.
+        !objectToLayerId.has(hoveredObject) ||
         canvas.getActiveObjects().includes(hoveredObject)
       ) {
         return;
@@ -1195,10 +1206,13 @@ export function FabricSceneCanvas({
       }
       if (!event.target) {
         // Keynote: clicking any blank area exits group editing and
-        // deselects everything.
+        // deselects everything. Clear hover state immediately: there is no
+        // mousemove coming to do it.
         if (drillGroupIdRef.current) {
           onDrillExitRef.current?.();
         }
+        hoveredObjectRef.current = null;
+        onHoveredLayerIdChange(null);
         onSelectedLayerIdsChange([]);
         return;
       }
@@ -1227,10 +1241,18 @@ export function FabricSceneCanvas({
       }
       if (promotedDragTarget) {
         const { id, object } = promotedDragTarget;
-        canvas.setActiveObject(object);
+        // Fabric's own mousedown already selected the child and built the
+        // correct transform for this press (a drag on first press, the
+        // control's scale/rotate action once the child is selected).
+        // Rebuilding it here as a drag would force every control press
+        // into a move, so only fall back to the manual setup when Fabric
+        // didn't already target this object.
+        if (canvas._currentTransform?.target !== object) {
+          canvas.setActiveObject(object);
+          canvas._currentTransform = null;
+          canvas._setupCurrentTransform(pointerEvent, object, false);
+        }
         onSelectedLayerIdsChange([id]);
-        canvas._currentTransform = null;
-        canvas._setupCurrentTransform(pointerEvent, object, false);
         canvas.requestRenderAll();
       }
       // Record the drag start so Shift-lock can detect the initial drag

@@ -12,7 +12,13 @@ import {
   Group as FabricGroup,
 } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
+import type { AtomicLayer } from "../domain/atomicLayerSchema";
 import { resolveDragTarget } from "./fabricTargetResolution";
+import {
+  DRILL_DIM_FACTOR,
+  computeDrillEntries,
+  isLayerInDrillScope,
+} from "./drillEntries";
 import {
   applyLayerToFabricObject,
   applySelectionToCanvas,
@@ -61,6 +67,12 @@ interface FabricSceneCanvasProps {
   onGroupEditEnter?: (groupId: string) => void;
   onContextMenuRequest: (x: number, y: number) => void;
   selectedLayerIds: readonly string[];
+  /**
+   * Id of the group currently drilled into (double-click a group on canvas).
+   * While set, the group's children render as top-level canvas objects and
+   * everything else is dimmed / non-interactive.
+   */
+  drillGroupId?: string | null;
   selectedAnimationId?: string | null;
   onMagicMoveTranslationCommit?: (
     layerId: string,
@@ -100,6 +112,7 @@ export function FabricSceneCanvas({
   onGroupEditEnter,
   onContextMenuRequest,
   selectedLayerIds,
+  drillGroupId = null,
   selectedAnimationId,
   onMagicMoveTranslationCommit,
   pendingTextEditLayerId,
@@ -125,6 +138,7 @@ export function FabricSceneCanvas({
   const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
   const groupEditEnterRef = useRef(onGroupEditEnter);
+  const drillGroupIdRef = useRef<string | null>(drillGroupId);
   const isApplyingSelectionRef = useRef(false);
   const pendingTextEditRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
@@ -195,6 +209,10 @@ export function FabricSceneCanvas({
   useEffect(() => {
     groupEditEnterRef.current = onGroupEditEnter;
   }, [onGroupEditEnter]);
+
+  useEffect(() => {
+    drillGroupIdRef.current = drillGroupId;
+  }, [drillGroupId]);
 
   useEffect(() => {
     croppingLayerIdRef.current = croppingLayerId;
@@ -323,6 +341,16 @@ export function FabricSceneCanvas({
               const childObject = objectByLayerId.get(child.id);
               if (!childObject) return child;
               childChanged = true;
+              // While drilled into this group its children live directly on
+              // the canvas (absolute coordinates), not inside the FabricGroup,
+              // so they sync like top-level layers. The child is atomic, so
+              // the result stays atomic (never a group).
+              if (drillGroupIdRef.current === layer.id) {
+                return updateLayerFromFabricObject(
+                  child,
+                  childObject,
+                ) as AtomicLayer;
+              }
               return updateChildLayerFromFabricObject(
                 nextGroup,
                 child,
@@ -779,12 +807,18 @@ export function FabricSceneCanvas({
           layerId != null
             ? findLayerByIdOrChild(sceneRef.current, layerId)
             : null;
+        // Images inside the drilled group can be cropped while drilling;
+        // other grouped images still need ungrouping first.
+        const parentGroup =
+          layerId != null
+            ? findParentGroupLayer(sceneRef.current, layerId)
+            : null;
         if (
           layerId != null &&
           layer?.type === "image" &&
           layer.src !== null &&
           !layer.locked &&
-          findParentGroupLayer(sceneRef.current, layerId) === null
+          (parentGroup === null || parentGroup.id === drillGroupIdRef.current)
         ) {
           if (croppingLayerIdRef.current === layerId) {
             onImageCropExitRef.current?.();
@@ -946,6 +980,29 @@ export function FabricSceneCanvas({
       if (!event.target) {
         onSelectedLayerIdsChange([]);
         return;
+      }
+      // Drill-in: a click outside the drilled group exits drill-in and
+      // selects the clicked layer. Dimmed objects are not selectable, so
+      // the selection is applied manually here.
+      const drillId = drillGroupIdRef.current;
+      if (drillId) {
+        let mapped: FabricObject | undefined =
+          event.target.parent instanceof FabricShapeTextObject
+            ? event.target.parent
+            : event.target;
+        while (mapped && !objectToLayerIdRef.current.has(mapped)) {
+          mapped = mapped.parent;
+        }
+        const targetId = mapped
+          ? objectToLayerIdRef.current.get(mapped)
+          : undefined;
+        if (
+          targetId &&
+          !isLayerInDrillScope(sceneRef.current.layers, drillId, targetId)
+        ) {
+          onSelectedLayerIdsChange([targetId]);
+          return;
+        }
       }
       if (promotedDragTarget) {
         const { id, object } = promotedDragTarget;
@@ -1159,15 +1216,13 @@ export function FabricSceneCanvas({
       }
       canvas.backgroundColor = scene.backgroundColor ?? "#000000";
 
-      const sortedLayers = [...scene.layers].sort(
-        (first, second) => first.zIndex - second.zIndex,
-      );
-      const topLevelIds = new Set(sortedLayers.map((layer) => layer.id));
+      const entries = computeDrillEntries(scene.layers, drillGroupId);
+      const topLevelIds = new Set(entries.map((entry) => entry.layer.id));
       const desiredLayerIds = new Set<string>();
-      for (const layer of sortedLayers) {
-        desiredLayerIds.add(layer.id);
-        if (layer.type === "group") {
-          layer.children.forEach((child) => desiredLayerIds.add(child.id));
+      for (const entry of entries) {
+        desiredLayerIds.add(entry.layer.id);
+        if (entry.layer.type === "group") {
+          entry.layer.children.forEach((child) => desiredLayerIds.add(child.id));
         }
       }
 
@@ -1185,8 +1240,8 @@ export function FabricSceneCanvas({
         hoveredObjectRef.current = null;
         onHoveredLayerIdChange(null);
 
-        sortedLayers.forEach((layer) => {
-          addFabricObject(canvas, layer);
+        entries.forEach((entry) => {
+          addFabricObject(canvas, entry.layer);
         });
 
         applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
@@ -1218,7 +1273,8 @@ export function FabricSceneCanvas({
         }
       }
 
-      sortedLayers.forEach((layer, index) => {
+      entries.forEach((entry, index) => {
+        const layer = entry.layer;
         let object = layerIdToObject.get(layer.id);
 
         if (object && !isFabricObjectForLayer(object, layer)) {
@@ -1281,6 +1337,16 @@ export function FabricSceneCanvas({
           applyLayerToFabricObject(object, layer, undefined, projectIdRef.current);
         }
 
+        if (entry.dimmed) {
+          // Outside the drilled group: de-emphasized and non-interactive.
+          // `evented` stays as-is so a click outside still exits drill-in.
+          const baseOpacity = layer.opacityEnabled ? layer.opacity : 1;
+          object.set({
+            opacity: baseOpacity * DRILL_DIM_FACTOR,
+            selectable: false,
+          });
+        }
+
         canvas.moveObjectTo(object, index);
       });
 
@@ -1319,7 +1385,7 @@ export function FabricSceneCanvas({
     } finally {
       isApplyingSelectionRef.current = false;
     }
-  }, [addFabricObject, onHoveredLayerIdChange, scene, selectedLayerIds]);
+  }, [addFabricObject, drillGroupId, onHoveredLayerIdChange, scene, selectedLayerIds]);
 
   const magicMoveContext = resolveMagicMoveContext(
     scene,

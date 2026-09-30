@@ -709,12 +709,14 @@ function App() {
 
   const enterImageCrop = useCallback((layerId: string) => {
     const target = scene ? findLayerById(scene.layers, layerId) : null;
+    const parentGroup = scene ? findParentGroupLayer(scene, layerId) : null;
     if (
       !target || target.type !== "image" || target.src === null ||
-      target.locked || (scene && findParentGroupLayer(scene, layerId) !== null)
+      target.locked ||
+      (parentGroup !== null && parentGroup.id !== activeInsertionGroupId)
     ) {
-      // Crop mode only supports top-level images: a grouped image would
-      // drag its whole group on the canvas.
+      // Crop mode only supports top-level images (or images in the drilled
+      // group): a grouped image would drag its whole group on the canvas.
       return;
     }
     setSelectedLayerIds([layerId]);
@@ -726,7 +728,13 @@ function App() {
       layerEdits.patchLayerById(layerId, { fit: "cover" });
     }
     setCroppingLayerId(layerId);
-  }, [layerEdits, scene]);
+  }, [activeInsertionGroupId, layerEdits, scene]);
+
+  // Drill-in rebuilds the canvas (children become top-level objects), which
+  // crop mode cannot survive: leave crop mode whenever drill-in changes.
+  useEffect(() => {
+    setCroppingLayerId(null);
+  }, [activeInsertionGroupId]);
 
   const commitImageCrop = useCallback((layerId: string, patch: {
     focalX: number;
@@ -795,6 +803,8 @@ function App() {
   }
 
   const handleTogglePreview = useCallback(() => {
+    // Drill-in cannot survive the canvas unmount; exit it when previewing.
+    setActiveInsertionGroupId(null);
     setIsPreviewMode((current) => !current);
   }, []);
 
@@ -891,6 +901,11 @@ function App() {
     : isDirty
       ? "Waiting to save…"
       : "All changes saved";
+
+  const drillGroup =
+    activeInsertionGroupId && scene
+      ? findLayerById(scene.layers, activeInsertionGroupId)
+      : null;
 
   return (
     <main
@@ -1062,6 +1077,7 @@ function App() {
                     onSelectedLayerIdsChange={selection.onCanvasSelection}
                     onHoveredLayerIdChange={setHoveredLayerId}
                     onGroupEditEnter={selection.onGroupEditEnter}
+                    drillGroupId={activeInsertionGroupId}
                     onContextMenuRequest={openLayerContextMenu}
                     selectedLayerIds={selectedLayerIds}
                     selectedAnimationId={
@@ -1081,6 +1097,24 @@ function App() {
                 )}
                 {isPreviewMode ? (
                   <span className="preview-mode-badge">Preview</span>
+                ) : null}
+                {drillGroup && drillGroup.type === "group" && !isPreviewMode ? (
+                  <nav className="drill-breadcrumb" aria-label="Group drill path">
+                    <button
+                      type="button"
+                      className="drill-breadcrumb-exit"
+                      onClick={() => setActiveInsertionGroupId(null)}
+                      title="Exit group"
+                    >
+                      {scene.name}
+                    </button>
+                    <span className="drill-breadcrumb-sep" aria-hidden="true">
+                      /
+                    </span>
+                    <span className="drill-breadcrumb-current">
+                      {drillGroup.name}
+                    </span>
+                  </nav>
                 ) : null}
               </div>
             </div>

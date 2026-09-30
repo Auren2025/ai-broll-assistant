@@ -460,8 +460,11 @@ export class FabricImageLayerObject extends FabricObject {
     const unit = 1 / Math.max(this.canvas?.getZoom() ?? 1, 0.001);
     const radius = 11 * unit;
     const gap = 7 * unit;
-    const cx = this.width / 2 + radius + gap;
-    const cy = this.height / 2 + radius + gap;
+    // Inside the frame's bottom-right corner: clicking here must hit the
+    // image object itself, otherwise Fabric treats the pointer as landing
+    // on empty canvas and clears the selection (which exits crop mode).
+    const cx = this.width / 2 - radius - gap;
+    const cy = this.height / 2 - radius - gap;
     this.cropZoomHandle = { x: cx, y: cy, radius: radius + 5 * unit };
 
     ctx.save();

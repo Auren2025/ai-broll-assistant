@@ -734,32 +734,17 @@ export function LayerPropertiesPanel({
             </select>
           </label>
           {layer.fit === "cover" ? (
-            <>
-              <ImageZoomSlider
-                value={layer.zoom}
-                onCommit={(zoom) => onPatch({ zoom })}
-              />
-              <div className="layer-design-row">
-                <span>Focus X</span>
-                <div className="layer-single-input layer-wide-input">
-                  <BufferedNumberInput min="0" max="100" step="1" aria-label="Image horizontal focus percent" title="0 left, 50 center, 100 right" value={Math.round(layer.focalX * 100)} onValueChange={(value) => onPatch({ focalX: Math.min(1, Math.max(0, value / 100)) })} />
-                  <span>%</span>
-                </div>
-              </div>
-              <div className="layer-design-row">
-                <span>Focus Y</span>
-                <div className="layer-single-input layer-wide-input">
-                  <BufferedNumberInput min="0" max="100" step="1" aria-label="Image vertical focus percent" title="0 top, 50 center, 100 bottom" value={Math.round(layer.focalY * 100)} onValueChange={(value) => onPatch({ focalY: Math.min(1, Math.max(0, value / 100)) })} />
-                  <span>%</span>
-                </div>
-              </div>
-            </>
+            <ImageZoomSlider
+              value={layer.zoom}
+              onCommit={(zoom) => onPatch({ zoom })}
+            />
           ) : null}
           {isCroppingThis ? (
             <>
               <p className="layer-image-crop-hint">
-                Drag the image to reposition it, drag the corner handle to zoom.
-                Press Esc or double-click the image to finish.
+                Drag the image to reposition it, drag the magnifier handle in
+                the frame's bottom-right corner to zoom. Press Esc or
+                double-click the image to finish.
               </p>
               <button
                 type="button"
@@ -770,19 +755,21 @@ export function LayerPropertiesPanel({
               </button>
             </>
           ) : (
-            <div className="layer-image-crop-row">
+            <>
+              {layer.fit === "contain" ? (
+                <button
+                  type="button"
+                  className="layer-image-replace"
+                  onClick={handleFitFrameToImage}
+                  disabled={layer.src === null || imageNaturalSize === null}
+                  title="Shrink the frame to the visible image, removing empty padding"
+                >
+                  Fit frame to image
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={handleFitFrameToImage}
-                disabled={layer.src === null || imageNaturalSize === null || layer.fit !== "contain"}
-                title={layer.fit === "contain"
-                  ? "Shrink the frame to the visible image, removing empty padding"
-                  : "Available in Contain mode"}
-              >
-                Fit frame to image
-              </button>
-              <button
-                type="button"
+                className="layer-image-replace"
                 onClick={() => onImageCropEnter(layer.id)}
                 disabled={layer.src === null || layer.locked || isGroupChild}
                 title={isGroupChild
@@ -791,7 +778,7 @@ export function LayerPropertiesPanel({
               >
                 Crop image
               </button>
-            </div>
+            </>
           )}
           {layer.src === null ? (
             <div className="layer-design-row layer-paint-row">

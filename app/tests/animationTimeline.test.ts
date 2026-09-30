@@ -159,3 +159,53 @@ test("group children order follows zIndex within the group, after the group's ow
   assert.deepEqual(events.map((e) => e.depth), [0, 1, 1]);
   assert.deepEqual(events.map((e) => e.editable), [true, false, false]);
 });
+
+test("resolveSplitFrame snaps to the playhead when right-clicking near it", async () => {
+  const { resolveSplitFrame, PLAYHEAD_SPLIT_SNAP_PX } = await import(
+    "../src/editor/SceneAnimationTimeline"
+  );
+  const base = {
+    trackLeft: 100,
+    trackWidth: 1000,
+    durationInFrames: 300,
+    currentFrame: 90,
+    isPreviewMode: true,
+  };
+  // Playhead sits at 100 + 90/300*1000 = 400px.
+  assert.equal(
+    resolveSplitFrame({ ...base, clickClientX: 400 }),
+    90,
+  );
+  assert.equal(
+    resolveSplitFrame({ ...base, clickClientX: 400 + PLAYHEAD_SPLIT_SNAP_PX }),
+    90,
+  );
+  // Far from the playhead: falls back to the click position (700px -> frame 180).
+  assert.equal(
+    resolveSplitFrame({ ...base, clickClientX: 700 }),
+    180,
+  );
+});
+
+test("resolveSplitFrame ignores the playhead outside preview mode or at frame 0", async () => {
+  const { resolveSplitFrame } = await import(
+    "../src/editor/SceneAnimationTimeline"
+  );
+  const base = {
+    trackLeft: 100,
+    trackWidth: 1000,
+    durationInFrames: 300,
+    currentFrame: 90,
+    isPreviewMode: true,
+  };
+  // Not in preview mode: no playhead is rendered, use the click position.
+  assert.equal(
+    resolveSplitFrame({ ...base, isPreviewMode: false, clickClientX: 400 }),
+    90,
+  );
+  // Playhead at frame 0 is not a valid split point: use the click position.
+  assert.equal(
+    resolveSplitFrame({ ...base, currentFrame: 0, clickClientX: 103 }),
+    1,
+  );
+});

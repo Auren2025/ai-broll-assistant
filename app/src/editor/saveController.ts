@@ -13,6 +13,12 @@ export interface SaveControllerHooks {
   scenesByIdRef: { current: Record<string, Scene> };
   activeSaveCountRef: { current: number };
   externalRefreshRunningRef: { current: boolean };
+  /**
+   * Synchronously true while a scene operation (split/duplicate/add/delete)
+   * is in flight. Set before the first await so the external refresh can
+   * tell our own in-flight writes apart from another tab's changes.
+   */
+  sceneOperationActiveRef: { current: boolean };
   /** Initial values used to schedule the auto-save and refresh loop. */
   autoSaveDelayMs: number;
   externalRefreshIntervalMs: number;
@@ -65,6 +71,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
     scenesByIdRef,
     activeSaveCountRef,
     externalRefreshRunningRef,
+    sceneOperationActiveRef,
   } = hooks;
 
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -138,7 +145,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
 
   const runExternalRefresh = useCallback(
     async (signal?: AbortSignal): Promise<void> => {
-      if (externalRefreshRunningRef.current) return;
+      if (externalRefreshRunningRef.current || sceneOperationActiveRef.current) return;
       externalRefreshRunningRef.current = true;
       settersRef.current.setIsExternalRefreshRunning(true);
       try {
@@ -163,6 +170,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
           documentVersions.snapshot();
         if (
           signal?.aborted ||
+          sceneOperationActiveRef.current ||
           latestProjectVersion !== beforeProjectVersion ||
           latestSceneVersion !== beforeSceneVersion ||
           activeSaveCountRef.current > 0
@@ -185,6 +193,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
       documentVersions,
       externalRefreshRunningRef,
       projectRef,
+      sceneOperationActiveRef,
       scenesByIdRef,
     ],
   );

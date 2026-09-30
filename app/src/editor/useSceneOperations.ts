@@ -14,6 +14,11 @@ interface SceneOperationsOptions {
     isSceneLoading: boolean;
     isCreatingScene: boolean;
     hasSaveConflict: boolean;
+    /**
+     * Set synchronously while a scene operation is in flight so the
+     * external refresh can distinguish our own writes from another tab's.
+     */
+    sceneOperationActiveRef: RefObject<boolean>;
   };
   state: {
     setProject: Dispatch<SetStateAction<Project | null>>;
@@ -45,7 +50,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function useSceneOperations({ document, state, actions }: SceneOperationsOptions) {
-  const { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict } = document;
+  const { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict, sceneOperationActiveRef } = document;
   const {
     setProject, setScene, setScenesById, setSelectedLayerIds,
     setActiveInsertionGroupId, setSelectedAnimationId, setInspectorScope,
@@ -97,6 +102,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       setSceneError("A project must contain at least one scene");
       return;
     }
+    sceneOperationActiveRef.current = true;
     recordHistory();
     setIsSceneLoading(true);
     setSceneError(null);
@@ -124,6 +130,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       undoStack.current.pop();
       setSceneError(errorMessage(error));
     } finally {
+      sceneOperationActiveRef.current = false;
       setIsSceneLoading(false);
     }
   }
@@ -131,6 +138,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
   async function addScene(index?: number): Promise<void> {
     if (!project || isCreatingScene) return;
     setSlideMenu(null);
+    sceneOperationActiveRef.current = true;
     setIsCreatingScene(true);
     setCreateSceneError(null);
     setSceneError(null);
@@ -152,6 +160,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       undoStack.current.pop();
       setCreateSceneError(errorMessage(error));
     } finally {
+      sceneOperationActiveRef.current = false;
       setIsCreatingScene(false);
     }
   }
@@ -167,6 +176,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
   async function duplicateScene(sceneId: string): Promise<void> {
     if (!project || isCreatingScene) return;
     setSlideMenu(null);
+    sceneOperationActiveRef.current = true;
     setIsCreatingScene(true);
     setCreateSceneError(null);
     setSceneError(null);
@@ -187,12 +197,14 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       undoStack.current.pop();
       setCreateSceneError(errorMessage(error));
     } finally {
+      sceneOperationActiveRef.current = false;
       setIsCreatingScene(false);
     }
   }
 
   async function splitScene(sceneId: string, splitFrame: number): Promise<number> {
     if (!project || isCreatingScene) return 0;
+    sceneOperationActiveRef.current = true;
     setIsCreatingScene(true);
     setCreateSceneError(null);
     setSceneError(null);
@@ -225,6 +237,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       setCreateSceneError(errorMessage(error));
       return 0;
     } finally {
+      sceneOperationActiveRef.current = false;
       setIsCreatingScene(false);
     }
   }

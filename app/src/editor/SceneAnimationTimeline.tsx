@@ -51,6 +51,43 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
+/** Right-clicks within this many pixels of the playhead snap to it for splitting. */
+export const PLAYHEAD_SPLIT_SNAP_PX = 10;
+
+export interface SplitFrameInput {
+  /** Horizontal click position in client pixels. */
+  clickClientX: number;
+  /** Left edge of the timeline track in client pixels. */
+  trackLeft: number;
+  /** Width of the timeline track in client pixels. */
+  trackWidth: number;
+  durationInFrames: number;
+  currentFrame: number;
+  isPreviewMode: boolean;
+}
+
+/**
+ * Resolve the scene-relative frame for a split context-menu click.
+ * Right-clicking on (or near) the playhead splits at the playhead so the
+ * user can position it first and split precisely; otherwise the click
+ * position is used. Frame 0 is not a valid split point and falls back to
+ * the click position.
+ */
+export function resolveSplitFrame(input: SplitFrameInput): number {
+  const { clickClientX, trackLeft, trackWidth, durationInFrames, currentFrame, isPreviewMode } = input;
+  const ratio = clamp((clickClientX - trackLeft) / trackWidth, 0, 1);
+  const clickFrame = Math.round(ratio * durationInFrames);
+  const playheadX = trackLeft + (currentFrame / durationInFrames) * trackWidth;
+  if (
+    isPreviewMode &&
+    currentFrame > 0 &&
+    Math.abs(clickClientX - playheadX) <= PLAYHEAD_SPLIT_SNAP_PX
+  ) {
+    return currentFrame;
+  }
+  return clickFrame;
+}
+
 function getTickFrames(durationInFrames: number, fps: number): number[] {
   const durationInSeconds = durationInFrames / fps;
   const stepInSeconds =
@@ -154,13 +191,19 @@ export function SceneAnimationTimeline({
   function handleSubtitleContextMenu(event: ReactMouseEvent<HTMLDivElement>): void {
     if (!onSplitScene) return;
     event.preventDefault();
-    const track = event.currentTarget;
-    const bounds = track.getBoundingClientRect();
-    const ratio = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const frame = resolveSplitFrame({
+      clickClientX: event.clientX,
+      trackLeft: bounds.left,
+      trackWidth: bounds.width,
+      durationInFrames: scene.durationInFrames,
+      currentFrame,
+      isPreviewMode,
+    });
     setSplitMenu({
       x: event.clientX,
       y: event.clientY,
-      frame: Math.round(ratio * scene.durationInFrames),
+      frame,
     });
   }
 
@@ -383,7 +426,7 @@ export function SceneAnimationTimeline({
               <div
                 className="animation-timeline-track subtitle-timeline-track"
                 onContextMenu={handleSubtitleContextMenu}
-                title="Right-click to split the scene here"
+                title="Right-click to split the scene here, or near the playhead to split at the playhead"
               >
                 {ticks
                   .filter((frame) => frame !== 0)

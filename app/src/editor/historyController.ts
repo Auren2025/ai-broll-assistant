@@ -123,19 +123,42 @@ export function useHistoryController({ refs, setters }: UseHistoryControllerOpti
         (sceneId) => !currentSceneIds.has(sceneId),
       );
 
+      // History restore is an explicit user intent: the snapshot is the source
+      // of truth, so writes bypass the If-Match precondition (force). The
+      // custom scene endpoints (split/duplicate) rewrite files outside the
+      // etag-tracked save flow, which would otherwise fail with 412 here.
       if (restoredSceneIds.length > 0) {
-        await saveProject(snapshot.project);
         for (const sceneId of restoredSceneIds) {
           const restoredScene = snapshot.scenesById[sceneId];
           if (!restoredScene) throw new Error(`Missing scene snapshot: ${sceneId}`);
-          await saveScene(snapshot.project.id, restoredScene);
+          await saveScene(snapshot.project.id, restoredScene, { force: true });
         }
       } else if (removedSceneIds.length > 0) {
         for (const sceneId of removedSceneIds) {
           await deleteSceneRequest(current.project.id, sceneId);
         }
-        await saveProject(snapshot.project);
       }
+      // Scenes that exist on both sides but changed content (e.g. the first
+      // half of a split scene): write the snapshot's version back, otherwise
+      // the on-disk file keeps the post-operation content and a reload would
+      // lose data.
+      for (const sceneId of targetSceneIds) {
+        if (
+          currentSceneIds.has(sceneId) &&
+          !restoredSceneIds.includes(sceneId)
+        ) {
+          const before = current.scenesById[sceneId];
+          const after = snapshot.scenesById[sceneId];
+          if (
+            before &&
+            after &&
+            JSON.stringify(before) !== JSON.stringify(after)
+          ) {
+            await saveScene(snapshot.project.id, after, { force: true });
+          }
+        }
+      }
+      await saveProject(snapshot.project, { force: true });
 
       setters.setProject(snapshot.project);
       setters.setScene(snapshot.scene);

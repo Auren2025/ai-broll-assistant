@@ -133,6 +133,8 @@ function App() {
   const externalRefreshRunningRef = useRef(false);
   const splitNoticeTimeoutRef = useRef<number | null>(null);
   const sceneOperationRunningRef = useRef(false);
+  /** Synchronous in-flight flag for split/duplicate/add/delete; see saveController. */
+  const sceneOperationActiveRef = useRef(false);
   const scenesByIdRef = useRef<Record<string, Scene>>({});
   const selectedLayerId =
     selectedLayerIds.length === 1 ? (selectedLayerIds[0] ?? null) : null;
@@ -303,6 +305,7 @@ function App() {
       scenesByIdRef,
       activeSaveCountRef,
       externalRefreshRunningRef,
+      sceneOperationActiveRef,
       autoSaveDelayMs: AUTO_SAVE_DELAY_MS,
       externalRefreshIntervalMs: EXTERNAL_REFRESH_INTERVAL_MS,
     },
@@ -419,7 +422,7 @@ function App() {
   );
 
   const sceneOperations = useSceneOperations({
-    document: { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict },
+    document: { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict, sceneOperationActiveRef },
     state: {
       setProject, setScene, setScenesById, setSelectedLayerIds,
       setActiveInsertionGroupId, setSelectedAnimationId, setInspectorScope,

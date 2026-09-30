@@ -1,13 +1,16 @@
 import {
   useEffect,
+  useMemo,
   useState,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import type { PlayerRef } from "@remotion/player";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
 import type { Scene } from "../domain/sceneSchema";
+import type { SubtitleCue } from "../domain/subtitleCueSchema";
 import {
   getAnimationPhaseLabel,
   getAnimationPresetLabel,
@@ -31,6 +34,10 @@ interface SceneAnimationTimelineProps {
     animationId: string,
     patch: TimingPatch,
   ) => void;
+  /** All project subtitle cues; the track shows the ones overlapping this scene. Empty for slide projects. */
+  subtitleCues: SubtitleCue[];
+  /** Split handler for B-roll; null hides the subtitle track's split menu (slide). */
+  onSplitScene: ((absoluteFrame: number) => void) | null;
 }
 
 interface DragPreview extends TimingPatch {
@@ -72,13 +79,42 @@ export function SceneAnimationTimeline({
   onSeek,
   onAnimationSelect,
   onAnimationTimingChange,
+  subtitleCues,
+  onSplitScene,
 }: SceneAnimationTimelineProps) {
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
+  const [splitMenu, setSplitMenu] = useState<{
+    x: number;
+    y: number;
+    frame: number;
+  } | null>(null);
   const events = getTimelineEvents(scene.layers);
   const ticks = getTickFrames(scene.durationInFrames, fps);
   const maximumFrame = Math.max(0, scene.durationInFrames - 1);
   const playheadLeft = (currentFrame / scene.durationInFrames) * 100;
+
+  // Subtitle blocks overlapping this scene, positioned in scene-local frames.
+  const subtitleBlocks = useMemo(() => {
+    if (subtitleCues.length === 0) return [];
+    const sceneEndFrame = timelineStartFrame + scene.durationInFrames;
+    const blocks: { cue: SubtitleCue; startFrame: number; endFrame: number }[] = [];
+    for (const cue of subtitleCues) {
+      const cueStartFrame = (cue.startMs / 1000) * fps;
+      const cueEndFrame = (cue.endMs / 1000) * fps;
+      if (cueEndFrame <= timelineStartFrame || cueStartFrame >= sceneEndFrame) {
+        continue;
+      }
+      blocks.push({
+        cue,
+        startFrame: clamp(cueStartFrame - timelineStartFrame, 0, scene.durationInFrames),
+        endFrame: clamp(cueEndFrame - timelineStartFrame, 0, scene.durationInFrames),
+      });
+    }
+    return blocks;
+  }, [subtitleCues, timelineStartFrame, scene.durationInFrames, fps]);
+
+  const showSubtitleTrack = subtitleBlocks.length > 0 && onSplitScene !== null;
 
   useEffect(() => {
     const player = playerRef.current;
@@ -100,6 +136,33 @@ export function SceneAnimationTimeline({
     player.addEventListener("frameupdate", handleFrameUpdate);
     return () => player.removeEventListener("frameupdate", handleFrameUpdate);
   }, [isPreviewMode, maximumFrame, playerRef, scene.id, timelineStartFrame]);
+
+  useEffect(() => {
+    if (!splitMenu) return;
+    const close = (): void => setSplitMenu(null);
+    const onKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === "Escape") setSplitMenu(null);
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [splitMenu]);
+
+  function handleSubtitleContextMenu(event: ReactMouseEvent<HTMLDivElement>): void {
+    if (!onSplitScene) return;
+    event.preventDefault();
+    const track = event.currentTarget;
+    const bounds = track.getBoundingClientRect();
+    const ratio = clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+    setSplitMenu({
+      x: event.clientX,
+      y: event.clientY,
+      frame: Math.round(ratio * scene.durationInFrames),
+    });
+  }
 
   function seekFromClientX(clientX: number, ruler: HTMLElement): void {
     const bounds = ruler.getBoundingClientRect();
@@ -273,7 +336,7 @@ export function SceneAnimationTimeline({
 
   return (
     <section className="scene-animation-timeline" aria-label="Scene animation timing">
-      {events.length === 0 ? (
+      {events.length === 0 && !showSubtitleTrack ? (
         <p className="animation-timeline-empty">
           Select a layer below and add an animation to build the scene timing.
         </p>
@@ -312,9 +375,53 @@ export function SceneAnimationTimeline({
             ) : null}
           </div>
 
+          {showSubtitleTrack ? (
+            <div className="animation-timeline-row subtitle-timeline-row">
+              <div className="animation-event-label subtitle-timeline-label">
+                <strong>Subtitles</strong>
+              </div>
+              <div
+                className="animation-timeline-track subtitle-timeline-track"
+                onContextMenu={handleSubtitleContextMenu}
+                title="Right-click to split the scene here"
+              >
+                {ticks
+                  .filter((frame) => frame !== 0)
+                  .map((frame) => (
+                    <i
+                      aria-hidden="true"
+                      key={frame}
+                      style={{ left: `${(frame / scene.durationInFrames) * 100}%` }}
+                    />
+                  ))}
+                {isPreviewMode ? (
+                  <span
+                    className="animation-timeline-playhead"
+                    style={{ left: `${playheadLeft}%` }}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {subtitleBlocks.map((block) => {
+                  const left = (block.startFrame / scene.durationInFrames) * 100;
+                  const width =
+                    ((block.endFrame - block.startFrame) / scene.durationInFrames) * 100;
+                  return (
+                    <span
+                      key={block.cue.id}
+                      className="subtitle-cue-block"
+                      style={{ left: `${left}%`, width: `${width}%` }}
+                      title={block.cue.text}
+                    >
+                      {block.cue.text}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           {events.map((timelineEvent, index) => {
-            const { layer, animation } = timelineEvent;
-            const preview =
+            const { layer, animation } = timelineEvent;            const preview =
               dragPreview?.layerId === layer.id &&
               dragPreview.animationId === animation.id
                 ? dragPreview
@@ -393,6 +500,24 @@ export function SceneAnimationTimeline({
           })}
         </div>
       )}
+      {splitMenu && onSplitScene ? (
+        <div
+          className="subtitle-split-menu"
+          style={{ left: splitMenu.x, top: splitMenu.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onSplitScene(timelineStartFrame + splitMenu.frame);
+              setSplitMenu(null);
+            }}
+          >
+            Split scene here · {(splitMenu.frame / fps).toFixed(1)}s
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

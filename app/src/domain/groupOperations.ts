@@ -207,6 +207,31 @@ export function scaleGroupChildren(
 }
 
 /**
+ * Axis-aligned bounding box of a child in the group's local coordinates,
+ * accounting for the child's own rotation (applied around its center).
+ */
+function rotatedChildBounds(child: AtomicLayer): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
+  const theta = ((child.rotation ?? 0) * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(theta));
+  const sin = Math.abs(Math.sin(theta));
+  const boundsWidth = child.width * cos + child.height * sin;
+  const boundsHeight = child.width * sin + child.height * cos;
+  const centerX = child.x + child.width / 2;
+  const centerY = child.y + child.height / 2;
+  return {
+    minX: centerX - boundsWidth / 2,
+    minY: centerY - boundsHeight / 2,
+    maxX: centerX + boundsWidth / 2,
+    maxY: centerY + boundsHeight / 2,
+  };
+}
+
+/**
  * Re-fit a group's frame so it tightly hugs its children (Keynote): the
  * frame becomes the children's bounding box and the children are re-based
  * to the new frame origin, so nothing moves visually.
@@ -214,6 +239,9 @@ export function scaleGroupChildren(
  * Rotation-aware: re-fitting moves the rotation pivot (the frame center),
  * so the frame origin is shifted by the rotated pivot delta to keep every
  * child visually stationary. With rotation = 0 this reduces to x + minX.
+ * Child rotation is accounted for via each child's rotated bounding box;
+ * re-basing by the unrotated top-left still keeps the (rotation-pivot)
+ * center stationary, so it needs no change.
  */
 export function hugGroupToChildren(group: GroupLayer): GroupLayer {
   const children = group.children;
@@ -223,12 +251,11 @@ export function hugGroupToChildren(group: GroupLayer): GroupLayer {
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
   for (const child of children) {
-    if (child.x < minX) minX = child.x;
-    if (child.y < minY) minY = child.y;
-    const right = child.x + child.width;
-    const bottom = child.y + child.height;
-    if (right > maxX) maxX = right;
-    if (bottom > maxY) maxY = bottom;
+    const bounds = rotatedChildBounds(child);
+    if (bounds.minX < minX) minX = bounds.minX;
+    if (bounds.minY < minY) minY = bounds.minY;
+    if (bounds.maxX > maxX) maxX = bounds.maxX;
+    if (bounds.maxY > maxY) maxY = bounds.maxY;
   }
   if (!Number.isFinite(minX) || !Number.isFinite(minY)) return group;
   const newWidth = Math.max(1, round(maxX - minX));

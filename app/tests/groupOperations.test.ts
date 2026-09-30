@@ -614,6 +614,33 @@ test("hugGroupToChildren pivot-compensates a 90-degree rotated group", () => {
   assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
 });
 
+test("hugGroupToChildren accounts for child rotation in the union", () => {
+  const group = groupFixture(
+    { x: 0, y: 0, width: 400, height: 400, rotation: 0 },
+    [{ id: "rectangle-1", x: 100, y: 100, width: 100, height: 50 }],
+  );
+  // Rotate the child 90 degrees: its axis-aligned bounds become 50x100
+  // around the same center (150, 125).
+  const rotated = {
+    ...group,
+    children: [{ ...group.children[0]!, rotation: 90 }],
+  } as GroupLayer;
+  const before = sceneCenters(rotated);
+  const next = hugGroupToChildren(rotated);
+  // Rotated bounds: minX=125, maxX=175, minY=75, maxY=175.
+  assert.equal(next.x, 125);
+  assert.equal(next.y, 75);
+  assert.equal(next.width, 50);
+  assert.equal(next.height, 100);
+  assert.deepEqual([next.children[0]?.x, next.children[0]?.y], [-25, 25]);
+  assert.equal(next.children[0]?.rotation, 90);
+  // The child's scene-space center (its rotation pivot) is unchanged.
+  const after = sceneCenters(next);
+  assert.ok(Math.abs(after[0]!.x - before[0]!.x) < 0.01);
+  assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
+  parseScene(sceneWith(next));
+});
+
 test("hugGroupToChildren is a no-op for an already hugging group", () => {
   const group = groupFixture({ x: 10, y: 20, width: 100, height: 60, rotation: 0 }, [
     { id: "rectangle-1", x: 0, y: 0, width: 100, height: 60 },

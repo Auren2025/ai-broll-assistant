@@ -258,10 +258,74 @@ export function ScenePropertiesPanel({
           />
           <span>s</span>
         </div>
-        {Number.isFinite(maximumDurationInFrames) ? (
-          <p className="layer-group-hint">
-            Cannot extend past the next scene's start frame.
-          </p>
+      </section>
+
+      <section className="scene-design-section scene-exit-transition-section">
+        <h4>Exit transition</h4>
+        <label className="scene-design-row">
+          <span>Type</span>
+          <select
+            aria-label="Scene exit transition"
+            value={scene.exitTransition?.type ?? "none"}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (value === "none") {
+                onSceneChange({ ...scene, exitTransition: undefined });
+              } else if (value === "fade-out") {
+                onSceneChange({
+                  ...scene,
+                  exitTransition: {
+                    type: "fade-out",
+                    durationInFrames: Math.max(
+                      1,
+                      Math.round(0.5 * project.fps),
+                    ),
+                  },
+                });
+              }
+            }}
+          >
+            <option value="none">None</option>
+            <option value="fade-out">Fade out</option>
+          </select>
+        </label>
+        {scene.exitTransition ? (
+          <label className="scene-design-row">
+            <span>Duration</span>
+            <div className="scene-duration-control">
+              <BufferedNumberInput
+                // NOTE: min must stay a multiple of the step (0 here): the
+                // native spinner anchors its step grid at min, so min={1/fps}
+                // would make clicks land on 0.933/0.833 instead of 0.9/0.8.
+                // The real floor (1 frame) is enforced in onValueChange below.
+                min={0}
+                max={scene.durationInFrames / project.fps}
+                step={TIME_STEP_SECONDS}
+                aria-label="Exit transition duration in seconds"
+                value={Number(
+                  (
+                    scene.exitTransition.durationInFrames / project.fps
+                  ).toFixed(3),
+                )}
+                onValueChange={(value) => {
+                  const frames = Math.min(
+                    scene.durationInFrames,
+                    Math.max(1, Math.round(value * project.fps)),
+                  );
+                  if (Number.isFinite(frames) && scene.exitTransition) {
+                    onSceneChange({
+                      ...scene,
+                      exitTransition: {
+                        ...scene.exitTransition,
+                        durationInFrames: frames,
+                      },
+                    });
+                  }
+                }}
+              />
+              <span>s</span>
+            </div>
+          </label>
         ) : null}
       </section>
 

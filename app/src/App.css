@@ -2549,18 +2549,6 @@ button {
   font-weight: 650;
 }
 
-.animation-heading-select {
-  height: 30px;
-  max-width: 150px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: #302d34;
-  background: #f0eff1;
-  outline: none;
-  font-size: 11px;
-  padding: 0 8px;
-}
-
 .animation-time-input {
   position: relative;
   width: 74px;

@@ -195,6 +195,7 @@ function App() {
       documentVersions,
       isApplyingHistoryRef,
       isSceneLoadingRef,
+      sceneOperationActiveRef,
     }),
     [documentVersions],
   );

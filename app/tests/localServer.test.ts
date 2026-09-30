@@ -712,3 +712,65 @@ test("subtitles endpoint returns parsed cues, or an empty list without source.sr
   assert.equal(invalid.status, 500);
   assert.equal(await responseError(invalid), "Invalid subtitle data");
 });
+
+test("split undo/redo disk reconciliation restores pre/post split files", async (t) => {
+  const f = await fixture(t);
+  const animated = {
+    ...f.scene,
+    durationInFrames: 30,
+    layers: [
+      textLayer("text-1", 0, [enterAnimation("a1", 0, 10)]),
+      textLayer("text-2", 1, [enterAnimation("b1", 10, 10)]),
+      textLayer("text-3", 2, [enterAnimation("c1", 20, 10)]),
+    ],
+  };
+  assert.equal((await f.write(f.sceneUrl, animated)).status, 200);
+
+  // Capture the pre-split on-disk state.
+  const preSplitProject = await f.readProject();
+  const preSplitScene = await f.readScene("scene-001");
+
+  const splitResponse = await f.request(`${f.sceneUrl}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: EDITOR_ORIGIN },
+    body: JSON.stringify({ splitFrame: 15 }),
+  });
+  assert.equal(splitResponse.status, 201);
+  const splitBody = await responseObject(splitResponse);
+  const postSplitProject = parseProject(splitBody.project);
+  const firstScene = parseScene(splitBody.firstScene);
+  const secondScene = parseScene(splitBody.secondScene);
+  assert.deepEqual(await f.readProject(), postSplitProject);
+
+  // --- Undo: mirrors applyHistorySnapshot's removed-ids branch ---
+  // 1. Delete the added scene (no precondition on DELETE).
+  const deleted = await f.request(`${f.projectUrl}/scenes/${secondScene.id}`, {
+    method: "DELETE",
+    headers: { Origin: EDITOR_ORIGIN },
+  });
+  assert.equal(deleted.status, 200);
+  // 2. Force-write the pre-split project (no If-Match).
+  assert.equal((await f.write(f.projectUrl, preSplitProject)).status, 200);
+  // 3. Force-write the original first-half scene (id survived, content changed).
+  assert.equal((await f.write(`${f.projectUrl}/scenes/${firstScene.id}`, preSplitScene)).status, 200);
+
+  assert.deepEqual(await f.readProject(), preSplitProject);
+  assert.deepEqual(await f.readScene("scene-001"), preSplitScene);
+  await assert.rejects(
+    fs.readFile(path.join(f.directory, "scenes", `${secondScene.id}.json`)),
+    /ENOENT/,
+  );
+
+  // --- Redo: mirrors applyHistorySnapshot's restored-ids branch ---
+  // 1. Force-write the post-split project first (the PUT scene endpoint 404s
+  //    for scenes not referenced by the on-disk project.json).
+  assert.equal((await f.write(f.projectUrl, postSplitProject)).status, 200);
+  // 2. Force-write the previously deleted scene back.
+  assert.equal((await f.write(`${f.projectUrl}/scenes/${secondScene.id}`, secondScene)).status, 200);
+  // 3. Force-write the first half (id survived, content changed).
+  assert.equal((await f.write(`${f.projectUrl}/scenes/${firstScene.id}`, firstScene)).status, 200);
+
+  assert.deepEqual(await f.readProject(), postSplitProject);
+  assert.deepEqual(await f.readScene("scene-001"), firstScene);
+  assert.deepEqual(await f.readScene(secondScene.id), secondScene);
+});

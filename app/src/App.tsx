@@ -1063,6 +1063,7 @@ function App() {
             onAnimationTimingChange={layerEdits.changeAnimationTiming}
             subtitleCues={project.kind === "broll" ? subtitleCues : []}
             onSplitScene={project.kind === "broll" ? handleSplitScene : null}
+            onDeselect={() => selection.onCanvasSelection([])}
           />
         </section>
 

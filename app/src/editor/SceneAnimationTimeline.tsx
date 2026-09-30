@@ -38,6 +38,8 @@ interface SceneAnimationTimelineProps {
   subtitleCues: SubtitleCue[];
   /** Split handler for B-roll; null hides the subtitle track's split menu (slide). */
   onSplitScene: ((absoluteFrame: number) => void) | null;
+  /** Clear the layer/animation selection, e.g. when clicking empty track space. */
+  onDeselect: () => void;
 }
 
 interface DragPreview extends TimingPatch {
@@ -118,6 +120,7 @@ export function SceneAnimationTimeline({
   onAnimationTimingChange,
   subtitleCues,
   onSplitScene,
+  onDeselect,
 }: SceneAnimationTimelineProps) {
   const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -205,6 +208,13 @@ export function SceneAnimationTimeline({
       y: event.clientY,
       frame,
     });
+  }
+
+  function handleTrackEmptyClick(event: ReactMouseEvent<HTMLDivElement>): void {
+    // Clicks on an animation bar bubble up here; those select the animation
+    // instead of clearing the selection.
+    if ((event.target as HTMLElement).closest(".animation-event-bar")) return;
+    onDeselect();
   }
 
   function seekFromClientX(clientX: number, ruler: HTMLElement): void {
@@ -426,6 +436,7 @@ export function SceneAnimationTimeline({
               <div
                 className="animation-timeline-track subtitle-timeline-track"
                 onContextMenu={handleSubtitleContextMenu}
+                onClick={handleTrackEmptyClick}
                 title="Right-click to split the scene here, or near the playhead to split at the playhead"
               >
                 {ticks
@@ -489,7 +500,10 @@ export function SceneAnimationTimeline({
                   <strong>{layer.name}</strong>
                   <small>{getAnimationPhaseLabel(animation.phase)} · {getAnimationPresetLabel(animation.preset)}</small>
                 </button>
-                <div className="animation-timeline-track">
+                <div
+                  className="animation-timeline-track"
+                  onClick={handleTrackEmptyClick}
+                >
                   {ticks
                     .filter((frame) => frame !== 0)
                     .map((frame) => (

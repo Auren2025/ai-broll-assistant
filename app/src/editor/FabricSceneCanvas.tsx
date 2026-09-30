@@ -54,6 +54,49 @@ import { clampFocal, clampImageCropZoom } from "./imageCrop";
 import { computeTextBoxSize } from "./textMetrics";
 
 registerFabricObjectClasses();
+
+/** Union of the visible children's canvas-plane bounding boxes. */
+interface DrillContentBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Compute the axis-aligned union of a drilled group's visible children in
+ * canvas coordinates. Uses each child's bounding rect (which includes the
+ * group's own transform, so rotated groups and rotated children are measured
+ * exactly). This is what the drill frame hugs, so the frame follows children
+ * as they are moved / scaled / rotated (Keynote).
+ */
+function getDrillContentBox(
+  groupObject: FabricGroup,
+): DrillContentBox | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let found = false;
+  for (const child of groupObject.getObjects()) {
+    if (!child.visible) continue;
+    // setCoords refreshes the cached corners from the live props. During an
+    // active drag/scale/rotate fabric only refreshes them on finalize, so a
+    // stale cache would freeze the frame mid-gesture.
+    child.setCoords();
+    const rect = child.getBoundingRect();
+    if (rect.left < minX) minX = rect.left;
+    if (rect.top < minY) minY = rect.top;
+    const right = rect.left + rect.width;
+    const bottom = rect.top + rect.height;
+    if (right > maxX) maxX = right;
+    if (bottom > maxY) maxY = bottom;
+    found = true;
+  }
+  if (!found) return null;
+  return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
+}
+
 interface FabricSceneCanvasProps {
   scene: Scene;
   projectId: string;
@@ -72,7 +115,7 @@ interface FabricSceneCanvasProps {
    * Id of the group currently drilled into (double-click a group on canvas).
    * While set, the drilled group keeps its FabricGroup on the canvas and its
    * children are edited in place; everything else is dimmed / non-interactive
-   * and a boundary overlay marks the drilled group's frame.
+   * and a Keynote-style frame traces the union of the children.
    */
   drillGroupId?: string | null;
   /** Called when the user clicks outside the drilled group to leave drill-in mode. */
@@ -145,10 +188,12 @@ export function FabricSceneCanvas({
   const groupEditEnterRef = useRef(onGroupEditEnter);
   const drillGroupIdRef = useRef<string | null>(drillGroupId);
   const onDrillExitRef = useRef(onDrillExit);
-  // Boundary overlay shown while drilling: a non-interactive rectangle that
-  // traces the drilled group's frame (Keynote-style). It is not a layer, so
-  // it stays out of the layer<->object maps and the structural-diff check.
-  const drillBoundaryRef = useRef<Rect | null>(null);
+  // Drill frame shown while drilling: a Keynote-style non-interactive frame
+  // (thin solid border + 8 square handles) that hugs the union of the drilled
+  // group's children and follows them live. It is not a layer, so it stays
+  // out of the layer<->object maps and the structural-diff check.
+  // Index 0 is the border rect; the rest are the corner/edge handles.
+  const drillFrameRef = useRef<Rect[] | null>(null);
   const isApplyingSelectionRef = useRef(false);
   const pendingTextEditRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
@@ -375,51 +420,103 @@ export function FabricSceneCanvas({
   );
 
   /**
-   * Keep the drill boundary overlay in sync with the drilled group: create
-   * it when drill-in starts, trace the group's frame while drilling, remove
-   * it when drill-in ends. Called after every scene sync and live while a
-   * child is being transformed.
+   * Keep the drill frame in sync with the drilled group: create it when
+   * drill-in starts, hug the children's union while drilling, remove it when
+   * drill-in ends. Called after every scene sync and live while a child is
+   * being transformed.
    */
   const syncDrillBoundary = useCallback((canvas: Canvas): void => {
     const drillId = drillGroupIdRef.current;
     const groupObject =
       drillId != null ? layerIdToObjectRef.current.get(drillId) : undefined;
-    if (!(groupObject instanceof FabricGroup)) {
-      const boundary = drillBoundaryRef.current;
-      if (boundary) {
-        canvas.remove(boundary);
-        drillBoundaryRef.current = null;
+    const clearFrame = (): void => {
+      const frame = drillFrameRef.current;
+      if (frame) {
+        for (const object of frame) {
+          canvas.remove(object);
+        }
+        drillFrameRef.current = null;
       }
+    };
+    if (!(groupObject instanceof FabricGroup)) {
+      clearFrame();
       return;
     }
-    let boundary = drillBoundaryRef.current;
-    if (!boundary) {
-      boundary = new Rect({
+    const box = getDrillContentBox(groupObject);
+    if (!box) {
+      clearFrame();
+      return;
+    }
+    // Small padding so the frame never sits exactly on content edges.
+    const pad = 3;
+    const left = box.left - pad;
+    const top = box.top - pad;
+    const width = box.width + pad * 2;
+    const height = box.height + pad * 2;
+
+    let frame = drillFrameRef.current;
+    if (!frame) {
+      const border = new Rect({
         originX: "left",
         originY: "top",
         fill: "rgba(0,0,0,0)",
-        stroke: "#9a94b0",
-        strokeWidth: 2,
-        // Dashed so the drill boundary reads apart from the solid purple
+        // Thin solid neutral border (Keynote), distinct from the purple
         // selection border.
-        strokeDashArray: [6, 4],
+        stroke: "#8e8e93",
+        strokeWidth: 1.5,
         selectable: false,
         evented: false,
         excludeFromExport: true,
         hoverCursor: "default",
       });
-      drillBoundaryRef.current = boundary;
-      canvas.add(boundary);
+      const handles = Array.from(
+        { length: 8 },
+        () =>
+          new Rect({
+            originX: "center",
+            originY: "center",
+            width: 8,
+            height: 8,
+            fill: "#ffffff",
+            stroke: "#8e8e93",
+            strokeWidth: 1,
+            selectable: false,
+            evented: false,
+            excludeFromExport: true,
+            hoverCursor: "default",
+          }),
+      );
+      frame = [border, ...handles];
+      for (const object of frame) {
+        canvas.add(object);
+      }
+      drillFrameRef.current = frame;
     }
-    const box = groupObject.getBoundingRect();
-    boundary.set({
-      left: box.left,
-      top: box.top,
-      width: box.width,
-      height: box.height,
+    const [border, ...handles] = frame;
+    border.set({ left, top, width, height });
+    border.setCoords();
+    // Corners + edge midpoints, in the same order as the handles array.
+    const xs = [left, left + width / 2, left + width];
+    const ys = [top, top + height / 2, top + height];
+    const positions: ReadonlyArray<readonly [number, number]> = [
+      [xs[0], ys[0]],
+      [xs[1], ys[0]],
+      [xs[2], ys[0]],
+      [xs[0], ys[1]],
+      [xs[2], ys[1]],
+      [xs[0], ys[2]],
+      [xs[1], ys[2]],
+      [xs[2], ys[2]],
+    ];
+    handles.forEach((handle, index) => {
+      const [handleLeft, handleTop] = positions[index];
+      handle.set({ left: handleLeft, top: handleTop });
+      handle.setCoords();
     });
-    boundary.setCoords();
-    canvas.bringObjectToFront(boundary);
+    // Keep the frame (border first, handles on top) above everything else.
+    for (const object of frame) {
+      canvas.bringObjectToFront(object);
+    }
   }, []);
 
   const registerTextEvents = useCallback(
@@ -480,8 +577,16 @@ export function FabricSceneCanvas({
           object._updateTextarea();
         }
       });
+
+      // While drilling, typing inside a group child can change its box;
+      // keep the drill frame hugging the children live.
+      object.on("changed", () => {
+        if (drillGroupIdRef.current) {
+          syncDrillBoundary(canvas);
+        }
+      });
     },
-    [],
+    [syncDrillBoundary],
   );
 
   const addFabricObject = useCallback(
@@ -672,6 +777,11 @@ export function FabricSceneCanvas({
       if (target.parent instanceof FabricGroup) {
         target.parent.dirty = true;
       }
+      // Resizing a shape-text child changes its box; keep the drill frame
+      // hugging the children live.
+      if (drillGroupIdRef.current) {
+        syncDrillBoundary(canvas);
+      }
       canvas.requestRenderAll();
     });
 
@@ -715,15 +825,23 @@ export function FabricSceneCanvas({
           target.setCoords();
         }
       }
-      // While drilling, keep the boundary overlay tracing the group frame
-      // live as a child is transformed (the scene commit on mouse-up
-      // re-syncs everything anyway).
+      // While drilling, keep the drill frame hugging the children live as a
+      // child is transformed (the scene commit on mouse-up re-syncs
+      // everything anyway).
       if (drillGroupIdRef.current) {
         syncDrillBoundary(canvas);
       }
     });
 
     canvas.on("object:scaling", () => {
+      if (drillGroupIdRef.current) {
+        syncDrillBoundary(canvas);
+      }
+    });
+
+    canvas.on("object:rotating", () => {
+      // Rotating a child changes its bounding box, so the drill frame must
+      // re-hug the children live.
       if (drillGroupIdRef.current) {
         syncDrillBoundary(canvas);
       }
@@ -943,7 +1061,7 @@ export function FabricSceneCanvas({
       if (!child || child.locked) return;
       if (child.type === "group") {
         // Already drilling this group: double-clicking its empty area is a
-        // no-op (the boundary overlay already marks the drill scope).
+        // no-op (the drill frame already marks the drill scope).
         if (drillGroupIdRef.current === child.id) return;
         canvas.setActiveObject(mappedObject);
         onSelectedLayerIdsChange([child.id]);
@@ -1347,9 +1465,13 @@ export function FabricSceneCanvas({
       }
 
       const hasStructuralMismatch = canvas.getObjects().some((object) => {
-        // The drill boundary overlay is not a layer; never treat it as a
+        // The drill frame objects are not layers; never treat them as a
         // structural change.
-        if (drillBoundaryRef.current && object === drillBoundaryRef.current) {
+        if (
+          drillFrameRef.current?.some(
+            (frameObject) => frameObject === object,
+          )
+        ) {
           return false;
         }
         const layerId = objectToLayerId.get(object);
@@ -1357,9 +1479,9 @@ export function FabricSceneCanvas({
       });
 
       // Drill-in presentation for one top-level entry. The drilled group
-      // keeps its FabricGroup: its frame becomes a visual boundary only
-      // (the overlay traces it) while children stay directly interactive
-      // through the group's interactive sub-targets.
+      // keeps its FabricGroup: its own frame becomes non-interactive while
+      // the drill frame traces the children's union, and children stay
+      // directly interactive through the group's interactive sub-targets.
       const applyDrillPresentation = (
         entry: DrillEntry,
         object: FabricObject,
@@ -1524,7 +1646,8 @@ export function FabricSceneCanvas({
         canvas.moveObjectTo(object, index);
       });
 
-      // Trace the drilled group's frame (or remove the overlay when drill-in ends).
+      // Hug the drilled group's children with the drill frame (or remove the
+      // frame when drill-in ends).
       syncDrillBoundary(canvas);
 
       // Scene sync does not know about crop mode; re-apply the canvas-only

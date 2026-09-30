@@ -132,6 +132,11 @@ button {
   font-weight: 700;
 }
 
+.topbar .editor-tool.editor-tool-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .topbar button,
 .inspector-tabs button,
 .scene-item,

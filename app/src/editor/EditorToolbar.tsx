@@ -1,3 +1,14 @@
+import {
+  ArrowToolIcon,
+  CircleToolIcon,
+  ImageFrameToolIcon,
+  RectangleToolIcon,
+  RedoToolIcon,
+  TextToolIcon,
+  TriangleToolIcon,
+  UndoToolIcon,
+} from "./toolbarIcons";
+
 interface EditorToolbarProps {
   isAddSceneDisabled: boolean;
   isCreatingScene: boolean;
@@ -50,82 +61,80 @@ export function EditorToolbar({
           Select
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           title="Add text"
+          aria-label="Add text"
           onClick={onAddText}
         >
-          <span className="tool-symbol">T</span>
-          Text
+          <TextToolIcon />
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           title="Add image placeholder"
+          aria-label="Add image placeholder"
           onClick={onAddImage}
         >
-          <span className="tool-symbol">▣</span>
-          Image Frame
+          <ImageFrameToolIcon />
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           title="Add rectangle"
+          aria-label="Add rectangle"
           onClick={onAddRectangle}
         >
-          <span className="tool-symbol">□</span>
-          Rectangle
+          <RectangleToolIcon />
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           title="Add circle"
+          aria-label="Add circle"
           onClick={onAddCircle}
         >
-          <span className="tool-symbol">○</span>
-          Circle
+          <CircleToolIcon />
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           title="Add triangle"
+          aria-label="Add triangle"
           onClick={onAddTriangle}
         >
-          <span className="tool-symbol">△</span>
-          Triangle
+          <TriangleToolIcon />
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           title="Add arrow"
+          aria-label="Add arrow"
           onClick={onAddArrow}
         >
-          <span className="tool-symbol">⇨</span>
-          Arrow
+          <ArrowToolIcon />
         </button>
       </div>
       <div className="editor-toolbar-actions">
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           disabled={!canUndo}
           title="Undo (⌘Z)"
           aria-label="Undo"
           onClick={onUndo}
         >
-          <span className="tool-symbol">↩</span>
-          Undo
+          <UndoToolIcon />
         </button>
         <button
-          className="editor-tool"
+          className="editor-tool editor-tool-icon"
           type="button"
           disabled={!canRedo}
           title="Redo (⇧⌘Z)"
           aria-label="Redo"
           onClick={onRedo}
         >
-          <span className="tool-symbol">↪</span>
-          Redo
+          <RedoToolIcon />
         </button>
         <button
           className="button-secondary"

@@ -43,7 +43,8 @@ import type { CanvasZoomCursor } from "./useCanvasZoom";
 
 registerFabricObjectClasses();
 
-interface FabricSceneCanvasProps {
+/** Document cluster: what is being edited and how the canvas is viewed. */
+export interface FabricCanvasDocument {
   scene: Scene;
   projectId: string;
   projectWidth: number;
@@ -54,11 +55,15 @@ interface FabricSceneCanvasProps {
   /** Canvas element owned by App so the pinch-zoom handler can measure it. */
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
   onSceneChange: (scene: Scene) => void;
+}
+
+/** Selection cluster: layer selection, hover, group drill-in, context menu. */
+export interface FabricCanvasSelection {
+  selectedLayerIds: readonly string[];
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
   onHoveredLayerIdChange: (layerId: string | null) => void;
   onGroupEditEnter?: (groupId: string) => void;
   onContextMenuRequest: (x: number, y: number) => void;
-  selectedLayerIds: readonly string[];
   /**
    * Id of the group currently drilled into (double-click a group on canvas).
    * While set, the drilled group keeps its FabricGroup on the canvas and its
@@ -68,21 +73,10 @@ interface FabricSceneCanvasProps {
   drillGroupId?: string | null;
   /** Called when the user clicks outside the drilled group to leave drill-in mode. */
   onDrillExit?: () => void;
-  selectedAnimationId?: string | null;
-  onMagicMoveTranslationCommit?: (
-    layerId: string,
-    animationId: string,
-    translateX: number,
-    translateY: number,
-  ) => void;
-  pendingTextEditLayerId?: string | null;
-  onPendingTextEditConsumed?: () => void;
-  onTextLayerChange?: (
-    layerId: string,
-    text: string,
-    naturalWidth: number,
-    naturalHeight: number,
-  ) => void;
+}
+
+/** Image-crop cluster: crop mode state lives in App, gestures on canvas. */
+export interface FabricCanvasCrop {
   /** Layer id currently in image-crop mode (canvas-only interaction state). */
   croppingLayerId?: string | null;
   onImageCropEnter?: (layerId: string) => void;
@@ -93,33 +87,79 @@ interface FabricSceneCanvasProps {
   ) => void;
 }
 
+/** Text cluster: programmatic text-edit requests and text content commits. */
+export interface FabricCanvasText {
+  pendingTextEditLayerId?: string | null;
+  onPendingTextEditConsumed?: () => void;
+  onTextLayerChange?: (
+    layerId: string,
+    text: string,
+    naturalWidth: number,
+    naturalHeight: number,
+  ) => void;
+}
+
+/** Animation cluster: magic-move translation commits for the animate tab. */
+export interface FabricCanvasAnimation {
+  selectedAnimationId?: string | null;
+  onMagicMoveTranslationCommit?: (
+    layerId: string,
+    animationId: string,
+    translateX: number,
+    translateY: number,
+  ) => void;
+}
+
+interface FabricSceneCanvasProps {
+  document: FabricCanvasDocument;
+  selection: FabricCanvasSelection;
+  crop: FabricCanvasCrop;
+  text: FabricCanvasText;
+  animation: FabricCanvasAnimation;
+}
+
 export function FabricSceneCanvas({
-  scene,
-  projectId,
-  projectWidth,
-  projectHeight,
-  displayScale = 0.5,
-  zoom = 1,
-  zoomCursorRef,
-  canvasElementRef,
-  onSceneChange,
-  onSelectedLayerIdsChange,
-  onHoveredLayerIdChange,
-  onGroupEditEnter,
-  onContextMenuRequest,
-  selectedLayerIds,
-  drillGroupId = null,
-  onDrillExit,
-  selectedAnimationId,
-  onMagicMoveTranslationCommit,
-  pendingTextEditLayerId,
-  onPendingTextEditConsumed,
-  onTextLayerChange,
-  croppingLayerId = null,
-  onImageCropEnter,
-  onImageCropExit,
-  onImageCropCommit,
+  document,
+  selection,
+  crop,
+  text,
+  animation,
 }: FabricSceneCanvasProps) {
+  const {
+    scene,
+    projectId,
+    projectWidth,
+    projectHeight,
+    displayScale = 0.5,
+    zoom = 1,
+    zoomCursorRef,
+    canvasElementRef,
+    onSceneChange,
+  } = document;
+  const {
+    selectedLayerIds,
+    onSelectedLayerIdsChange,
+    onHoveredLayerIdChange,
+    onGroupEditEnter,
+    onContextMenuRequest,
+    drillGroupId = null,
+    onDrillExit,
+  } = selection;
+  const {
+    croppingLayerId = null,
+    onImageCropEnter,
+    onImageCropExit,
+    onImageCropCommit,
+  } = crop;
+  const {
+    pendingTextEditLayerId,
+    onPendingTextEditConsumed,
+    onTextLayerChange,
+  } = text;
+  const {
+    selectedAnimationId,
+    onMagicMoveTranslationCommit,
+  } = animation;
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());

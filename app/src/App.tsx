@@ -1037,35 +1037,44 @@ function App() {
                   />
                 ) : (
                   <FabricSceneCanvas
-                    scene={scene}
-                    projectId={project.id}
-                    projectWidth={project.width}
-                    projectHeight={project.height}
-                    displayScale={BASE_CANVAS_SCALE}
-                    zoom={canvasZoom.zoom}
-                    zoomCursorRef={canvasZoom.cursorRef}
-                    canvasElementRef={canvasElementRef}
-                    onSceneChange={handleSceneChange}
-                    onSelectedLayerIdsChange={selection.onCanvasSelection}
-                    onHoveredLayerIdChange={setHoveredLayerId}
-                    onGroupEditEnter={selection.onGroupEditEnter}
-                    drillGroupId={activeInsertionGroupId}
-                    onDrillExit={() => setActiveInsertionGroupId(null)}
-                    onContextMenuRequest={openLayerContextMenu}
-                    selectedLayerIds={selectedLayerIds}
-                    selectedAnimationId={
-                      inspectorTab === "animate" ? selectedAnimationId : null
-                    }
-                    onMagicMoveTranslationCommit={
-                       layerEdits.commitMagicMoveTranslation
-                    }
-                    pendingTextEditLayerId={pendingTextEditLayerId}
-                    onPendingTextEditConsumed={() => setPendingTextEditLayerId(null)}
-                    onTextLayerChange={layerEdits.changeTextLayer}
-                    croppingLayerId={croppingLayerId}
-                    onImageCropEnter={enterImageCrop}
-                    onImageCropExit={exitImageCrop}
-                    onImageCropCommit={commitImageCrop}
+                    document={{
+                      scene,
+                      projectId: project.id,
+                      projectWidth: project.width,
+                      projectHeight: project.height,
+                      displayScale: BASE_CANVAS_SCALE,
+                      zoom: canvasZoom.zoom,
+                      zoomCursorRef: canvasZoom.cursorRef,
+                      canvasElementRef,
+                      onSceneChange: handleSceneChange,
+                    }}
+                    selection={{
+                      selectedLayerIds,
+                      onSelectedLayerIdsChange: selection.onCanvasSelection,
+                      onHoveredLayerIdChange: setHoveredLayerId,
+                      onGroupEditEnter: selection.onGroupEditEnter,
+                      onContextMenuRequest: openLayerContextMenu,
+                      drillGroupId: activeInsertionGroupId,
+                      onDrillExit: () => setActiveInsertionGroupId(null),
+                    }}
+                    crop={{
+                      croppingLayerId,
+                      onImageCropEnter: enterImageCrop,
+                      onImageCropExit: exitImageCrop,
+                      onImageCropCommit: commitImageCrop,
+                    }}
+                    text={{
+                      pendingTextEditLayerId,
+                      onPendingTextEditConsumed: () =>
+                        setPendingTextEditLayerId(null),
+                      onTextLayerChange: layerEdits.changeTextLayer,
+                    }}
+                    animation={{
+                      selectedAnimationId:
+                        inspectorTab === "animate" ? selectedAnimationId : null,
+                      onMagicMoveTranslationCommit:
+                        layerEdits.commitMagicMoveTranslation,
+                    }}
                   />
                 )}
                 {isPreviewMode ? (

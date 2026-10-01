@@ -1,15 +1,10 @@
 import { useCallback } from "react";
-import { findLayerById, hugGroupToChildren, patchKeysAffectGroupGeometry, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
+import { findLayerById, findParentGroup, hugGroupToChildren, isEffectivelyLocked, patchKeysAffectGroupGeometry, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
 import { isLineDrawEligible } from "../domain/lineDraw";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import type { EditableLayerPatch } from "./layerEditing";
 import { computeTextBoxSize } from "./textMetrics";
-
-function findParentGroup(layers: readonly Layer[], layerId: string) {
-  return layers.find((layer) => layer.type === "group" &&
-    layer.children.some((child) => child.id === layerId));
-}
 
 function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
@@ -94,7 +89,7 @@ export function useLayerEdits(
   const changeLayerAnimations = useCallback((layerId: string, animations: LayerAnimation[]) => {
     if (!scene) return;
     const selected = findLayerById(scene.layers, layerId);
-    if (!selected || selected.locked || findParentGroup(scene.layers, layerId)) return;
+    if (!selected || isEffectivelyLocked(scene.layers, layerId)) return;
     let changed = false;
     const layers = updateLayerById(scene.layers, layerId, (layer) => {
       if (JSON.stringify(layer.animations) === JSON.stringify(animations)) return layer;

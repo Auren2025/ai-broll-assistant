@@ -1,13 +1,8 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { findLayerById } from "../domain/groupOperations";
-import type { Layer, Scene } from "../domain/sceneSchema";
+import { findLayerById, findParentGroup } from "../domain/groupOperations";
+import type { Scene } from "../domain/sceneSchema";
 
 export type InspectorScope = "scene" | "layer";
-
-function findParentGroup(layers: readonly Layer[], layerId: string) {
-  return layers.find((layer) => layer.type === "group" &&
-    layer.children.some((child) => child.id === layerId));
-}
 
 function hasSameLayerIds(first: readonly string[], second: readonly string[]): boolean {
   return first.length === second.length && first.every((layerId) => second.includes(layerId));

@@ -141,10 +141,14 @@ export function alignSceneLayers(
 
   for (const layer of scene.layers) {
     if (selectedLayerIdSet.has(layer.id)) {
+      // Locked layers are not editable: align only the editable selection.
+      if (layer.locked) continue;
       getSpace("scene", projectWidth, projectHeight).layers.push(layer);
     } else if (layer.type === "group") {
-      const childLayers = layer.children.filter((child) =>
-        selectedLayerIdSet.has(child.id),
+      // Locking a group locks all its members.
+      if (layer.locked) continue;
+      const childLayers = layer.children.filter(
+        (child) => selectedLayerIdSet.has(child.id) && !child.locked,
       );
       if (childLayers.length > 0) {
         getSpace(layer.id, layer.width, layer.height).layers.push(...childLayers);

@@ -85,6 +85,35 @@ export function findLayerById(
   return null;
 }
 
+/** The top-level group containing the layer, or null for top-level layers. */
+export function findParentGroup(
+  layers: readonly Layer[],
+  layerId: string,
+): GroupLayer | null {
+  return (
+    layers.find(
+      (layer): layer is GroupLayer =>
+        layer.type === "group" &&
+        layer.children.some((child) => child.id === layerId),
+    ) ?? null
+  );
+}
+
+/**
+ * Effective lock state: a layer is uneditable when it is locked itself or
+ * its parent group is locked. Group members never carry their own lock —
+ * locking is a group-level operation.
+ */
+export function isEffectivelyLocked(
+  layers: readonly Layer[],
+  layerId: string,
+): boolean {
+  const layer = findLayerById(layers, layerId);
+  if (!layer) return false;
+  if (layer.locked) return true;
+  return findParentGroup(layers, layerId)?.locked ?? false;
+}
+
 export function updateLayerById(
   layers: readonly Layer[],
   layerId: string,
@@ -435,6 +464,17 @@ export function moveLayerTo(
 
     if (sourceParent) {
       const children = normalizeFrontToBack(frontToBack as AtomicLayer[]);
+      // No-op (dropped back at its own position): keep the original scene
+      // so no history entry or save is produced.
+      if (
+        children.every(
+          (child, index) =>
+            child.id === sourceParent.children[index]?.id &&
+            child.zIndex === sourceParent.children[index]?.zIndex,
+        )
+      ) {
+        return scene;
+      }
       return {
         ...scene,
         layers: scene.layers.map((layer) =>
@@ -442,7 +482,17 @@ export function moveLayerTo(
         ),
       };
     }
-    return { ...scene, layers: normalizeFrontToBack(frontToBack) };
+    const reordered = normalizeFrontToBack(frontToBack);
+    if (
+      reordered.every(
+        (layer, index) =>
+          layer.id === scene.layers[index]?.id &&
+          layer.zIndex === scene.layers[index]?.zIndex,
+      )
+    ) {
+      return scene;
+    }
+    return { ...scene, layers: reordered };
   }
 
   if (destination.beforeLayerId === layerId) return scene;
@@ -474,7 +524,9 @@ export function moveLayerTo(
     .map((layer) => {
       if (layer.type !== "group" || layer.id !== sourceParent?.id) return layer;
       const children = layer.children.filter((child) => child.id !== layerId);
-      return children.length > 0 ? { ...layer, children } : null;
+      // The last member leaving removes the group; otherwise the source
+      // frame hugs its remaining children.
+      return children.length > 0 ? hugGroupToChildren({ ...layer, children }) : null;
     })
     .filter((layer): layer is Layer => layer !== null);
 
@@ -494,7 +546,9 @@ export function moveLayerTo(
     frontToBack.splice(insertionIndex, 0, animationlessLayer as AtomicLayer);
     const children = normalizeFrontToBack(frontToBack);
     rootLayers = rootLayers.map((layer) =>
-      layer.id === targetGroup.id ? { ...targetGroup, children } : layer,
+      layer.id === targetGroup.id
+        ? hugGroupToChildren({ ...targetGroup, children })
+        : layer,
     );
   } else {
     const frontToBack = [...rootLayers].sort(
@@ -579,20 +633,33 @@ export function deleteLayers(
   const selectedIds = new Set(selectedLayerIds);
   const ordered = [...scene.layers].sort((a, b) => a.zIndex - b.zIndex);
   const next: Layer[] = [];
+  let changed = false;
 
   for (const layer of ordered) {
-    if (selectedIds.has(layer.id)) continue;
+    if (selectedIds.has(layer.id)) {
+      changed = true;
+      continue;
+    }
     if (layer.type !== "group") {
       next.push(layer);
       continue;
     }
 
     const children = layer.children.filter((child) => !selectedIds.has(child.id));
-    if (children.length >= 1) {
-      next.push({ ...layer, children });
+    // A group left with no children is removed with its last member.
+    if (children.length === 0) {
+      changed = true;
+      continue;
     }
+    if (children.length === layer.children.length) {
+      next.push(layer);
+      continue;
+    }
+    changed = true;
+    next.push(hugGroupToChildren({ ...layer, children }));
   }
 
+  if (!changed) return scene;
   return {
     ...scene,
     layers: next.map((layer, zIndex) => ({ ...layer, zIndex })),
@@ -672,6 +739,17 @@ export function reorderSelectedLayersZIndex(
       (child) => selectedIds.has(child.id),
       action,
     ).map((child, zIndex) => ({ ...child, zIndex })) as AtomicLayer[];
+    // No-op (already at the edge): return the original scene so no history
+    // entry or save is produced.
+    if (
+      reorderedChildren.every(
+        (child, index) =>
+          child.id === group.children[index]?.id &&
+          child.zIndex === group.children[index]?.zIndex,
+      )
+    ) {
+      return scene;
+    }
 
     return {
       ...scene,
@@ -686,6 +764,17 @@ export function reorderSelectedLayersZIndex(
     (layer) => selectedIds.has(layer.id),
     action,
   );
+  // No-op (already at the edge): return the original scene so no history
+  // entry or save is produced.
+  if (
+    reordered.every(
+      (layer, index) =>
+        layer.id === scene.layers[index]?.id &&
+        index === scene.layers[index]?.zIndex,
+    )
+  ) {
+    return scene;
+  }
 
   return {
     ...scene,

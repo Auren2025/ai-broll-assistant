@@ -221,6 +221,9 @@ export function useEditorDocument(
 
   const handleSceneChange = useCallback((updatedScene: Scene) => {
     if (sceneOperationRunningRef.current || isApplyingHistoryRef.current) return;
+    // Domain functions return the original scene reference when an operation
+    // is a no-op: skip history, state update, and dirty marking entirely.
+    if (updatedScene === sceneRef.current) return;
     recordHistory();
     setScene(updatedScene);
     markSceneChanged();

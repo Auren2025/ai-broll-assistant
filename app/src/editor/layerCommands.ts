@@ -5,7 +5,9 @@ import {
   deleteLayers,
   duplicateSelectedLayers,
   findLayerById,
+  findParentGroup,
   insertLayerIntoGroup,
+  isEffectivelyLocked,
   makeGroup,
   moveLayerTo,
   reorderSelectedLayersZIndex,
@@ -91,16 +93,6 @@ export interface LayerCommands {
 const DEFAULT_IMAGE_PLACEHOLDER_WIDTH = 640;
 const DEFAULT_IMAGE_PLACEHOLDER_HEIGHT = 360;
 
-function findParentGroup(layers: readonly Layer[], layerId: string): Layer | null {
-  return (
-    layers.find(
-      (layer) =>
-        layer.type === "group" &&
-        layer.children.some((child) => child.id === layerId),
-    ) ?? null
-  );
-}
-
 /**
  * Remove one animation from its layer. Returns the updated scene, or null
  * when the animation is not a valid delete target (stale id, locked layer,
@@ -112,10 +104,12 @@ export function removeLayerAnimation(
   animationId: string,
 ): Scene | null {
   const layer = findLayerById(scene.layers, layerId);
+  // Group members never own animations (cleared on entry), so there is no
+  // valid animation target on a member — regardless of lock state.
   if (
     !layer ||
     !layer.animations.some((animation) => animation.id === animationId) ||
-    layer.locked ||
+    isEffectivelyLocked(scene.layers, layerId) ||
     findParentGroup(scene.layers, layerId)
   ) {
     return null;

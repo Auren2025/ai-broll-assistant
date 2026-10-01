@@ -767,6 +767,31 @@ button {
      PASTEBOARD_BASE + PASTEBOARD_DIM composite) so the dark gray continues
      past the canvas element bounds with no visible edge. */
   background: #939499;
+  /* Thin minimal scrollbars (both axes look the same). */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(0 0 0 / 38%) transparent;
+}
+
+.canvas-editor-area::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.canvas-editor-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.canvas-editor-area::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 38%);
+  border-radius: 4px;
+}
+
+.canvas-editor-area::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 52%);
+}
+
+.canvas-editor-area::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .canvas-zoom-controls {

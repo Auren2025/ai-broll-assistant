@@ -597,7 +597,9 @@ export function FabricSceneCanvas({
 
       // Drill-in: a press on a child of the drilled group drags the child
       // itself, never promoting the drag target up to the group frame.
-      const drillDragTarget = resolveDrillDragTarget(rawTarget);
+      // When a dimmed outside object covers a drill child, the child
+      // underneath wins the press.
+      const drillDragTarget = resolveDrillDragTarget(rawTarget, event, canvas);
       if (drillDragTarget !== undefined) {
         promotedDragTarget = drillDragTarget;
         return;
@@ -643,8 +645,10 @@ export function FabricSceneCanvas({
       }
       // Drill-in: a click outside the drilled group exits drill-in and
       // selects the clicked layer. Dimmed objects are not selectable, so
-      // the selection is applied manually here.
-      if (handleDrillOutsideClick(event)) return;
+      // the selection is applied manually here. A promoted drill child
+      // (including one underneath a dimmed outside object) already owns
+      // this press, so the outside click must not fire for it.
+      if (!promotedDragTarget && handleDrillOutsideClick(event)) return;
       if (promotedDragTarget) {
         const { id, object } = promotedDragTarget;
         // Fabric's own mousedown already selected the child and built the

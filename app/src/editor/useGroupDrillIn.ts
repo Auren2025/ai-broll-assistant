@@ -22,6 +22,7 @@ import {
   findParentGroupLayer,
 } from "./fabricLayerLookup";
 import { FabricShapeTextObject } from "./fabricObjects";
+import { findTopmostDrillChildAtPoint } from "./drillChildHitTest";
 
 /** A press that moved more than this is a drag, not a click (scene units). */
 const DRAG_VS_CLICK_PX = 5;
@@ -117,11 +118,16 @@ export interface GroupDrillInApi {
   /**
    * mouse:down:before drill branch. While drilling, a press on a child of
    * the drilled group drags the child itself: never promote the drag target
-   * up to the group frame. Returns the child promotion target, null for an
-   * explicit no-promotion (locked child), or undefined when not drilling.
+   * up to the group frame. When the topmost target is a dimmed outside
+   * object but a drill child sits underneath the pointer, the child wins,
+   * so overlapping outside objects can't steal the press. Returns the
+   * child promotion target, null for an explicit no-promotion (locked
+   * child), or undefined when not drilling / no child under the pointer.
    */
   resolveDrillDragTarget: (
     rawTarget: FabricObject,
+    event: DrillPointerEvent,
+    canvas: Canvas,
   ) => DrillDragTarget | null | undefined;
   /** Record a press for the drag-vs-double-click guard. */
   recordDrillPointerDown: (clientX: number, clientY: number) => void;
@@ -489,16 +495,16 @@ export function useGroupDrillIn(
     [isDragThenClickDblClick, onSelectedLayerIdsChange],
   );
 
-  const resolveDrillDragTarget = useCallback(
+  const resolveDrillChildTarget = useCallback(
     (
-      rawTarget: FabricObject,
+      start: FabricObject,
     ): DrillDragTarget | null | undefined => {
       const drillId = drillGroupIdRef.current;
       if (!drillId) return undefined;
       let candidate: FabricObject | undefined =
-        rawTarget.parent instanceof FabricShapeTextObject
-          ? rawTarget.parent
-          : rawTarget;
+        start.parent instanceof FabricShapeTextObject
+          ? start.parent
+          : start;
       while (candidate && !objectToLayerIdRef.current.has(candidate)) {
         candidate = candidate.parent instanceof FabricObject
           ? candidate.parent
@@ -524,6 +530,37 @@ export function useGroupDrillIn(
       return undefined;
     },
     [objectToLayerIdRef, sceneRef],
+  );
+
+  const resolveDrillDragTarget = useCallback(
+    (
+      rawTarget: FabricObject,
+      event: DrillPointerEvent,
+      canvas: Canvas,
+    ): DrillDragTarget | null | undefined => {
+      const drillId = drillGroupIdRef.current;
+      if (!drillId) return undefined;
+      const direct = resolveDrillChildTarget(rawTarget);
+      if (direct !== undefined) return direct;
+      // A dimmed outside object with higher z-order wins Fabric's topmost
+      // hit test, but a press that also lands on a drill child belongs to
+      // the child: only a press with no child underneath exits drill-in.
+      const group = canvas
+        .getObjects()
+        .find(
+          (object): object is FabricGroup =>
+            object instanceof FabricGroup &&
+            objectToLayerIdRef.current.get(object) === drillId,
+        );
+      if (!group) return undefined;
+      const hit = findTopmostDrillChildAtPoint(
+        group.getObjects(),
+        event.scenePoint,
+      );
+      if (hit) return resolveDrillChildTarget(hit);
+      return undefined;
+    },
+    [objectToLayerIdRef, resolveDrillChildTarget],
   );
 
   return {

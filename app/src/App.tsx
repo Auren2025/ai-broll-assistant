@@ -864,6 +864,7 @@ function App() {
                       displayScale: BASE_CANVAS_SCALE,
                       zoom: canvasZoom.zoom,
                       zoomCursorRef: canvasZoom.cursorRef,
+                      fitSeq: canvasZoom.fitSeq,
                       canvasElementRef,
                       onSceneChange: handleSceneChange,
                     }}

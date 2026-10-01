@@ -73,6 +73,12 @@ export interface FabricCanvasDocument {
   displayScale?: number;
   zoom?: number;
   zoomCursorRef?: { current: CanvasZoomCursor | null };
+  /**
+   * Bumped by useCanvasZoom.resetZoom on every Fit click. Lets the zoom
+   * effect re-run (and recenter the scroll) even when the zoom value itself
+   * does not change.
+   */
+  fitSeq?: number;
   /** Canvas element owned by App so the pinch-zoom handler can measure it. */
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
   onSceneChange: (scene: Scene) => void;
@@ -153,6 +159,7 @@ export function FabricSceneCanvas({
     displayScale = 0.5,
     zoom = 1,
     zoomCursorRef,
+    fitSeq = 0,
     canvasElementRef,
     onSceneChange,
   } = document;
@@ -1014,9 +1021,25 @@ export function FabricSceneCanvas({
     ]);
     setViewportTransform(next);
     canvas.requestRenderAll();
+    // No cursor (mount, Fit, scene switch) means "restore the canonical
+    // view": the pan was re-anchored to the margin-folded origin above, and
+    // the project sits centered in the pasteboard element by construction,
+    // so centering the scroll content centers the project. Without this,
+    // Fit from a fitted state (25%: scroll pinned at 0,0) leaves the scroll
+    // behind and the project lands stranded in the bottom-right corner.
+    // Cursor-anchored zooms (+/-, wheel, pinch) intentionally skip this —
+    // the anchor already keeps the view stable.
+    if (!cursor) {
+      const area = canvasElement?.closest(".canvas-editor-area");
+      if (area) {
+        area.scrollLeft = (area.scrollWidth - area.clientWidth) / 2;
+        area.scrollTop = (area.scrollHeight - area.clientHeight) / 2;
+      }
+    }
   }, [
     canvasElementRef,
     displayScale,
+    fitSeq,
     projectHeight,
     projectWidth,
     scene.id,

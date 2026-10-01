@@ -30,6 +30,11 @@ export function useCanvasZoom(
   hasScene: boolean,
 ) {
   const [zoom, setZoom] = useState(1);
+  // Bumped on every Fit click, even when the zoom is already 1: resetting
+  // the zoom alone is a state no-op in that case, but Fit must always
+  // restore the standard centered view (recenter the scroll), never be a
+  // silent no-op.
+  const [fitSeq, setFitSeq] = useState(0);
   const cursorRef = useRef<CanvasZoomCursor | null>(null);
   const isPreviewModeRef = useRef(isPreviewMode);
   useEffect(() => {
@@ -62,6 +67,7 @@ export function useCanvasZoom(
 
   return {
     zoom,
+    fitSeq,
     cursorRef,
     zoomBy(delta: number) {
       // Anchor button zoom to the canvas center (via the same cursor math
@@ -80,6 +86,7 @@ export function useCanvasZoom(
     },
     resetZoom() {
       cursorRef.current = null;
+      setFitSeq((s) => s + 1);
       setZoom(1);
     },
   };

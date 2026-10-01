@@ -116,7 +116,8 @@ function App() {
   const [historyCanRedo, setHistoryCanRedo] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
-  const canvasZoom = useCanvasZoom(canvasAreaRef, isPreviewMode, Boolean(project && scene));
+  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasZoom = useCanvasZoom(canvasAreaRef, canvasElementRef, isPreviewMode, Boolean(project && scene));
   const handleOpenPreviewWindow = usePreviewWindow(project, scene, isDirty);
   const previewPlayerRef = useRef<PlayerRef | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);
@@ -1043,6 +1044,7 @@ function App() {
                     displayScale={BASE_CANVAS_SCALE}
                     zoom={canvasZoom.zoom}
                     zoomCursorRef={canvasZoom.cursorRef}
+                    canvasElementRef={canvasElementRef}
                     onSceneChange={handleSceneChange}
                     onSelectedLayerIdsChange={selection.onCanvasSelection}
                     onHoveredLayerIdChange={setHoveredLayerId}

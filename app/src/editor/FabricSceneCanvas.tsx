@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type RefObject,
 } from "react";
 import {
   Canvas,
@@ -38,6 +39,7 @@ import { useImageCropGestures } from "./useImageCropGestures";
 import { useGroupDrillIn } from "./useGroupDrillIn";
 import { useGestureCommit } from "./useGestureCommit";
 import { computeTextBoxSize } from "./textMetrics";
+import type { CanvasZoomCursor } from "./useCanvasZoom";
 
 registerFabricObjectClasses();
 
@@ -48,7 +50,9 @@ interface FabricSceneCanvasProps {
   projectHeight: number;
   displayScale?: number;
   zoom?: number;
-  zoomCursorRef?: { current: { x: number; y: number } | null };
+  zoomCursorRef?: { current: CanvasZoomCursor | null };
+  /** Canvas element owned by App so the pinch-zoom handler can measure it. */
+  canvasElementRef: RefObject<HTMLCanvasElement | null>;
   onSceneChange: (scene: Scene) => void;
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
   onHoveredLayerIdChange: (layerId: string | null) => void;
@@ -97,6 +101,7 @@ export function FabricSceneCanvas({
   displayScale = 0.5,
   zoom = 1,
   zoomCursorRef,
+  canvasElementRef,
   onSceneChange,
   onSelectedLayerIdsChange,
   onHoveredLayerIdChange,
@@ -115,7 +120,6 @@ export function FabricSceneCanvas({
   onImageCropExit,
   onImageCropCommit,
 }: FabricSceneCanvasProps) {
-  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
@@ -723,6 +727,7 @@ export function FabricSceneCanvas({
     };
   }, [
     addFabricObject,
+    canvasElementRef,
     clearHover,
     clearHoverOnMouseOut,
     displayScale,
@@ -759,8 +764,13 @@ export function FabricSceneCanvas({
     const scale = displayScale * zoom;
     const cursor = zoomCursorRef?.current;
     const canvasElement = canvasElementRef.current;
-    const rectBefore =
-      cursor && canvasElement ? canvasElement.getBoundingClientRect() : null;
+    // The rect the cursor was captured against: measured in the wheel handler
+    // before React re-rendered. Measuring here would see the already-resized
+    // (flex-centered, therefore repositioned) layout paired with the old
+    // viewport transform, which made pinch zoom drift.
+    const rectBefore = cursor
+      ? { left: cursor.rectLeft, top: cursor.rectTop }
+      : null;
 
     canvas.setDimensions({
       width: projectWidth * scale,
@@ -786,6 +796,7 @@ export function FabricSceneCanvas({
     setViewportTransform({ scale, panX, panY });
     canvas.requestRenderAll();
   }, [
+    canvasElementRef,
     displayScale,
     projectHeight,
     projectWidth,

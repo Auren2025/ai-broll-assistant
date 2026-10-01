@@ -9,13 +9,28 @@ function clampCanvasZoom(value: number): number {
   return Math.min(Math.max(value, MIN_CANVAS_ZOOM), MAX_CANVAS_ZOOM);
 }
 
+/**
+ * Where a pinch zoom should anchor. The rect must be captured at the wheel
+ * event, before React re-renders: the canvas wrapper is flex-centered, so
+ * resizing it for the new zoom also moves its left/top. Measuring the rect
+ * after the re-render (inside the zoom effect) pairs the new layout with
+ * the old viewport transform and the content drifts on every pinch tick.
+ */
+export interface CanvasZoomCursor {
+  x: number;
+  y: number;
+  rectLeft: number;
+  rectTop: number;
+}
+
 export function useCanvasZoom(
   areaRef: RefObject<HTMLDivElement | null>,
+  canvasElementRef: RefObject<HTMLCanvasElement | null>,
   isPreviewMode: boolean,
   hasScene: boolean,
 ) {
   const [zoom, setZoom] = useState(1);
-  const cursorRef = useRef<{ x: number; y: number } | null>(null);
+  const cursorRef = useRef<CanvasZoomCursor | null>(null);
   const isPreviewModeRef = useRef(isPreviewMode);
   useEffect(() => {
     isPreviewModeRef.current = isPreviewMode;
@@ -29,12 +44,21 @@ export function useCanvasZoom(
       event.preventDefault();
       const delta = event.deltaMode === 1 ? event.deltaY * 16
         : event.deltaMode === 2 ? event.deltaY * 100 : event.deltaY;
-      cursorRef.current = { x: event.clientX, y: event.clientY };
+      const canvasElement = canvasElementRef.current;
+      const rect = canvasElement?.getBoundingClientRect();
+      cursorRef.current = rect
+        ? {
+            x: event.clientX,
+            y: event.clientY,
+            rectLeft: rect.left,
+            rectTop: rect.top,
+          }
+        : null;
       setZoom((current) => clampCanvasZoom(current * Math.exp(-delta / 150)));
     };
     area.addEventListener("wheel", handleWheel, { passive: false });
     return () => area.removeEventListener("wheel", handleWheel);
-  }, [areaRef, hasScene, isPreviewMode]);
+  }, [areaRef, canvasElementRef, hasScene, isPreviewMode]);
 
   return {
     zoom,

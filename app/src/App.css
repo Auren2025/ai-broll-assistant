@@ -767,30 +767,49 @@ button {
      PASTEBOARD_BASE + PASTEBOARD_DIM composite) so the dark gray continues
      past the canvas element bounds with no visible edge. */
   background: #939499;
-  /* Thin minimal scrollbars (both axes look the same). */
+}
+
+/* Thin minimal scrollbars for all editor scroll areas. */
+.canvas-editor-area,
+.inspector-scroll,
+.sidebar-left,
+.animation-timeline-grid {
   scrollbar-width: thin;
   scrollbar-color: rgb(0 0 0 / 38%) transparent;
 }
 
-.canvas-editor-area::-webkit-scrollbar {
+.canvas-editor-area::-webkit-scrollbar,
+.inspector-scroll::-webkit-scrollbar,
+.sidebar-left::-webkit-scrollbar,
+.animation-timeline-grid::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.canvas-editor-area::-webkit-scrollbar-track {
+.canvas-editor-area::-webkit-scrollbar-track,
+.inspector-scroll::-webkit-scrollbar-track,
+.sidebar-left::-webkit-scrollbar-track,
+.animation-timeline-grid::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.canvas-editor-area::-webkit-scrollbar-thumb {
+.canvas-editor-area::-webkit-scrollbar-thumb,
+.inspector-scroll::-webkit-scrollbar-thumb,
+.sidebar-left::-webkit-scrollbar-thumb,
+.animation-timeline-grid::-webkit-scrollbar-thumb {
   background: rgb(0 0 0 / 38%);
   border-radius: 4px;
 }
 
-.canvas-editor-area::-webkit-scrollbar-thumb:hover {
+.canvas-editor-area::-webkit-scrollbar-thumb:hover,
+.inspector-scroll::-webkit-scrollbar-thumb:hover,
+.sidebar-left::-webkit-scrollbar-thumb:hover,
+.animation-timeline-grid::-webkit-scrollbar-thumb:hover {
   background: rgb(0 0 0 / 52%);
 }
 
-.canvas-editor-area::-webkit-scrollbar-corner {
+.canvas-editor-area::-webkit-scrollbar-corner,
+.animation-timeline-grid::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -1061,27 +1080,6 @@ button {
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
-  /* Thin minimal scrollbar, matching the canvas area. */
-  scrollbar-width: thin;
-  scrollbar-color: rgb(0 0 0 / 38%) transparent;
-}
-
-.inspector-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.inspector-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.inspector-scroll::-webkit-scrollbar-thumb {
-  background: rgb(0 0 0 / 38%);
-  border-radius: 4px;
-}
-
-.inspector-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgb(0 0 0 / 52%);
 }
 
 .inspector-scroll:has(.scene-design-panel),

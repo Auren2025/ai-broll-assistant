@@ -720,31 +720,8 @@ button {
   cursor: default;
 }
 
-.layer-lock-button span {
-  position: relative;
-  width: 10px;
-  height: 8px;
-  margin-top: 4px;
-  border: 1px solid currentcolor;
-  border-radius: 1px;
-}
-
-.layer-lock-button span::before {
-  position: absolute;
-  bottom: 6px;
-  left: 1px;
-  width: 5px;
-  height: 5px;
-  border: 1px solid currentcolor;
-  border-bottom: 0;
-  border-radius: 5px 5px 0 0;
-  content: "";
-}
-
-.layer-lock-button:not(.is-active) span::before {
-  left: 4px;
-  transform: rotate(22deg);
-  transform-origin: bottom left;
+.layer-lock-button svg {
+  display: block;
 }
 
 .canvas-workspace {

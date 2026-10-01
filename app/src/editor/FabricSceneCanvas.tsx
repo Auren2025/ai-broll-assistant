@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type RefObject,
@@ -44,14 +45,21 @@ import { useImageCropGestures } from "./useImageCropGestures";
 import { useGroupDrillIn } from "./useGroupDrillIn";
 import { useGestureCommit } from "./useGestureCommit";
 import { computeTextBoxSize } from "./textMetrics";
-import type { CanvasZoomCursor } from "./useCanvasZoom";
+import {
+  BASE_CANVAS_SCALE,
+  MIN_CANVAS_ZOOM,
+  type CanvasZoomCursor,
+} from "./useCanvasZoom";
 import {
   PASTEBOARD_DARK,
+  PASTEBOARD_MARGIN_MIN,
   canonicalViewport,
+  marginsForViewport,
   paintPasteboardBase,
   paintPasteboardDim,
-  pasteboardMargin,
+  pasteboardElementSize,
   zoomViewport,
+  type PasteboardMargins,
 } from "./pasteboard";
 
 registerFabricObjectClasses();
@@ -172,12 +180,24 @@ export function FabricSceneCanvas({
     onMagicMoveTranslationCommit,
   } = animation;
   const fabricCanvasRef = useRef<Canvas | null>(null);
-  // Pasteboard margin (scene units) folded into the viewport pan: the
-  // canvas element is the project frame plus this margin on every side.
-  const pasteboard = pasteboardMargin(projectWidth, projectHeight);
+  // Pasteboard margins (scene units, per axis) folded into the viewport pan.
+  // Derived from the real scroll-area size so the element fills it exactly
+  // at minimum zoom; the ref is the source of truth for imperative canvas
+  // ops (the measure effect can grow margins without recreating the canvas),
+  // the state drives the wrapper div size.
+  const [margins, setMargins] = useState<PasteboardMargins>(() => ({
+    x: PASTEBOARD_MARGIN_MIN,
+    y: PASTEBOARD_MARGIN_MIN,
+  }));
+  const marginsRef = useRef(margins);
   const elementScale = displayScale * zoom;
-  const elementWidth = (projectWidth + pasteboard * 2) * elementScale;
-  const elementHeight = (projectHeight + pasteboard * 2) * elementScale;
+  const elementSceneSize = pasteboardElementSize(
+    projectWidth,
+    projectHeight,
+    margins,
+  );
+  const elementWidth = elementSceneSize.width * elementScale;
+  const elementHeight = elementSceneSize.height * elementScale;
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   // Shift-drag axis lock: the dragged's center when Shift is first detected
@@ -200,8 +220,74 @@ export function FabricSceneCanvas({
       undefined
   >(undefined);
   const [viewportTransform, setViewportTransform] = useState(() =>
-    canonicalViewport(displayScale, pasteboard),
+    canonicalViewport(displayScale, {
+      x: PASTEBOARD_MARGIN_MIN,
+      y: PASTEBOARD_MARGIN_MIN,
+    }),
   );
+  // Derive the pasteboard margins from the real scroll-area size so the
+  // element fills it exactly at minimum zoom (see marginsForViewport).
+  // Runs as a layout effect: on mount it settles the margins before the
+  // canvas init effect below runs, and a ResizeObserver keeps them exact
+  // when the window changes. Margins only grow (monotonic): a smaller
+  // window never shrinks the element, so parked layers can't get stranded
+  // outside the interactive area. On growth the canvas is resized
+  // imperatively and the scroll is compensated so the view doesn't jump.
+  useLayoutEffect(() => {
+    const area = canvasElementRef.current?.closest(".canvas-editor-area");
+    if (!(area instanceof HTMLElement)) {
+      return;
+    }
+    const syncMargins = () => {
+      const rect = area.getBoundingClientRect();
+      if (rect.width < 50 || rect.height < 50) {
+        return;
+      }
+      const next = marginsForViewport({
+        areaWidth: rect.width,
+        areaHeight: rect.height,
+        minScale: BASE_CANVAS_SCALE * MIN_CANVAS_ZOOM,
+        projectWidth,
+        projectHeight,
+      });
+      const prev = marginsRef.current;
+      const grown: PasteboardMargins = {
+        x: Math.max(prev.x, next.x),
+        y: Math.max(prev.y, next.y),
+      };
+      if (grown.x === prev.x && grown.y === prev.y) {
+        return;
+      }
+      marginsRef.current = grown;
+      setMargins(grown);
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      const scale = canvas.viewportTransform[0];
+      const size = pasteboardElementSize(projectWidth, projectHeight, grown);
+      canvas.setDimensions({
+        width: size.width * scale,
+        height: size.height * scale,
+      });
+      // Shift the existing pan by the margin growth so the layout stays
+      // symmetric (project centered in the element). The user's anchor is
+      // preserved: a cursor-anchored zoom pan is shifted, not reset.
+      const nextPanX = canvas.viewportTransform[4] + (grown.x - prev.x) * scale;
+      const nextPanY = canvas.viewportTransform[5] + (grown.y - prev.y) * scale;
+      canvas.setViewportTransform([scale, 0, 0, scale, nextPanX, nextPanY]);
+      setViewportTransform({ scale, panX: nextPanX, panY: nextPanY });
+      // Keep the same content under the viewport: the element grew by
+      // (grown - prev) * scale px on the top and left.
+      area.scrollLeft += (grown.x - prev.x) * scale;
+      area.scrollTop += (grown.y - prev.y) * scale;
+      canvas.requestRenderAll();
+    };
+    syncMargins();
+    const observer = new ResizeObserver(() => syncMargins());
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [canvasElementRef, projectWidth, projectHeight]);
   const {
     magicMoveContext,
     viewportPath,
@@ -423,9 +509,14 @@ export function FabricSceneCanvas({
       return;
     }
 
+    const initElementSize = pasteboardElementSize(
+      projectWidth,
+      projectHeight,
+      marginsRef.current,
+    );
     const canvas = new Canvas(canvasElement, {
-      width: (projectWidth + pasteboard * 2) * displayScale,
-      height: (projectHeight + pasteboard * 2) * displayScale,
+      width: initElementSize.width * displayScale,
+      height: initElementSize.height * displayScale,
       // The backdrop (pasteboard base + project frame) is painted in
       // before:render; a flat backgroundColor would cover the whole
       // enlarged element and hide the project/pasteboard boundary.
@@ -450,7 +541,10 @@ export function FabricSceneCanvas({
       },
     });
 
-    const initialViewport = canonicalViewport(displayScale, pasteboard);
+    const initialViewport = canonicalViewport(
+      displayScale,
+      marginsRef.current,
+    );
     canvas.setViewportTransform([
       initialViewport.scale,
       0,
@@ -851,7 +945,6 @@ export function FabricSceneCanvas({
     onDrillGestureEnd,
     onDrillGestureTransform,
     onSelectedLayerIdsChange,
-    pasteboard,
     projectHeight,
     projectWidth,
     recordDrillPointerDown,
@@ -874,10 +967,16 @@ export function FabricSceneCanvas({
     const scale = displayScale * zoom;
     const cursor = zoomCursorRef?.current;
     const canvasElement = canvasElementRef.current;
+    const marginsNow = marginsRef.current;
+    const zoomElementSize = pasteboardElementSize(
+      projectWidth,
+      projectHeight,
+      marginsNow,
+    );
 
     canvas.setDimensions({
-      width: (projectWidth + pasteboard * 2) * scale,
-      height: (projectHeight + pasteboard * 2) * scale,
+      width: zoomElementSize.width * scale,
+      height: zoomElementSize.height * scale,
     });
 
     // Zoom toward the cursor: keep the scene point under the pointer fixed.
@@ -894,7 +993,7 @@ export function FabricSceneCanvas({
         panY: canvas.viewportTransform[5],
       },
       scale,
-      margin: pasteboard,
+      margins: marginsNow,
       cursor: cursor ?? null,
       rectAfter,
     });
@@ -918,7 +1017,6 @@ export function FabricSceneCanvas({
   }, [
     canvasElementRef,
     displayScale,
-    pasteboard,
     projectHeight,
     projectWidth,
     scene.id,

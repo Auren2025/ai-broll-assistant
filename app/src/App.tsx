@@ -38,7 +38,6 @@ import {
 } from "./editor/SceneLayerTree";
 import { usePreviewWindow } from "./preview/usePreviewWindow";
 import { BASE_CANVAS_SCALE, ZOOM_STEP, useCanvasZoom } from "./editor/useCanvasZoom";
-import { pasteboardMargin } from "./editor/pasteboard";
 import { MIN_TIMELINE_HEIGHT, useTimelineResize } from "./editor/useTimelineResize";
 
 import { useLayerCommands, type AddableLayerType } from "./editor/layerCommands";
@@ -144,12 +143,11 @@ function App() {
     lastCenteredSceneRef.current = openKey;
     const area = canvasAreaRef.current;
     if (!area) return;
-    const scale = BASE_CANVAS_SCALE * canvasZoom.zoom;
-    const margin = pasteboardMargin(openProjectWidth, openProjectHeight);
-    area.scrollLeft =
-      (margin + openProjectWidth / 2) * scale - area.clientWidth / 2;
-    area.scrollTop =
-      (margin + openProjectHeight / 2) * scale - area.clientHeight / 2;
+    // The project is centered in the canvas element by construction
+    // (symmetric pasteboard margins), so centering the scroll content
+    // centers the project — no margin math needed.
+    area.scrollLeft = (area.scrollWidth - area.clientWidth) / 2;
+    area.scrollTop = (area.scrollHeight - area.clientHeight) / 2;
   }, [
     isPreviewMode,
     openSceneId,

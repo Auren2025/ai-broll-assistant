@@ -14,10 +14,18 @@ import type { Canvas } from "fabric";
  * PASTEBOARD_DARK (the base+dim composite) flat, so the dark field continues
  * past the element bounds with no visible edge. The project frame reads as
  * a card via its drop shadow plus a hairline edge.
+ *
+ * Margins are derived from the real scroll-area size: at minimum zoom the
+ * element fills the visible area exactly (minus the stage padding), so the
+ * whole gray field is interactive — no dead bands, no scrollbars, and the
+ * project sits perfectly centered. Margins only ever grow within a session
+ * (monotonic): a smaller window never shrinks the element, so layers parked
+ * far out can never get stranded outside the interactive area.
  */
 
 export const PASTEBOARD_MARGIN_MIN = 400;
-export const PASTEBOARD_MARGIN_MAX = 1000;
+/** Total stage padding (20px each side) around the canvas element. */
+export const PASTEBOARD_STAGE_PADDING = 40;
 
 /**
  * Base color painted on the canvas element before the dim (editor only).
@@ -39,22 +47,51 @@ export const PROJECT_FRAME_EDGE = "rgba(15, 17, 22, 0.22)";
 const PROJECT_FRAME_SHADOW = "rgba(15, 17, 22, 0.30)";
 
 /**
- * Pasteboard margin in scene units: 2.5x the original band (five-sixths of
- * the shorter project side), clamped so DPR x Fabric's double canvas
- * backing store stays reasonable (~86MB at 1080p/DPR2, up from ~38MB).
- * Deliberately generous rather than infinite: the editor's minimum zoom is
- * 25%, so a fixed roomy band covers real parking/dragging without the
- * complexity of grow-on-demand.
+ * Interactive margin around the finished project, per axis, in scene units.
  */
-export function pasteboardMargin(
+export interface PasteboardMargins {
+  x: number;
+  y: number;
+}
+
+/**
+ * Margins that make the element fill the scroll area exactly at minimum
+ * zoom. minScale is the smallest element scale the UI allows
+ * (BASE_CANVAS_SCALE * MIN_CANVAS_ZOOM): margins are solved so that
+ * (project + 2 * margin) * minScale = area size - stage padding.
+ */
+export function marginsForViewport(args: {
+  areaWidth: number;
+  areaHeight: number;
+  minScale: number;
+  projectWidth: number;
+  projectHeight: number;
+}): PasteboardMargins {
+  const fitWidth = (args.areaWidth - PASTEBOARD_STAGE_PADDING) / args.minScale;
+  const fitHeight =
+    (args.areaHeight - PASTEBOARD_STAGE_PADDING) / args.minScale;
+  return {
+    x: Math.max(
+      PASTEBOARD_MARGIN_MIN,
+      Math.round((fitWidth - args.projectWidth) / 2),
+    ),
+    y: Math.max(
+      PASTEBOARD_MARGIN_MIN,
+      Math.round((fitHeight - args.projectHeight) / 2),
+    ),
+  };
+}
+
+/** Element size (project + margin on every side), in scene units. */
+export function pasteboardElementSize(
   projectWidth: number,
   projectHeight: number,
-): number {
-  const raw = Math.round((Math.min(projectWidth, projectHeight) / 3) * 2.5);
-  return Math.min(
-    PASTEBOARD_MARGIN_MAX,
-    Math.max(PASTEBOARD_MARGIN_MIN, raw),
-  );
+  margins: PasteboardMargins,
+): { width: number; height: number } {
+  return {
+    width: projectWidth + margins.x * 2,
+    height: projectHeight + margins.y * 2,
+  };
 }
 
 export interface ViewportState {
@@ -65,15 +102,15 @@ export interface ViewportState {
 
 /**
  * Origin-anchored viewport: the project frame's top-left sits at
- * (margin * scale) inside the enlarged element. panX/panY are the full
- * viewport translation (margin folded in), so existing scene<->element
- * math keeps working unchanged.
+ * (margins.x * scale, margins.y * scale) inside the enlarged element.
+ * panX/panY are the full viewport translation (margin folded in), so
+ * existing scene<->element math keeps working unchanged.
  */
 export function canonicalViewport(
   scale: number,
-  margin: number,
+  margins: PasteboardMargins,
 ): ViewportState {
-  return { scale, panX: margin * scale, panY: margin * scale };
+  return { scale, panX: margins.x * scale, panY: margins.y * scale };
 }
 
 export interface ZoomCursor {
@@ -92,13 +129,13 @@ export interface ZoomCursor {
 export function zoomViewport(args: {
   prev: ViewportState;
   scale: number;
-  margin: number;
+  margins: PasteboardMargins;
   cursor: ZoomCursor | null;
   rectAfter: { left: number; top: number } | null;
 }): ViewportState {
-  const { prev, scale, margin, cursor, rectAfter } = args;
+  const { prev, scale, margins, cursor, rectAfter } = args;
   if (!cursor || !rectAfter) {
-    return canonicalViewport(scale, margin);
+    return canonicalViewport(scale, margins);
   }
   const sceneX = (cursor.x - cursor.rectLeft - prev.panX) / prev.scale;
   const sceneY = (cursor.y - cursor.rectTop - prev.panY) / prev.scale;

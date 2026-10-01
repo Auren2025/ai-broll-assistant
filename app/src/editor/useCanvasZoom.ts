@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 
 export const BASE_CANVAS_SCALE = 0.5;
 export const ZOOM_STEP = 0.25;
-const MIN_CANVAS_ZOOM = 0.5;
+export const MIN_CANVAS_ZOOM = 0.5;
 const MAX_CANVAS_ZOOM = 6;
 
 function clampCanvasZoom(value: number): number {

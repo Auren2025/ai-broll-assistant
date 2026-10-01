@@ -89,6 +89,11 @@ export function paintLockedSelection(
   const active = canvas.getActiveObject();
   if (!active || active instanceof ActiveSelection) return;
   if (!active.visible || !isFabricObjectLocked(active)) return;
+  // Defensive: the WeakMap can go stale if a lock toggle races with a
+  // drag. The object's own lockMovementX is the source of truth for
+  // whether it's actually locked; never paint the locked chrome on a
+  // movable object.
+  if (!active.lockMovementX) return;
   paintLockedBorder(ctx, active);
   paintLockedXHandles(ctx, canvas, active);
 }

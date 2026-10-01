@@ -85,7 +85,9 @@ export function paintMultiSelectBorders(
   if (!(active instanceof ActiveSelection)) return;
   for (const member of active.getObjects()) {
     if (!member.visible) continue;
-    if (isFabricObjectLocked(member)) {
+    // See paintLockedSelection: lockMovementX is the source of truth;
+    // skip the locked chrome if the member is actually movable.
+    if (isFabricObjectLocked(member) && member.lockMovementX) {
       paintLockedBorder(ctx, member);
       paintLockedXHandles(ctx, canvas, member);
     } else {

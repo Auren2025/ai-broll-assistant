@@ -329,9 +329,7 @@ function App() {
 
       if (event.key === "Escape") {
         // Keynote: Esc exits group editing and deselects everything.
-        if (activeInsertionGroupId !== null) {
-          setSelectedLayerIds([]);
-        }
+        setSelectedLayerIds([]);
         setActiveInsertionGroupId(null);
         setSlideMenu(null);
         exitImageCrop();
@@ -403,7 +401,6 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    activeInsertionGroupId,
     exitImageCrop,
     handleCopySelection,
     handleDeleteSelection,

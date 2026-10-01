@@ -272,3 +272,81 @@ test("alignSceneLayers with only locked selected is a no-op", () => {
   const next = alignSceneLayers(scene, ["locked"], "horizontal-center", 1920, 1080);
   assert.equal(next, scene);
 });
+
+// --- parseScene legacy normalization ---
+
+const legacyAnimation = {
+  id: "enter-1",
+  phase: "enter",
+  preset: "fade-and-move",
+  startFrame: 0,
+  durationInFrames: 20,
+  easing: "ease-out",
+  direction: "bottom-to-top",
+  travelDistance: 0,
+} as const;
+
+function legacySceneInput() {
+  return {
+    schemaVersion: 1,
+    id: "scene-001",
+    name: "t",
+    startFrame: 0,
+    durationInFrames: 200,
+    layers: [
+      { ...rect("hidden-top", 0, 0, 0), visible: false },
+      { ...rect("locked-top", 200, 0, 1), locked: true, animations: [legacyAnimation] },
+      {
+        id: "group-1",
+        name: "Group 1",
+        type: "group",
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 60,
+        rotation: 0,
+        opacity: 1,
+        opacityEnabled: true,
+        blendMode: "normal",
+        zIndex: 2,
+        visible: false,
+        locked: false,
+        animations: [],
+        children: [
+          { ...rect("m1", 0, 0, 0), visible: false, locked: true, animations: [legacyAnimation] },
+          { ...rect("m2", 200, 0, 1) },
+        ],
+      },
+    ],
+  };
+}
+
+test("parseScene restores hidden layers and drops legacy member state", () => {
+  const scene = parseScene(legacySceneInput());
+  const byId = Object.fromEntries(scene.layers.map((layer) => [layer.id, layer]));
+
+  assert.equal(byId["hidden-top"]?.visible, true);
+  // Top-level lock and animations are preserved: only members are normalized.
+  assert.equal(byId["locked-top"]?.locked, true);
+  assert.equal(byId["locked-top"]?.animations.length, 1);
+
+  const group = byId["group-1"];
+  assert.ok(group?.type === "group");
+  assert.equal(group.visible, true);
+  const member = group.children.find((child) => child.id === "m1");
+  assert.ok(member);
+  assert.equal(member.visible, true);
+  assert.equal(member.locked, false);
+  assert.deepEqual(member.animations, []);
+  const cleanMember = group.children.find((child) => child.id === "m2");
+  assert.ok(cleanMember);
+  assert.equal(cleanMember.locked, false);
+  assert.deepEqual(cleanMember.animations, []);
+});
+
+test("parseScene leaves a clean scene value-identical", () => {
+  const scene = parseScene(legacySceneInput());
+  // A second parse of already-normalized data changes nothing.
+  const reparsed = parseScene(JSON.parse(JSON.stringify(scene)));
+  assert.deepEqual(reparsed, scene);
+});

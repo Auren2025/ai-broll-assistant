@@ -107,7 +107,7 @@ interface SceneLayerTreeProps {
   onLayerStateChange: (
     sceneId: string,
     layerId: string,
-    patch: { locked?: boolean; visible?: boolean },
+    patch: { locked?: boolean },
   ) => void;
 }
 
@@ -409,18 +409,6 @@ export function SceneLayerTree({
             <span aria-hidden="true" />
           </button>
           )}
-          <button
-            className={`layer-state-button layer-visibility-button${layer.visible ? " is-active" : ""}`}
-            type="button"
-            aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`}
-            aria-pressed={layer.visible}
-            disabled={!isCurrent || Boolean(parentGroup?.locked)}
-            onClick={() =>
-              onLayerStateChange(sceneId, layer.id, { visible: !layer.visible })
-            }
-          >
-            <span aria-hidden="true" />
-          </button>
         </div>
         {isGroup && isGroupExpanded ? (
           <div className="group-children" aria-label={`${layer.name} layers`}>

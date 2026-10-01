@@ -121,7 +121,7 @@ test("animations within one layer stay sorted by startFrame", () => {
   );
 });
 
-test("group children order follows zIndex within the group, after the group's own animations", () => {
+test("group timeline shows only the group's own animations", () => {
   const scene = sceneWith({
     id: "g",
     name: "g",
@@ -149,15 +149,15 @@ test("group children order follows zIndex within the group, after the group's ow
       },
     ],
   });
+  // Legacy member animations are cleared on load: members never own
+  // animations, so only the group's own animation row remains.
   const events = getTimelineEvents(scene.layers);
-  // Group's own animation first, then children by zIndex desc (childHigh
-  // before childLow), regardless of their startFrames.
   assert.deepEqual(
     events.map((e) => e.layer.id),
-    ["g", "childHigh", "childLow"],
+    ["g"],
   );
-  assert.deepEqual(events.map((e) => e.depth), [0, 1, 1]);
-  assert.deepEqual(events.map((e) => e.editable), [true, false, false]);
+  assert.deepEqual(events.map((e) => e.depth), [0]);
+  assert.deepEqual(events.map((e) => e.editable), [true]);
 });
 
 test("resolveSplitFrame snaps to the playhead when right-clicking near it", async () => {

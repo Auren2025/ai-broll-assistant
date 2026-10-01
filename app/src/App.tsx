@@ -203,7 +203,7 @@ function App() {
     (
       sceneId: string,
       layerId: string,
-      patch: { locked?: boolean; visible?: boolean },
+      patch: { locked?: boolean },
     ) => {
       if (!scene || scene.id !== sceneId) {
         return;

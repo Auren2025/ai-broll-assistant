@@ -18,6 +18,7 @@ import {
   installMultiSelectHitTesting,
   paintMultiSelectBorders,
 } from "./multiSelectBorders";
+import { installGroupHitTesting } from "./groupHitTest";
 import {
   applyLayerToFabricObject,
   applySelectionToCanvas,
@@ -45,9 +46,10 @@ import { useGestureCommit } from "./useGestureCommit";
 import { computeTextBoxSize } from "./textMetrics";
 import type { CanvasZoomCursor } from "./useCanvasZoom";
 import {
-  PASTEBOARD_BASE,
+  PASTEBOARD_DARK,
   canonicalViewport,
   paintPasteboardBase,
+  paintPasteboardDim,
   pasteboardMargin,
   zoomViewport,
 } from "./pasteboard";
@@ -234,6 +236,7 @@ export function FabricSceneCanvas({
     recordDrillPointerUp,
     onDrillGestureTransform,
     onDrillGestureEnd,
+    repaintDrillFrame,
   } = useGroupDrillIn({
     drillGroupId,
     layerIdToObjectRef,
@@ -436,6 +439,16 @@ export function FabricSceneCanvas({
     // Multi-select hit testing: only actual members grab the pointer, the
     // gaps between them behave as empty canvas.
     installMultiSelectHitTesting(canvas);
+    // Group hit testing: same Keynote rule — the pointer must land on a
+    // child inside the group to grab it; the group's empty frame gaps
+    // behave as empty canvas. The drilled-in group is excluded so its
+    // frame blank keeps drill semantics.
+    installGroupHitTesting(canvas, {
+      isDrillActiveGroup: (group) => {
+        const id = objectToLayerIdRef.current.get(group);
+        return id !== undefined && id === drillGroupIdRef.current;
+      },
+    });
 
     const initialViewport = canonicalViewport(displayScale, pasteboard);
     canvas.setViewportTransform([
@@ -580,6 +593,14 @@ export function FabricSceneCanvas({
     });
 
     canvas.on("after:render", ({ ctx }) => {
+      // Pasteboard dim: everything outside the project frame (including
+      // off-project objects and straddling ones' outer parts) dims to the
+      // dark gray, Keynote-style. The project frame itself is never dimmed.
+      paintPasteboardDim(canvas, ctx, { projectWidth, projectHeight });
+      // Re-brighten chrome painted above the dim: selection controls and
+      // the drill-in frame stay fully visible even off-project.
+      canvas.drawControls(ctx);
+      repaintDrillFrame(canvas, ctx);
       // Keynote-style multi-select: each member of an ActiveSelection paints
       // its own border + handles; there is no common outer frame.
       paintMultiSelectBorders(canvas, ctx);
@@ -819,6 +840,7 @@ export function FabricSceneCanvas({
     addFabricObject,
     canvasElementRef,
     displayScale,
+    drillGroupIdRef,
     exitDrillIfActive,
     handleCropDblClick,
     handleCropMouseDown,
@@ -834,6 +856,7 @@ export function FabricSceneCanvas({
     projectWidth,
     recordDrillPointerDown,
     recordDrillPointerUp,
+    repaintDrillFrame,
     resolveDblClickTarget,
     resolveDrillDragTarget,
     scene.id,
@@ -1129,7 +1152,7 @@ export function FabricSceneCanvas({
         width: canvasWidth,
         height: canvasHeight,
         overflow: "hidden",
-        background: PASTEBOARD_BASE,
+        background: PASTEBOARD_DARK,
       }}
     >
       <canvas ref={canvasElementRef} />

@@ -762,10 +762,11 @@ button {
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
-  /* Keynote-style pasteboard: one continuous gray field outside the
-     project. Must match PASTEBOARD_BASE in editor/pasteboard.ts so the
-     gray continues past the canvas element bounds with no visible edge. */
-  background: #d8d9de;
+  /* Keynote-style pasteboard: one continuous dark gray field outside the
+     project. Must match PASTEBOARD_DARK in editor/pasteboard.ts (the
+     PASTEBOARD_BASE + PASTEBOARD_DIM composite) so the dark gray continues
+     past the canvas element bounds with no visible edge. */
+  background: #939499;
 }
 
 .canvas-zoom-controls {

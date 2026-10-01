@@ -7,20 +7,32 @@ import type { Canvas } from "fabric";
  * Scene data: Scene (0,0) stays the project's top-left corner and the margin
  * is folded into the viewport pan, never persisted.
  *
- * The pasteboard is one continuous field, Keynote-style: the scroll area
- * behind the canvas element paints the same base color, so the gray extends
- * beyond the element bounds with no visible edge and no dimming. The project
- * frame reads as a card via its drop shadow plus a hairline edge.
+ * Keynote-style: the whole surround is one continuous dark gray field.
+ * The canvas element paints PASTEBOARD_BASE (lighter), then a translucent
+ * dim over everything outside the project frame — this dims both the base
+ * and any off-project objects. The scroll area behind the element paints
+ * PASTEBOARD_DARK (the base+dim composite) flat, so the dark field continues
+ * past the element bounds with no visible edge. The project frame reads as
+ * a card via its drop shadow plus a hairline edge.
  */
 
 export const PASTEBOARD_MARGIN_MIN = 160;
 export const PASTEBOARD_MARGIN_MAX = 400;
 
 /**
- * Base color of the pasteboard. Must match the .canvas-editor-area
- * background in App.css so the gray continues past the element bounds.
+ * Base color painted on the canvas element before the dim (editor only).
+ * Deliberately lighter than the final dark gray: the dim below darkens it
+ * to PASTEBOARD_DARK.
  */
 export const PASTEBOARD_BASE = "#d8d9de";
+/** Translucent dim painted over the pasteboard (editor only). */
+export const PASTEBOARD_DIM = "rgba(23, 25, 31, 0.36)";
+/**
+ * Final dark gray of the whole pasteboard field = PASTEBOARD_BASE +
+ * PASTEBOARD_DIM composite. The `.canvas-editor-area` scroll container paints
+ * this flat so the dark gray continues past the element bounds seamlessly.
+ */
+export const PASTEBOARD_DARK = "#939499";
 /** Hairline around the finished project frame. */
 export const PROJECT_FRAME_EDGE = "rgba(15, 17, 22, 0.22)";
 /** Soft drop shadow under the project frame (Keynote-like card). */
@@ -150,5 +162,71 @@ export function paintPasteboardBase(
   ctx.strokeStyle = PROJECT_FRAME_EDGE;
   ctx.lineWidth = 1;
   ctx.strokeRect(frame.x + 0.5, frame.y + 0.5, frame.width - 1, frame.height - 1);
+  ctx.restore();
+}
+
+/**
+ * The four rectangles around the project frame, in element pixels. Used by
+ * paintPasteboardDim; pure so it can be unit-tested.
+ */
+export function pasteboardDimRects(
+  elementWidth: number,
+  elementHeight: number,
+  frame: PixelRect,
+): PixelRect[] {
+  return [
+    // top band
+    { x: 0, y: 0, width: elementWidth, height: frame.y },
+    // bottom band
+    {
+      x: 0,
+      y: frame.y + frame.height,
+      width: elementWidth,
+      height: elementHeight - frame.y - frame.height,
+    },
+    // left strip
+    { x: 0, y: frame.y, width: frame.x, height: frame.height },
+    // right strip
+    {
+      x: frame.x + frame.width,
+      y: frame.y,
+      width: elementWidth - frame.x - frame.width,
+      height: frame.height,
+    },
+  ];
+}
+
+/**
+ * Dims the pasteboard after Fabric renders the objects (after:render), so
+ * layers parked outside the project frame — including ones crossing the
+ * frame edge — read as dimmed, Keynote-style. The project frame itself is
+ * never dimmed. Editor-only: preview and export render from Scene data.
+ *
+ * Selection controls and the drill-in frame are painted above the dim and
+ * re-brightened afterwards, so they stay fully visible.
+ */
+export function paintPasteboardDim(
+  canvas: Canvas,
+  ctx: CanvasRenderingContext2D,
+  args: { projectWidth: number; projectHeight: number },
+): void {
+  const vpt = canvas.viewportTransform;
+  const frame = projectFrameRect({
+    scale: vpt[0],
+    panX: vpt[4],
+    panY: vpt[5],
+    projectWidth: args.projectWidth,
+    projectHeight: args.projectHeight,
+  });
+  const rects = pasteboardDimRects(
+    canvas.getWidth(),
+    canvas.getHeight(),
+    frame,
+  );
+  ctx.save();
+  ctx.fillStyle = PASTEBOARD_DIM;
+  for (const r of rects) {
+    if (r.width > 0 && r.height > 0) ctx.fillRect(r.x, r.y, r.width, r.height);
+  }
   ctx.restore();
 }

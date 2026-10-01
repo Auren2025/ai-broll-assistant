@@ -952,7 +952,9 @@ export function FabricSceneCanvas({
       if (!editingObject) {
         canvas.discardActiveObject();
       }
-      canvas.backgroundColor = scene.backgroundColor ?? "#000000";
+      // Note: the scene background is painted by paintPasteboardBase in
+      // before:render (project frame only); canvas.backgroundColor must
+      // stay unset so it doesn't cover the pasteboard.
 
       const entries = computeDrillEntries(scene.layers, drillGroupId);
       const topLevelIds = new Set(entries.map((entry) => entry.layer.id));

@@ -104,14 +104,27 @@ export function ScenePropertiesPanel({
             aria-label="Project name"
             maxLength={120}
             value={projectNameInput}
+            // Buffered like BufferedNumberInput: typing only edits the
+            // draft; one commit (one undo step) happens on blur/Enter.
             onChange={(event) => {
               setProjectNameInput(event.currentTarget.value);
+            }}
+            onBlur={(event) => {
               const value = event.currentTarget.value.trim();
-              if (value.length > 0) {
+              if (value.length > 0 && value !== project.name) {
                 onProjectChange({ ...project, name: value });
+              } else {
+                setProjectNameInput(project.name);
               }
             }}
-            onBlur={() => setProjectNameInput(project.name)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                setProjectNameInput(project.name);
+                event.currentTarget.blur();
+              }
+            }}
           />
         </label>
         <div className="scene-design-row">

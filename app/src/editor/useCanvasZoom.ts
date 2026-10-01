@@ -64,7 +64,18 @@ export function useCanvasZoom(
     zoom,
     cursorRef,
     zoomBy(delta: number) {
-      cursorRef.current = null;
+      // Anchor button zoom to the canvas center (via the same cursor math
+      // pinch uses) so content doesn't drift toward the top-left origin.
+      const canvasElement = canvasElementRef.current;
+      const rect = canvasElement?.getBoundingClientRect();
+      cursorRef.current = rect
+        ? {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            rectLeft: rect.left,
+            rectTop: rect.top,
+          }
+        : null;
       setZoom((current) => clampCanvasZoom(current + delta));
     },
     resetZoom() {

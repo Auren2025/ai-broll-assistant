@@ -839,6 +839,12 @@ export function FabricSceneCanvas({
       panX = cursor.x - rectAfter.left - sceneX * scale;
       panY = cursor.y - rectAfter.top - sceneY * scale;
     }
+    // The cursor is single-use: without this, a later re-run of this effect
+    // (scene switch, project resize, …) would re-apply a stale anchor and
+    // jump the content. No cursor means the canonical origin-anchored state.
+    if (zoomCursorRef) {
+      zoomCursorRef.current = null;
+    }
 
     canvas.setViewportTransform([scale, 0, 0, scale, panX, panY]);
     setViewportTransform({ scale, panX, panY });

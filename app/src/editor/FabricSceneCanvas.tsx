@@ -48,7 +48,6 @@ import { computeTextBoxSize } from "./textMetrics";
 import {
   BASE_CANVAS_SCALE,
   MIN_CANVAS_ZOOM,
-  type CanvasZoomCursor,
 } from "./useCanvasZoom";
 import {
   PASTEBOARD_DARK,
@@ -58,7 +57,6 @@ import {
   paintPasteboardBase,
   paintPasteboardDim,
   pasteboardElementSize,
-  zoomViewport,
   type PasteboardMargins,
 } from "./pasteboard";
 
@@ -72,11 +70,10 @@ export interface FabricCanvasDocument {
   projectHeight: number;
   displayScale?: number;
   zoom?: number;
-  zoomCursorRef?: { current: CanvasZoomCursor | null };
   /**
-   * Bumped by useCanvasZoom.resetZoom on every Fit click. Lets the zoom
-   * effect re-run (and recenter the scroll) even when the zoom value itself
-   * does not change.
+   * Bumped by useCanvasZoom.resetZoom on every Fit click. Lets the
+   * centering effect re-run (and recenter the scroll) even when the zoom
+   * value itself does not change.
    */
   fitSeq?: number;
   /** Canvas element owned by App so the pinch-zoom handler can measure it. */
@@ -158,7 +155,6 @@ export function FabricSceneCanvas({
     projectHeight,
     displayScale = 0.5,
     zoom = 1,
-    zoomCursorRef,
     fitSeq = 0,
     canvasElementRef,
     onSceneChange,
@@ -197,6 +193,10 @@ export function FabricSceneCanvas({
     y: PASTEBOARD_MARGIN_MIN,
   }));
   const marginsRef = useRef(margins);
+  // Live size of the scroll area (the timeline splitter and window resizes
+  // change it). Tracked in state so the centering layout effect below can
+  // re-run after every geometry change and keep the project centered.
+  const [areaSize, setAreaSize] = useState({ width: 0, height: 0 });
   const elementScale = displayScale * zoom;
   const elementSceneSize = pasteboardElementSize(
     projectWidth,
@@ -277,21 +277,26 @@ export function FabricSceneCanvas({
         width: size.width * scale,
         height: size.height * scale,
       });
-      // Shift the existing pan by the margin growth so the layout stays
-      // symmetric (project centered in the element). The user's anchor is
-      // preserved: a cursor-anchored zoom pan is shifted, not reset.
-      const nextPanX = canvas.viewportTransform[4] + (grown.x - prev.x) * scale;
-      const nextPanY = canvas.viewportTransform[5] + (grown.y - prev.y) * scale;
-      canvas.setViewportTransform([scale, 0, 0, scale, nextPanX, nextPanY]);
-      setViewportTransform({ scale, panX: nextPanX, panY: nextPanY });
-      // Keep the same content under the viewport: the element grew by
-      // (grown - prev) * scale px on the top and left.
-      area.scrollLeft += (grown.x - prev.x) * scale;
-      area.scrollTop += (grown.y - prev.y) * scale;
+      // Center-zoom: on margin growth the pan resets to canonical — the
+      // project never moves, only the element around it grows. The
+      // centering layout effect below then recenters the scroll.
+      const canonical = canonicalViewport(scale, grown);
+      canvas.setViewportTransform([
+        scale,
+        0,
+        0,
+        scale,
+        canonical.panX,
+        canonical.panY,
+      ]);
+      setViewportTransform(canonical);
       canvas.requestRenderAll();
     };
     syncMargins();
-    const observer = new ResizeObserver(() => syncMargins());
+    const observer = new ResizeObserver(() => {
+      setAreaSize({ width: area.clientWidth, height: area.clientHeight });
+      syncMargins();
+    });
     observer.observe(area);
     return () => observer.disconnect();
   }, [canvasElementRef, projectWidth, projectHeight]);
@@ -972,8 +977,6 @@ export function FabricSceneCanvas({
     }
 
     const scale = displayScale * zoom;
-    const cursor = zoomCursorRef?.current;
-    const canvasElement = canvasElementRef.current;
     const marginsNow = marginsRef.current;
     const zoomElementSize = pasteboardElementSize(
       projectWidth,
@@ -986,30 +989,11 @@ export function FabricSceneCanvas({
       height: zoomElementSize.height * scale,
     });
 
-    // Zoom toward the cursor: keep the scene point under the pointer fixed.
-    // The cursor's rect was captured in the wheel handler before React
-    // re-rendered; measuring here would see the already-resized
-    // (flex-centered, therefore repositioned) layout paired with the old
-    // viewport transform, which made pinch zoom drift.
-    const rectAfter =
-      cursor && canvasElement ? canvasElement.getBoundingClientRect() : null;
-    const next = zoomViewport({
-      prev: {
-        scale: canvas.viewportTransform[0],
-        panX: canvas.viewportTransform[4],
-        panY: canvas.viewportTransform[5],
-      },
-      scale,
-      margins: marginsNow,
-      cursor: cursor ?? null,
-      rectAfter,
-    });
-    // The cursor is single-use: without this, a later re-run of this effect
-    // (scene switch, project resize, …) would re-apply a stale anchor and
-    // jump the content. No cursor means the canonical margin-folded origin.
-    if (zoomCursorRef) {
-      zoomCursorRef.current = null;
-    }
+    // Center-zoom: the project is always centered in the visible area, so
+    // zoom only changes its size. The pan re-anchors to the canonical
+    // margin-folded origin; the centering layout effect below keeps the DOM
+    // scroll centered on the project.
+    const next = canonicalViewport(scale, marginsNow);
 
     canvas.setViewportTransform([
       next.scale,
@@ -1021,30 +1005,40 @@ export function FabricSceneCanvas({
     ]);
     setViewportTransform(next);
     canvas.requestRenderAll();
-    // No cursor (mount, Fit, scene switch) means "restore the canonical
-    // view": the pan was re-anchored to the margin-folded origin above, and
-    // the project sits centered in the pasteboard element by construction,
-    // so centering the scroll content centers the project. Without this,
-    // Fit from a fitted state (25%: scroll pinned at 0,0) leaves the scroll
-    // behind and the project lands stranded in the bottom-right corner.
-    // Cursor-anchored zooms (+/-, wheel, pinch) intentionally skip this —
-    // the anchor already keeps the view stable.
-    if (!cursor) {
-      const area = canvasElement?.closest(".canvas-editor-area");
-      if (area) {
-        area.scrollLeft = (area.scrollWidth - area.clientWidth) / 2;
-        area.scrollTop = (area.scrollHeight - area.clientHeight) / 2;
-      }
-    }
   }, [
     canvasElementRef,
     displayScale,
-    fitSeq,
     projectHeight,
     projectWidth,
     scene.id,
     zoom,
-    zoomCursorRef,
+  ]);
+
+  // The project is always centered in the viewport: zoom only changes its
+  // size, never its position. Re-center the scroll whenever the geometry
+  // changes — zoom, Fit, scene switch, project resize, margin growth, or
+  // the area itself resizing (timeline splitter, window). Manual panning
+  // via the scrollbars is the user's own action and is left alone; the next
+  // geometry change recenters.
+  // The project sits centered in the pasteboard element by construction
+  // (symmetric margins), so centering the scroll content centers the
+  // project — no margin math needed.
+  useLayoutEffect(() => {
+    const area = canvasElementRef.current?.closest(".canvas-editor-area");
+    if (!(area instanceof HTMLElement)) {
+      return;
+    }
+    area.scrollLeft = (area.scrollWidth - area.clientWidth) / 2;
+    area.scrollTop = (area.scrollHeight - area.clientHeight) / 2;
+  }, [
+    areaSize,
+    canvasElementRef,
+    fitSeq,
+    margins,
+    projectHeight,
+    projectWidth,
+    scene.id,
+    zoom,
   ]);
 
   useEffect(() => {

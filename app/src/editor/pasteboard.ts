@@ -113,39 +113,6 @@ export function canonicalViewport(
   return { scale, panX: margins.x * scale, panY: margins.y * scale };
 }
 
-export interface ZoomCursor {
-  x: number;
-  y: number;
-  rectLeft: number;
-  rectTop: number;
-}
-
-/**
- * Zoom math, extracted as a pure function so pinch/button zoom can be
- * unit-tested: without a cursor the viewport re-anchors to the canonical
- * margin-folded origin; with a cursor the scene point under the pointer
- * stays fixed across the scale change.
- */
-export function zoomViewport(args: {
-  prev: ViewportState;
-  scale: number;
-  margins: PasteboardMargins;
-  cursor: ZoomCursor | null;
-  rectAfter: { left: number; top: number } | null;
-}): ViewportState {
-  const { prev, scale, margins, cursor, rectAfter } = args;
-  if (!cursor || !rectAfter) {
-    return canonicalViewport(scale, margins);
-  }
-  const sceneX = (cursor.x - cursor.rectLeft - prev.panX) / prev.scale;
-  const sceneY = (cursor.y - cursor.rectTop - prev.panY) / prev.scale;
-  return {
-    scale,
-    panX: cursor.x - rectAfter.left - sceneX * scale,
-    panY: cursor.y - rectAfter.top - sceneY * scale,
-  };
-}
-
 export interface PixelRect {
   x: number;
   y: number;

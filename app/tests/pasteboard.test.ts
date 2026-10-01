@@ -10,7 +10,6 @@ import {
   marginsForViewport,
   pasteboardElementSize,
   canonicalViewport,
-  zoomViewport,
   projectFrameRect,
 } from "../src/editor/pasteboard.ts";
 
@@ -69,43 +68,17 @@ test("canonicalViewport folds the per-axis margins into the pan", () => {
   });
 });
 
-test("zoomViewport without a cursor re-anchors to the canonical origin", () => {
-  const next = zoomViewport({
-    prev: { scale: 1, panX: 999, panY: 999 },
-    scale: 1,
-    margins: { x: 1000, y: 544 },
-    cursor: null,
-    rectAfter: null,
-  });
+test("center-zoom always re-anchors to the canonical origin", () => {
+  // Zoom is always center-zoom now: no cursor anchoring. The viewport
+  // re-anchors to the canonical margin-folded origin on every zoom, and a
+  // layout effect centers the DOM scroll — together the project never
+  // moves, only resizes.
+  const next = canonicalViewport(1, { x: 1000, y: 544 });
   assert.deepEqual(next, { scale: 1, panX: 1000, panY: 544 });
 });
 
-test("zoomViewport keeps the scene point under the cursor fixed", () => {
-  const margins = { x: 1000, y: 544 };
-  const prev = canonicalViewport(0.5, margins);
-  // Cursor at element pixel (400, 300); the rect it was measured against
-  // starts at (50, 60) in client coords.
-  const cursor = { x: 400, y: 300, rectLeft: 50, rectTop: 60 };
-  // After resize the element's top-left moved to (40, 55).
-  const rectAfter = { left: 40, top: 55 };
-  const next = zoomViewport({ prev, scale: 1, margins, cursor, rectAfter });
-
-  const sceneX = (cursor.x - cursor.rectLeft - prev.panX) / prev.scale;
-  const sceneY = (cursor.y - cursor.rectTop - prev.panY) / prev.scale;
-  // The same scene point maps back to the cursor under the new viewport.
-  assert.equal(next.panX + sceneX * next.scale, cursor.x - rectAfter.left);
-  assert.equal(next.panY + sceneY * next.scale, cursor.y - rectAfter.top);
-});
-
-test("zoomViewport with zero margins matches the old origin-anchored behavior", () => {
-  const prev = { scale: 1, panX: 0, panY: 0 };
-  const next = zoomViewport({
-    prev,
-    scale: 2,
-    margins: { x: 0, y: 0 },
-    cursor: null,
-    rectAfter: null,
-  });
+test("canonicalViewport with zero margins keeps the origin anchored", () => {
+  const next = canonicalViewport(2, { x: 0, y: 0 });
   assert.deepEqual(next, { scale: 2, panX: 0, panY: 0 });
 });
 

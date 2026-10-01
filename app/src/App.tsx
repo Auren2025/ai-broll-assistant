@@ -114,48 +114,13 @@ function App() {
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
-  const canvasZoom = useCanvasZoom(canvasAreaRef, canvasElementRef, isPreviewMode, Boolean(project && scene));
+  const canvasZoom = useCanvasZoom(canvasAreaRef, isPreviewMode, Boolean(project && scene));
 
   // Center the project frame in the scroll area when a scene opens. The
-  // canvas element now includes the pasteboard margin, so without this the
-  // initial view would land on the pasteboard's top-left corner. Runs after
-  // the canvas's own resize effect (child effects first), so the element
-  // already has its new size here.
-  const openSceneId = scene?.id;
-  const openProjectId = project?.id;
-  const openProjectWidth = project?.width;
-  const openProjectHeight = project?.height;
-  const lastCenteredSceneRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      isPreviewMode ||
-      !openProjectId ||
-      !openSceneId ||
-      openProjectWidth === undefined ||
-      openProjectHeight === undefined
-    ) {
-      return;
-    }
-    const openKey = `${openProjectId}:${openSceneId}`;
-    // Center once per opened scene: re-centering on every zoom tick would
-    // fight zoom-to-cursor, so zoom stays a dep only for the lint.
-    if (lastCenteredSceneRef.current === openKey) return;
-    lastCenteredSceneRef.current = openKey;
-    const area = canvasAreaRef.current;
-    if (!area) return;
-    // The project is centered in the canvas element by construction
-    // (symmetric pasteboard margins), so centering the scroll content
-    // centers the project — no margin math needed.
-    area.scrollLeft = (area.scrollWidth - area.clientWidth) / 2;
-    area.scrollTop = (area.scrollHeight - area.clientHeight) / 2;
-  }, [
-    isPreviewMode,
-    openSceneId,
-    openProjectId,
-    openProjectWidth,
-    openProjectHeight,
-    canvasZoom.zoom,
-  ]);
+  // Centering lives in FabricSceneCanvas's centering layout effect (the
+  // project is always centered; zoom only changes its size). It covers
+  // mount, scene switch, zoom, Fit, project resize, and area resizes, so no
+  // centering logic is needed here.
   const handleOpenPreviewWindow = usePreviewWindow(project, scene, isDirty);
   const previewPlayerRef = useRef<PlayerRef | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);
@@ -863,7 +828,6 @@ function App() {
                       projectHeight: project.height,
                       displayScale: BASE_CANVAS_SCALE,
                       zoom: canvasZoom.zoom,
-                      zoomCursorRef: canvasZoom.cursorRef,
                       fitSeq: canvasZoom.fitSeq,
                       canvasElementRef,
                       onSceneChange: handleSceneChange,

@@ -16,8 +16,8 @@ import type { Canvas } from "fabric";
  * a card via its drop shadow plus a hairline edge.
  */
 
-export const PASTEBOARD_MARGIN_MIN = 160;
-export const PASTEBOARD_MARGIN_MAX = 400;
+export const PASTEBOARD_MARGIN_MIN = 400;
+export const PASTEBOARD_MARGIN_MAX = 1000;
 
 /**
  * Base color painted on the canvas element before the dim (editor only).
@@ -39,14 +39,18 @@ export const PROJECT_FRAME_EDGE = "rgba(15, 17, 22, 0.22)";
 const PROJECT_FRAME_SHADOW = "rgba(15, 17, 22, 0.30)";
 
 /**
- * Pasteboard margin in scene units: a third of the shorter project side,
- * clamped so DPR x Fabric's double canvas backing store stays reasonable.
+ * Pasteboard margin in scene units: 2.5x the original band (five-sixths of
+ * the shorter project side), clamped so DPR x Fabric's double canvas
+ * backing store stays reasonable (~86MB at 1080p/DPR2, up from ~38MB).
+ * Deliberately generous rather than infinite: the editor's minimum zoom is
+ * 25%, so a fixed roomy band covers real parking/dragging without the
+ * complexity of grow-on-demand.
  */
 export function pasteboardMargin(
   projectWidth: number,
   projectHeight: number,
 ): number {
-  const raw = Math.round(Math.min(projectWidth, projectHeight) / 3);
+  const raw = Math.round((Math.min(projectWidth, projectHeight) / 3) * 2.5);
   return Math.min(
     PASTEBOARD_MARGIN_MAX,
     Math.max(PASTEBOARD_MARGIN_MIN, raw),

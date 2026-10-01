@@ -13,9 +13,9 @@ import {
   projectFrameRect,
 } from "../src/editor/pasteboard.ts";
 
-test("pasteboardMargin is a third of the shorter side, clamped", () => {
-  assert.equal(pasteboardMargin(1920, 1080), 360);
-  assert.equal(pasteboardMargin(1080, 1920), 360);
+test("pasteboardMargin is 2.5x the old band (five-sixths of the shorter side), clamped", () => {
+  assert.equal(pasteboardMargin(1920, 1080), 900);
+  assert.equal(pasteboardMargin(1080, 1920), 900);
   // Tiny project: clamped to the minimum.
   assert.equal(pasteboardMargin(200, 200), PASTEBOARD_MARGIN_MIN);
   // Huge project: clamped to the maximum so the backing store stays sane.

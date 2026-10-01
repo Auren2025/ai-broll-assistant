@@ -38,6 +38,7 @@ import {
 } from "./editor/SceneLayerTree";
 import { usePreviewWindow } from "./preview/usePreviewWindow";
 import { BASE_CANVAS_SCALE, ZOOM_STEP, useCanvasZoom } from "./editor/useCanvasZoom";
+import { pasteboardMargin } from "./editor/pasteboard";
 import { MIN_TIMELINE_HEIGHT, useTimelineResize } from "./editor/useTimelineResize";
 
 import { useLayerCommands, type AddableLayerType } from "./editor/layerCommands";
@@ -115,6 +116,48 @@ function App() {
   const canvasAreaRef = useRef<HTMLDivElement | null>(null);
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const canvasZoom = useCanvasZoom(canvasAreaRef, canvasElementRef, isPreviewMode, Boolean(project && scene));
+
+  // Center the project frame in the scroll area when a scene opens. The
+  // canvas element now includes the pasteboard margin, so without this the
+  // initial view would land on the pasteboard's top-left corner. Runs after
+  // the canvas's own resize effect (child effects first), so the element
+  // already has its new size here.
+  const openSceneId = scene?.id;
+  const openProjectId = project?.id;
+  const openProjectWidth = project?.width;
+  const openProjectHeight = project?.height;
+  const lastCenteredSceneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      isPreviewMode ||
+      !openProjectId ||
+      !openSceneId ||
+      openProjectWidth === undefined ||
+      openProjectHeight === undefined
+    ) {
+      return;
+    }
+    const openKey = `${openProjectId}:${openSceneId}`;
+    // Center once per opened scene: re-centering on every zoom tick would
+    // fight zoom-to-cursor, so zoom stays a dep only for the lint.
+    if (lastCenteredSceneRef.current === openKey) return;
+    lastCenteredSceneRef.current = openKey;
+    const area = canvasAreaRef.current;
+    if (!area) return;
+    const scale = BASE_CANVAS_SCALE * canvasZoom.zoom;
+    const margin = pasteboardMargin(openProjectWidth, openProjectHeight);
+    area.scrollLeft =
+      (margin + openProjectWidth / 2) * scale - area.clientWidth / 2;
+    area.scrollTop =
+      (margin + openProjectHeight / 2) * scale - area.clientHeight / 2;
+  }, [
+    isPreviewMode,
+    openSceneId,
+    openProjectId,
+    openProjectWidth,
+    openProjectHeight,
+    canvasZoom.zoom,
+  ]);
   const handleOpenPreviewWindow = usePreviewWindow(project, scene, isDirty);
   const previewPlayerRef = useRef<PlayerRef | null>(null);
   const clipboardLayersRef = useRef<Layer[] | null>(null);

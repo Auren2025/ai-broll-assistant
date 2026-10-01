@@ -41,6 +41,14 @@ import { useGroupDrillIn } from "./useGroupDrillIn";
 import { useGestureCommit } from "./useGestureCommit";
 import { computeTextBoxSize } from "./textMetrics";
 import type { CanvasZoomCursor } from "./useCanvasZoom";
+import {
+  PASTEBOARD_BASE,
+  canonicalViewport,
+  paintPasteboardBase,
+  paintPasteboardDim,
+  pasteboardMargin,
+  zoomViewport,
+} from "./pasteboard";
 
 registerFabricObjectClasses();
 
@@ -160,6 +168,12 @@ export function FabricSceneCanvas({
     onMagicMoveTranslationCommit,
   } = animation;
   const fabricCanvasRef = useRef<Canvas | null>(null);
+  // Pasteboard margin (scene units) folded into the viewport pan: the
+  // canvas element is the project frame plus this margin on every side.
+  const pasteboard = pasteboardMargin(projectWidth, projectHeight);
+  const elementScale = displayScale * zoom;
+  const elementWidth = (projectWidth + pasteboard * 2) * elementScale;
+  const elementHeight = (projectHeight + pasteboard * 2) * elementScale;
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
   // Shift-drag axis lock: the dragged's center when Shift is first detected
@@ -181,11 +195,9 @@ export function FabricSceneCanvas({
     ((layerId: string, text: string, width: number, height: number) => void) |
       undefined
   >(undefined);
-  const [viewportTransform, setViewportTransform] = useState({
-    scale: displayScale,
-    panX: 0,
-    panY: 0,
-  });
+  const [viewportTransform, setViewportTransform] = useState(() =>
+    canonicalViewport(displayScale, pasteboard),
+  );
   const {
     magicMoveContext,
     viewportPath,
@@ -218,6 +230,7 @@ export function FabricSceneCanvas({
     resolveDrillDragTarget,
     recordDrillPointerDown,
     recordDrillPointerUp,
+    repaintDrillFrame,
     onDrillGestureTransform,
     onDrillGestureEnd,
   } = useGroupDrillIn({
@@ -407,9 +420,11 @@ export function FabricSceneCanvas({
     }
 
     const canvas = new Canvas(canvasElement, {
-      width: projectWidth * displayScale,
-      height: projectHeight * displayScale,
-      backgroundColor: sceneRef.current.backgroundColor ?? "#000000",
+      width: (projectWidth + pasteboard * 2) * displayScale,
+      height: (projectHeight + pasteboard * 2) * displayScale,
+      // The backdrop (pasteboard base + project frame) is painted in
+      // before:render; a flat backgroundColor would cover the whole
+      // enlarged element and hide the project/pasteboard boundary.
       fireRightClick: true,
       selection: true,
       selectionKey: "shiftKey",
@@ -417,8 +432,16 @@ export function FabricSceneCanvas({
       preserveObjectStacking: true,
     });
 
-    canvas.setViewportTransform([displayScale, 0, 0, displayScale, 0, 0]);
-    setViewportTransform({ scale: displayScale, panX: 0, panY: 0 });
+    const initialViewport = canonicalViewport(displayScale, pasteboard);
+    canvas.setViewportTransform([
+      initialViewport.scale,
+      0,
+      0,
+      initialViewport.scale,
+      initialViewport.panX,
+      initialViewport.panY,
+    ]);
+    setViewportTransform(initialViewport);
     fabricCanvasRef.current = canvas;
     const objectToLayerId = objectToLayerIdRef.current;
     const layerIdToObject = layerIdToObjectRef.current;
@@ -541,9 +564,29 @@ export function FabricSceneCanvas({
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
 
-    // Keynote-style multi-select: each member of an ActiveSelection paints
-    // its own border + handles; there is no common outer frame.
+    // Editor backdrop: the pasteboard base and the project frame sit under
+    // every object (before:render); the pasteboard dim goes over them.
+    canvas.on("before:render", ({ ctx }) => {
+      paintPasteboardBase(canvas, ctx, {
+        projectWidth,
+        projectHeight,
+        backgroundColor: sceneRef.current.backgroundColor ?? "#000000",
+      });
+    });
+
     canvas.on("after:render", ({ ctx }) => {
+      // renderTop (rubber-band selection) reuses after:render on the top
+      // context: the dim and chrome re-brightening belong on the main
+      // context only.
+      if (ctx === canvas.getContext()) {
+        paintPasteboardDim(canvas, ctx, { projectWidth, projectHeight });
+        // The dim just covered the native selection chrome; repaint it
+        // bright so borders and handles never dim with the element.
+        canvas.drawControls(ctx);
+        repaintDrillFrame(canvas, ctx);
+      }
+      // Keynote-style multi-select: each member of an ActiveSelection paints
+      // its own border + handles; there is no common outer frame.
       paintMultiSelectBorders(canvas, ctx);
     });
 
@@ -791,10 +834,12 @@ export function FabricSceneCanvas({
     onDrillGestureEnd,
     onDrillGestureTransform,
     onSelectedLayerIdsChange,
+    pasteboard,
     projectHeight,
     projectWidth,
     recordDrillPointerDown,
     recordDrillPointerUp,
+    repaintDrillFrame,
     resolveDblClickTarget,
     resolveDrillDragTarget,
     scene.id,
@@ -812,46 +857,51 @@ export function FabricSceneCanvas({
     const scale = displayScale * zoom;
     const cursor = zoomCursorRef?.current;
     const canvasElement = canvasElementRef.current;
-    // The rect the cursor was captured against: measured in the wheel handler
-    // before React re-rendered. Measuring here would see the already-resized
-    // (flex-centered, therefore repositioned) layout paired with the old
-    // viewport transform, which made pinch zoom drift.
-    const rectBefore = cursor
-      ? { left: cursor.rectLeft, top: cursor.rectTop }
-      : null;
 
     canvas.setDimensions({
-      width: projectWidth * scale,
-      height: projectHeight * scale,
+      width: (projectWidth + pasteboard * 2) * scale,
+      height: (projectHeight + pasteboard * 2) * scale,
     });
 
-    let panX = 0;
-    let panY = 0;
-
     // Zoom toward the cursor: keep the scene point under the pointer fixed.
-    if (cursor && canvasElement && rectBefore) {
-      const currentScale = canvas.viewportTransform[0];
-      const currentPanX = canvas.viewportTransform[4];
-      const currentPanY = canvas.viewportTransform[5];
-      const sceneX = (cursor.x - rectBefore.left - currentPanX) / currentScale;
-      const sceneY = (cursor.y - rectBefore.top - currentPanY) / currentScale;
-      const rectAfter = canvasElement.getBoundingClientRect();
-      panX = cursor.x - rectAfter.left - sceneX * scale;
-      panY = cursor.y - rectAfter.top - sceneY * scale;
-    }
+    // The cursor's rect was captured in the wheel handler before React
+    // re-rendered; measuring here would see the already-resized
+    // (flex-centered, therefore repositioned) layout paired with the old
+    // viewport transform, which made pinch zoom drift.
+    const rectAfter =
+      cursor && canvasElement ? canvasElement.getBoundingClientRect() : null;
+    const next = zoomViewport({
+      prev: {
+        scale: canvas.viewportTransform[0],
+        panX: canvas.viewportTransform[4],
+        panY: canvas.viewportTransform[5],
+      },
+      scale,
+      margin: pasteboard,
+      cursor: cursor ?? null,
+      rectAfter,
+    });
     // The cursor is single-use: without this, a later re-run of this effect
     // (scene switch, project resize, …) would re-apply a stale anchor and
-    // jump the content. No cursor means the canonical origin-anchored state.
+    // jump the content. No cursor means the canonical margin-folded origin.
     if (zoomCursorRef) {
       zoomCursorRef.current = null;
     }
 
-    canvas.setViewportTransform([scale, 0, 0, scale, panX, panY]);
-    setViewportTransform({ scale, panX, panY });
+    canvas.setViewportTransform([
+      next.scale,
+      0,
+      0,
+      next.scale,
+      next.panX,
+      next.panY,
+    ]);
+    setViewportTransform(next);
     canvas.requestRenderAll();
   }, [
     canvasElementRef,
     displayScale,
+    pasteboard,
     projectHeight,
     projectWidth,
     scene.id,
@@ -1073,8 +1123,8 @@ export function FabricSceneCanvas({
     }
   }, [addFabricObject, applyDrillPresentation, drillGroupId, invalidateDrillFrame, isDrillFrameObject, reapplyCropVisuals, scene, selectedLayerIds, syncDrillBoundary]);
 
-  const canvasWidth = projectWidth * displayScale * zoom;
-  const canvasHeight = projectHeight * displayScale * zoom;
+  const canvasWidth = elementWidth;
+  const canvasHeight = elementHeight;
 
   return (
     <div
@@ -1083,7 +1133,7 @@ export function FabricSceneCanvas({
         width: canvasWidth,
         height: canvasHeight,
         overflow: "hidden",
-        background: scene.backgroundColor ?? "#000000",
+        background: PASTEBOARD_BASE,
       }}
     >
       <canvas ref={canvasElementRef} />

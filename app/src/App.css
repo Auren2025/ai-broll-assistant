@@ -852,13 +852,15 @@ button {
   min-width: 100%;
   min-height: 100%;
   width: max-content;
-  align-items: center;
-  justify-content: center;
   padding: 20px;
 }
 
 .canvas-frame {
   flex: 0 0 auto;
+  /* Safe centering: margin auto centers the frame while it fits, and
+     collapses to zero when it overflows so the top/left stay reachable
+     by scrolling (justify-content: center would clip them). */
+  margin: auto;
   position: relative;
   background: #fff;
   box-shadow:

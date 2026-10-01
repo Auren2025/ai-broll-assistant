@@ -67,6 +67,12 @@ export interface GroupDrillInApi {
   syncDrillBoundary: (canvas: Canvas) => void;
   /** Show/hide the drill frame without recomputing it. */
   setDrillFrameVisible: (canvas: Canvas, visible: boolean) => void;
+  /**
+   * Repaint the drill frame bright after the pasteboard dim (after:render):
+   * the frame is a plain canvas object, so the dim covers it when the
+   * group straddles the project edge.
+   */
+  repaintDrillFrame: (canvas: Canvas, ctx: CanvasRenderingContext2D) => void;
   /** True while a drill-in session is active. */
   isDrilling: () => boolean;
   /** Hide the drill frame while a child is being transformed. */
@@ -563,10 +569,29 @@ export function useGroupDrillIn(
     [objectToLayerIdRef, resolveDrillChildTarget],
   );
 
+  const repaintDrillFrame = useCallback(
+    (canvas: Canvas, ctx: CanvasRenderingContext2D): void => {
+      // The pasteboard dim (after:render) covers the drill frame when the
+      // group straddles the project edge; repaint it bright so the drill
+      // scope marker never dims with the element. The frame is a plain
+      // canvas object, so render it under the current viewport transform,
+      // mirroring the main render pass.
+      const frame = drillFrameRef.current;
+      if (!frame || !frame.visible) return;
+      const vpt = canvas.viewportTransform;
+      ctx.save();
+      ctx.transform(vpt[0], vpt[1], vpt[2], vpt[3], vpt[4], vpt[5]);
+      frame.render(ctx);
+      ctx.restore();
+    },
+    [],
+  );
+
   return {
     drillGroupIdRef,
     syncDrillBoundary,
     setDrillFrameVisible,
+    repaintDrillFrame,
     isDrilling,
     onDrillGestureTransform,
     onDrillGestureEnd,

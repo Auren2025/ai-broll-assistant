@@ -10,6 +10,7 @@ import {
   moveLayerTo,
   reorderSelectedLayersZIndex,
   ungroupLayer,
+  updateLayerById,
   type ZOrderAction,
 } from "../domain/groupOperations";
 import { getNextProjectLayerId, makeProjectLayerIdGenerator } from "../domain/layerIds";
@@ -25,6 +26,8 @@ export type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "a
 interface LayerSelectionState {
   scene: Scene | null;
   selectedLayerIds: string[];
+  /** Explicitly targeted animation (e.g. a timeline strip); Delete removes it first. */
+  selectedAnimationId: string | null;
   inspectorScope: "scene" | "layer";
   activeInsertionGroupId: string | null;
 }
@@ -87,6 +90,47 @@ export interface LayerCommands {
 
 const DEFAULT_IMAGE_PLACEHOLDER_WIDTH = 640;
 const DEFAULT_IMAGE_PLACEHOLDER_HEIGHT = 360;
+
+function findParentGroup(layers: readonly Layer[], layerId: string): Layer | null {
+  return (
+    layers.find(
+      (layer) =>
+        layer.type === "group" &&
+        layer.children.some((child) => child.id === layerId),
+    ) ?? null
+  );
+}
+
+/**
+ * Remove one animation from its layer. Returns the updated scene, or null
+ * when the animation is not a valid delete target (stale id, locked layer,
+ * or group member). Pure: safe to unit test without React.
+ */
+export function removeLayerAnimation(
+  scene: Scene,
+  layerId: string,
+  animationId: string,
+): Scene | null {
+  const layer = findLayerById(scene.layers, layerId);
+  if (
+    !layer ||
+    !layer.animations.some((animation) => animation.id === animationId) ||
+    layer.locked ||
+    findParentGroup(scene.layers, layerId)
+  ) {
+    return null;
+  }
+  const animations = layer.animations.filter(
+    (animation) => animation.id !== animationId,
+  );
+  return {
+    ...scene,
+    layers: updateLayerById(scene.layers, layer.id, (target) => ({
+      ...target,
+      animations,
+    })),
+  };
+}
 
 function buildImagePlaceholderLayer(project: Project, scene: Scene, id: string): AtomicLayer {
   const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
@@ -319,10 +363,31 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     [handlers, selection, setters],
   );
 
+  const deleteSelectedAnimation = useCallback((): boolean => {
+    const { scene, selectedLayerIds, selectedAnimationId } = selection;
+    if (!scene || selectedAnimationId === null) return false;
+    const layerId = selectedLayerIds[0];
+    const updatedScene =
+      layerId !== undefined
+        ? removeLayerAnimation(scene, layerId, selectedAnimationId)
+        : null;
+    // Always consume Delete here and clear the animation target: a stale id
+    // must be a no-op, never fall through to deleting the whole layer.
+    if (updatedScene) handlers.handleSceneChange(updatedScene);
+    setters.setSelectedAnimationId(null);
+    return true;
+  }, [handlers, selection, setters]);
+
   const deleteSelection = useCallback(() => {
-    const { scene, selectedLayerIds, inspectorScope, activeInsertionGroupId } = selection;
+    const { scene, selectedLayerIds, selectedAnimationId, inspectorScope, activeInsertionGroupId } = selection;
     if (!scene) return;
     if (inspectorScope === "layer") {
+      // An explicitly selected animation (timeline strip) is the Delete
+      // target; otherwise Delete removes the selected layer(s).
+      if (selectedAnimationId !== null) {
+        deleteSelectedAnimation();
+        return;
+      }
       if (selectedLayerIds.length === 0) return;
       handlers.handleSceneChange(deleteLayers(scene, selectedLayerIds));
       if (activeInsertionGroupId && selectedLayerIds.includes(activeInsertionGroupId)) {
@@ -332,7 +397,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
       setters.setSelectedAnimationId(null);
       setters.setInspectorScope("scene");
     }
-  }, [handlers, selection, setters]);
+  }, [deleteSelectedAnimation, handlers, selection, setters]);
 
   const groupSelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;

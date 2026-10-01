@@ -149,6 +149,7 @@ function App() {
       selection: {
         scene,
         selectedLayerIds,
+        selectedAnimationId,
         inspectorScope,
         activeInsertionGroupId,
       },
@@ -330,6 +331,7 @@ function App() {
       if (event.key === "Escape") {
         // Keynote: Esc exits group editing and deselects everything.
         setSelectedLayerIds([]);
+        setSelectedAnimationId(null);
         setActiveInsertionGroupId(null);
         setSlideMenu(null);
         exitImageCrop();

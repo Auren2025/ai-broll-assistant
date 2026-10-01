@@ -5,13 +5,11 @@ import {
   useState,
 } from "react";
 import {
-  ActiveSelection,
   Canvas,
   FabricObject,
   Group as FabricGroup,
 } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
-import { hugGroupToChildren } from "../domain/groupOperations";
 import { resolveDragTarget } from "./fabricTargetResolution";
 import { computeDrillEntries } from "./drillEntries";
 import {
@@ -19,8 +17,6 @@ import {
   applySelectionToCanvas,
   createFabricObjectForLayer,
   isFabricObjectForLayer,
-  updateChildLayerFromFabricObject,
-  updateLayerFromFabricObject,
 } from "./fabricAdapter";
 import {
   findLayerByIdOrChild,
@@ -40,6 +36,7 @@ import { useMagicMoveDrag } from "./useMagicMoveDrag";
 import { useCanvasHover } from "./useCanvasHover";
 import { useImageCropGestures } from "./useImageCropGestures";
 import { useGroupDrillIn } from "./useGroupDrillIn";
+import { useGestureCommit } from "./useGestureCommit";
 import { computeTextBoxSize } from "./textMetrics";
 
 registerFabricObjectClasses();
@@ -190,6 +187,17 @@ export function FabricSceneCanvas({
     onDrillExit,
     onSelectedLayerIdsChange,
   });
+  const { handleGestureModified } = useGestureCommit({
+    objectToLayerIdRef,
+    layerIdToObjectRef,
+    sceneRef,
+    projectIdRef,
+    lockedAxisRef,
+    lockOriginRef,
+    isApplyingSelectionRef,
+    onSceneChange,
+    onDrillGestureEnd,
+  });
   const {
     updateHover,
     clearHoverOnMouseOut,
@@ -248,58 +256,6 @@ export function FabricSceneCanvas({
   useEffect(() => {
     onTextLayerChangeRef.current = onTextLayerChange;
   }, [onTextLayerChange]);
-
-  const syncObjectsToScene = useCallback(
-    (objects: readonly FabricObject[]): void => {
-      const objectByLayerId = new Map<string, FabricObject>();
-
-      for (const object of objects) {
-        const layerId = objectToLayerIdRef.current.get(object);
-
-        if (layerId) {
-          objectByLayerId.set(layerId, object);
-        }
-      }
-
-      if (objectByLayerId.size === 0) {
-        return;
-      }
-
-      const currentScene = sceneRef.current;
-      const updatedScene: Scene = {
-        ...currentScene,
-        layers: currentScene.layers.map((layer) => {
-          if (layer.type === "group") {
-            const groupObject = objectByLayerId.get(layer.id);
-            const nextGroup = groupObject
-              ? updateLayerFromFabricObject(layer, groupObject)
-              : layer;
-            if (nextGroup.type !== "group") return nextGroup;
-            let childChanged = false;
-            const children = nextGroup.children.map((child) => {
-              const childObject = objectByLayerId.get(child.id);
-              if (!childObject) return child;
-              childChanged = true;
-              return updateChildLayerFromFabricObject(
-                nextGroup,
-                child,
-                childObject,
-              );
-            });
-            return childChanged
-              ? hugGroupToChildren({ ...nextGroup, children })
-              : nextGroup;
-          }
-          const object = objectByLayerId.get(layer.id);
-          return object ? updateLayerFromFabricObject(layer, object) : layer;
-        }),
-      };
-
-      sceneRef.current = updatedScene;
-      onSceneChange(updatedScene);
-    },
-    [onSceneChange],
-  );
 
   const registerTextEvents = useCallback(
     (canvas: Canvas, object: FabricObject): void => {
@@ -467,76 +423,7 @@ export function FabricSceneCanvas({
     };
 
     canvas.on("object:modified", (event) => {
-      lockedAxisRef.current = null;
-      lockOriginRef.current = null;
-      const target = event.target;
-
-      if (!target) {
-        return;
-      }
-      if (
-        target instanceof FabricLayerTextbox &&
-        target.parent instanceof FabricShapeTextObject
-      ) return;
-
-      if (target instanceof ActiveSelection) {
-        const selectedObjects = target.getObjects();
-        const selectedIds = selectedObjects
-          .map((object) => objectToLayerIdRef.current.get(object))
-          .filter((layerId): layerId is string => layerId !== undefined);
-
-        const spaces = new Set(
-          selectedObjects.map((object) => {
-            const parent = object.parent;
-            if (parent instanceof FabricGroup) {
-              return objectToLayerIdRef.current.get(parent) ?? "scene";
-            }
-            return "scene";
-          }),
-        );
-
-        queueMicrotask(() => {
-          isApplyingSelectionRef.current = true;
-
-          try {
-            canvas.discardActiveObject();
-
-            if (spaces.size > 1) {
-              const currentScene = sceneRef.current;
-              for (const selectedObject of selectedObjects) {
-                const layerId = objectToLayerIdRef.current.get(selectedObject);
-                if (!layerId) continue;
-                const layer = findLayerByIdOrChild(currentScene, layerId);
-                const parentGroup = findParentGroupLayer(currentScene, layerId);
-                if (layer) {
-                  applyLayerToFabricObject(
-                    selectedObject,
-                    layer,
-                    parentGroup ?? undefined,
-                    projectIdRef.current,
-                  );
-                }
-              }
-            } else {
-              syncObjectsToScene(selectedObjects);
-            }
-
-            applySelectionToCanvas(
-              canvas,
-              selectedIds,
-              layerIdToObjectRef.current,
-            );
-            onDrillGestureEnd(canvas);
-            canvas.requestRenderAll();
-          } finally {
-            isApplyingSelectionRef.current = false;
-          }
-        });
-        return;
-      }
-
-      syncObjectsToScene([target]);
-      onDrillGestureEnd(canvas);
+      handleGestureModified(event, canvas);
     });
 
     canvas.on("object:resizing", (event) => {
@@ -845,6 +732,7 @@ export function FabricSceneCanvas({
     handleCropMouseMove,
     handleCropMouseUp,
     handleDrillOutsideClick,
+    handleGestureModified,
     onDrillGestureEnd,
     onDrillGestureTransform,
     onSelectedLayerIdsChange,
@@ -856,7 +744,6 @@ export function FabricSceneCanvas({
     resolveDblClickTarget,
     resolveDrillDragTarget,
     scene.id,
-    syncObjectsToScene,
     tryEnterDrillForChild,
     tryEnterDrillFromSelectedFrame,
     updateHover,

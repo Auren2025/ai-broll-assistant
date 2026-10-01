@@ -6,27 +6,35 @@ import type { Canvas } from "fabric";
  * be parked, selected, and dragged outside the project without touching
  * Scene data: Scene (0,0) stays the project's top-left corner and the margin
  * is folded into the viewport pan, never persisted.
+ *
+ * The pasteboard is one continuous field, Keynote-style: the scroll area
+ * behind the canvas element paints the same base color, so the gray extends
+ * beyond the element bounds with no visible edge and no dimming. The project
+ * frame reads as a card via its drop shadow plus a hairline edge.
  */
 
-export const PASTEBOARD_MARGIN_MIN = 120;
-export const PASTEBOARD_MARGIN_MAX = 320;
-
-/** Base color of the pasteboard (element area outside the project frame). */
-export const PASTEBOARD_BASE = "#d8d9de";
-/** Dim painted over the pasteboard in the editor only: marks "not exported". */
-export const PASTEBOARD_DIM = "rgba(23, 25, 31, 0.36)";
-/** Hairline around the finished project frame. */
-export const PROJECT_FRAME_EDGE = "rgba(15, 17, 22, 0.22)";
+export const PASTEBOARD_MARGIN_MIN = 160;
+export const PASTEBOARD_MARGIN_MAX = 400;
 
 /**
- * Pasteboard margin in scene units: a quarter of the shorter project side,
+ * Base color of the pasteboard. Must match the .canvas-editor-area
+ * background in App.css so the gray continues past the element bounds.
+ */
+export const PASTEBOARD_BASE = "#d8d9de";
+/** Hairline around the finished project frame. */
+export const PROJECT_FRAME_EDGE = "rgba(15, 17, 22, 0.22)";
+/** Soft drop shadow under the project frame (Keynote-like card). */
+const PROJECT_FRAME_SHADOW = "rgba(15, 17, 22, 0.30)";
+
+/**
+ * Pasteboard margin in scene units: a third of the shorter project side,
  * clamped so DPR x Fabric's double canvas backing store stays reasonable.
  */
 export function pasteboardMargin(
   projectWidth: number,
   projectHeight: number,
 ): number {
-  const raw = Math.round(Math.min(projectWidth, projectHeight) * 0.25);
+  const raw = Math.round(Math.min(projectWidth, projectHeight) / 3);
   return Math.min(
     PASTEBOARD_MARGIN_MAX,
     Math.max(PASTEBOARD_MARGIN_MIN, raw),
@@ -109,49 +117,10 @@ export function projectFrameRect(args: {
 }
 
 /**
- * The four dim regions surrounding the project frame, in element pixels,
- * clipped to the element bounds. Their union is exactly the pasteboard
- * (element area minus project frame); empty rects are dropped.
- */
-export function pasteboardDimRects(args: {
-  elementWidth: number;
-  elementHeight: number;
-  scale: number;
-  panX: number;
-  panY: number;
-  projectWidth: number;
-  projectHeight: number;
-}): PixelRect[] {
-  const { elementWidth, elementHeight } = args;
-  const frame = projectFrameRect(args);
-  const candidates: PixelRect[] = [
-    // above
-    { x: 0, y: 0, width: elementWidth, height: frame.y },
-    // below
-    {
-      x: 0,
-      y: frame.y + frame.height,
-      width: elementWidth,
-      height: elementHeight - (frame.y + frame.height),
-    },
-    // left
-    { x: 0, y: frame.y, width: frame.x, height: frame.height },
-    // right
-    {
-      x: frame.x + frame.width,
-      y: frame.y,
-      width: elementWidth - (frame.x + frame.width),
-      height: frame.height,
-    },
-  ];
-  return candidates.filter((rect) => rect.width > 0 && rect.height > 0);
-}
-
-/**
  * Paints the editor backdrop under everything (before:render): the
- * pasteboard base over the whole element, then the scene background over
- * the project frame. Editor-only: preview and export render from Scene
- * data and never see this.
+ * pasteboard base over the whole element, then the project frame as a
+ * card (drop shadow + scene background + hairline edge). Editor-only:
+ * preview and export render from Scene data and never see this.
  */
 export function paintPasteboardBase(
   canvas: Canvas,
@@ -169,46 +138,15 @@ export function paintPasteboardBase(
   ctx.save();
   ctx.fillStyle = PASTEBOARD_BASE;
   ctx.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+  // Project card: a soft shadow so the frame reads on the uniform gray,
+  // then the scene background. Painted here (before the objects) so
+  // off-project layers sit above the shadow, Keynote-style.
+  ctx.shadowColor = PROJECT_FRAME_SHADOW;
+  ctx.shadowBlur = 28;
   ctx.fillStyle = args.backgroundColor;
   ctx.fillRect(frame.x, frame.y, frame.width, frame.height);
   ctx.restore();
-}
-
-/**
- * Dims the pasteboard over the rendered objects (after:render, main context
- * only) and strokes the project frame edge. Selection chrome is repainted
- * after this call, so borders and handles stay full-bright.
- */
-export function paintPasteboardDim(
-  canvas: Canvas,
-  ctx: CanvasRenderingContext2D,
-  args: { projectWidth: number; projectHeight: number },
-): void {
-  const vpt = canvas.viewportTransform;
-  const scale = vpt[0];
-  const panX = vpt[4];
-  const panY = vpt[5];
-  const frame = projectFrameRect({
-    scale,
-    panX,
-    panY,
-    projectWidth: args.projectWidth,
-    projectHeight: args.projectHeight,
-  });
-  const rects = pasteboardDimRects({
-    elementWidth: canvas.getWidth(),
-    elementHeight: canvas.getHeight(),
-    scale,
-    panX,
-    panY,
-    projectWidth: args.projectWidth,
-    projectHeight: args.projectHeight,
-  });
   ctx.save();
-  ctx.fillStyle = PASTEBOARD_DIM;
-  for (const rect of rects) {
-    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-  }
   ctx.strokeStyle = PROJECT_FRAME_EDGE;
   ctx.lineWidth = 1;
   ctx.strokeRect(frame.x + 0.5, frame.y + 0.5, frame.width - 1, frame.height - 1);

@@ -762,6 +762,10 @@ button {
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
+  /* Keynote-style pasteboard: one continuous gray field outside the
+     project. Must match PASTEBOARD_BASE in editor/pasteboard.ts so the
+     gray continues past the canvas element bounds with no visible edge. */
+  background: #d8d9de;
 }
 
 .canvas-zoom-controls {
@@ -870,10 +874,11 @@ button {
      by scrolling (justify-content: center would clip them). */
   margin: auto;
   position: relative;
-  background: #fff;
-  box-shadow:
-    0 1px 2px rgb(28 31 38 / 8%),
-    0 18px 50px rgb(28 31 38 / 12%);
+  /* Transparent: the frame wraps the enlarged canvas element (project +
+     pasteboard margin), whose bounds are arbitrary. The project card
+     itself (drop shadow + hairline) is painted inside the canvas, so the
+     frame adds no chrome of its own. */
+  background: transparent;
 }
 
 .canvas-frame.is-preview {

@@ -7,12 +7,11 @@ import {
   canonicalViewport,
   zoomViewport,
   projectFrameRect,
-  pasteboardDimRects,
 } from "../src/editor/pasteboard.ts";
 
-test("pasteboardMargin is a quarter of the shorter side, clamped", () => {
-  assert.equal(pasteboardMargin(1920, 1080), 270);
-  assert.equal(pasteboardMargin(1080, 1920), 270);
+test("pasteboardMargin is a third of the shorter side, clamped", () => {
+  assert.equal(pasteboardMargin(1920, 1080), 360);
+  assert.equal(pasteboardMargin(1080, 1920), 360);
   // Tiny project: clamped to the minimum.
   assert.equal(pasteboardMargin(200, 200), PASTEBOARD_MARGIN_MIN);
   // Huge project: clamped to the maximum so the backing store stays sane.
@@ -20,10 +19,10 @@ test("pasteboardMargin is a quarter of the shorter side, clamped", () => {
 });
 
 test("canonicalViewport folds the margin into the pan", () => {
-  assert.deepEqual(canonicalViewport(0.5, 270), {
+  assert.deepEqual(canonicalViewport(0.5, 360), {
     scale: 0.5,
-    panX: 135,
-    panY: 135,
+    panX: 180,
+    panY: 180,
   });
 });
 
@@ -31,15 +30,15 @@ test("zoomViewport without a cursor re-anchors to the canonical origin", () => {
   const next = zoomViewport({
     prev: { scale: 0.5, panX: 999, panY: 999 },
     scale: 1,
-    margin: 270,
+    margin: 360,
     cursor: null,
     rectAfter: null,
   });
-  assert.deepEqual(next, { scale: 1, panX: 270, panY: 270 });
+  assert.deepEqual(next, { scale: 1, panX: 360, panY: 360 });
 });
 
 test("zoomViewport keeps the scene point under the cursor fixed", () => {
-  const margin = 270;
+  const margin = 360;
   const prev = canonicalViewport(0.5, margin);
   // Cursor at element pixel (400, 300); the rect it was measured against
   // starts at (50, 60) in client coords.
@@ -71,52 +70,10 @@ test("projectFrameRect is the viewport-shifted project in element pixels", () =>
   // With the margin folded into the pan, the project frame starts at pan.
   const frame = projectFrameRect({
     scale: 0.5,
-    panX: 135,
-    panY: 135,
+    panX: 180,
+    panY: 180,
     projectWidth: 1920,
     projectHeight: 1080,
   });
-  assert.deepEqual(frame, { x: 135, y: 135, width: 960, height: 540 });
-});
-
-test("pasteboardDimRects cover exactly the element minus the project frame", () => {
-  const elementWidth = 1230;
-  const elementHeight = 810;
-  const args = {
-    elementWidth,
-    elementHeight,
-    scale: 0.5,
-    panX: 135,
-    panY: 135,
-    projectWidth: 1920,
-    projectHeight: 1080,
-  };
-  const rects = pasteboardDimRects(args);
-  assert.equal(rects.length, 4);
-  const dimArea = rects.reduce((sum, r) => sum + r.width * r.height, 0);
-  const frameArea = 960 * 540;
-  assert.equal(dimArea, elementWidth * elementHeight - frameArea);
-  // No dim rect overlaps the project frame.
-  const frame = projectFrameRect(args);
-  for (const rect of rects) {
-    const overlaps =
-      rect.x < frame.x + frame.width &&
-      rect.x + rect.width > frame.x &&
-      rect.y < frame.y + frame.height &&
-      rect.y + rect.height > frame.y;
-    assert.equal(overlaps, false);
-  }
-});
-
-test("pasteboardDimRects drop empty regions when the frame touches an edge", () => {
-  const rects = pasteboardDimRects({
-    elementWidth: 960,
-    elementHeight: 540,
-    scale: 0.5,
-    panX: 0,
-    panY: 0,
-    projectWidth: 1920,
-    projectHeight: 1080,
-  });
-  assert.deepEqual(rects, []);
+  assert.deepEqual(frame, { x: 180, y: 180, width: 960, height: 540 });
 });

@@ -14,7 +14,10 @@ import type { Layer, Scene } from "../domain/sceneSchema";
 import { resolveDragTarget } from "./fabricTargetResolution";
 import { toggleShiftSelection } from "./shiftToggleSelection";
 import { computeDrillEntries } from "./drillEntries";
-import { paintMultiSelectBorders } from "./multiSelectBorders";
+import {
+  installMultiSelectHitTesting,
+  paintMultiSelectBorders,
+} from "./multiSelectBorders";
 import {
   applyLayerToFabricObject,
   applySelectionToCanvas,
@@ -45,7 +48,6 @@ import {
   PASTEBOARD_BASE,
   canonicalViewport,
   paintPasteboardBase,
-  paintPasteboardDim,
   pasteboardMargin,
   zoomViewport,
 } from "./pasteboard";
@@ -230,7 +232,6 @@ export function FabricSceneCanvas({
     resolveDrillDragTarget,
     recordDrillPointerDown,
     recordDrillPointerUp,
-    repaintDrillFrame,
     onDrillGestureTransform,
     onDrillGestureEnd,
   } = useGroupDrillIn({
@@ -432,6 +433,10 @@ export function FabricSceneCanvas({
       preserveObjectStacking: true,
     });
 
+    // Multi-select hit testing: only actual members grab the pointer, the
+    // gaps between them behave as empty canvas.
+    installMultiSelectHitTesting(canvas);
+
     const initialViewport = canonicalViewport(displayScale, pasteboard);
     canvas.setViewportTransform([
       initialViewport.scale,
@@ -565,7 +570,7 @@ export function FabricSceneCanvas({
     canvas.on("selection:cleared", syncSelectedLayers);
 
     // Editor backdrop: the pasteboard base and the project frame sit under
-    // every object (before:render); the pasteboard dim goes over them.
+    // every object (before:render).
     canvas.on("before:render", ({ ctx }) => {
       paintPasteboardBase(canvas, ctx, {
         projectWidth,
@@ -575,16 +580,6 @@ export function FabricSceneCanvas({
     });
 
     canvas.on("after:render", ({ ctx }) => {
-      // renderTop (rubber-band selection) reuses after:render on the top
-      // context: the dim and chrome re-brightening belong on the main
-      // context only.
-      if (ctx === canvas.getContext()) {
-        paintPasteboardDim(canvas, ctx, { projectWidth, projectHeight });
-        // The dim just covered the native selection chrome; repaint it
-        // bright so borders and handles never dim with the element.
-        canvas.drawControls(ctx);
-        repaintDrillFrame(canvas, ctx);
-      }
       // Keynote-style multi-select: each member of an ActiveSelection paints
       // its own border + handles; there is no common outer frame.
       paintMultiSelectBorders(canvas, ctx);
@@ -839,7 +834,6 @@ export function FabricSceneCanvas({
     projectWidth,
     recordDrillPointerDown,
     recordDrillPointerUp,
-    repaintDrillFrame,
     resolveDblClickTarget,
     resolveDrillDragTarget,
     scene.id,

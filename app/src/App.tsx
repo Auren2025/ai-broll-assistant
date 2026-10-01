@@ -17,6 +17,7 @@ import type { Layer, Scene } from "./domain/sceneSchema";
 import {
   canFlattenGroup,
   findLayerById,
+  findParentGroup,
   moveLayerTo,
   updateLayerById,
   type ZOrderAction,
@@ -47,13 +48,6 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-function findParentGroup(layers: readonly Layer[], layerId: string) {
-  return layers.find(
-    (layer) =>
-      layer.type === "group" &&
-      layer.children.some((child) => child.id === layerId),
-  );
-}
 
 function App() {
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
@@ -212,6 +206,11 @@ function App() {
       patch: { locked?: boolean; visible?: boolean },
     ) => {
       if (!scene || scene.id !== sceneId) {
+        return;
+      }
+      // Group members are never individually lockable: lock state lives on
+      // the group row. Refuse member lock patches instead of storing them.
+      if (patch.locked !== undefined && findParentGroup(scene.layers, layerId)) {
         return;
       }
 
@@ -527,7 +526,8 @@ function App() {
       setSceneError("This layer cannot be moved to that position");
       return;
     }
-    if (JSON.stringify(updatedScene.layers) === JSON.stringify(scene.layers)) {
+    // moveLayerTo returns the original scene reference for no-op drops.
+    if (updatedScene === scene) {
       return;
     }
     handleSceneChange(updatedScene);

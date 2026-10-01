@@ -360,7 +360,8 @@ export function transformGroupChildToScene(
   };
 }
 
-function transformChildGeometryToScene(
+/** Geometry-only child → scene transform (no opacity/visibility/lock baking). */
+export function transformChildGeometryToScene(
   group: GroupLayer,
   child: AtomicLayer,
 ): AtomicLayer {

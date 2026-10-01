@@ -11,6 +11,7 @@ import {
   makeGroup,
   moveLayerTo,
   reorderSelectedLayersZIndex,
+  transformChildGeometryToScene,
   ungroupLayer,
   updateLayerById,
   type ZOrderAction,
@@ -481,10 +482,31 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
   const copySelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
     if (!scene || selectedLayerIds.length === 0) return;
-    const selectedIdSet = new Set(selectedLayerIds);
-    const topLevel = scene.layers.filter((layer) => selectedIdSet.has(layer.id));
-    if (topLevel.length === 0) return;
-    refs.clipboardLayersRef.current = JSON.parse(JSON.stringify(topLevel)) as Layer[];
+    const selectedSet = new Set(selectedLayerIds);
+    // A selected group already carries its members: skip members whose
+    // parent group is also selected.
+    const selectedGroupIds = new Set(
+      scene.layers
+        .filter((layer) => layer.type === "group" && selectedSet.has(layer.id))
+        .map((layer) => layer.id),
+    );
+    const copied: Layer[] = [];
+    for (const layerId of selectedLayerIds) {
+      const layer = findLayerById(scene.layers, layerId);
+      if (!layer) continue;
+      const parent = findParentGroup(scene.layers, layerId);
+      if (parent && layer.type !== "group") {
+        if (selectedGroupIds.has(parent.id)) continue;
+        // Members live in group-local coordinates: convert to scene space so
+        // the paste lands where the member visually was. Geometry only —
+        // group opacity/visibility/lock are not baked in.
+        copied.push(transformChildGeometryToScene(parent, layer));
+      } else if (!parent) {
+        copied.push(layer);
+      }
+    }
+    if (copied.length === 0) return;
+    refs.clipboardLayersRef.current = JSON.parse(JSON.stringify(copied)) as Layer[];
     setters.setHasClipboard(true);
     setters.setContextMenu(null);
   }, [refs, selection, setters]);

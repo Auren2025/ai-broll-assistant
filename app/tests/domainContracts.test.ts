@@ -8,6 +8,7 @@ import {
   makeGroup,
   moveLayerTo,
   reorderSelectedLayersZIndex,
+  transformChildGeometryToScene,
 } from "../src/domain/groupOperations";
 import { alignSceneLayers } from "../src/editor/alignment";
 
@@ -202,6 +203,48 @@ test("moveLayerTo into a group grows the target frame to include the layer", () 
   assert.ok(added);
   assert.equal(added.x, 500);
   parseScene(next);
+});
+
+test("transformChildGeometryToScene converts coords without baking group effects", () => {
+  const base = groupOf(groupScene());
+  const group = {
+    ...base,
+    x: 100,
+    y: 50,
+    opacity: 0.5,
+    visible: false,
+    locked: true,
+  };
+  const child = group.children[0];
+  assert.ok(child);
+  const moved = transformChildGeometryToScene(group, child);
+  // Child local (0,0) -> scene (100,50).
+  assert.equal(moved.x, 100);
+  assert.equal(moved.y, 50);
+  // Group opacity/visibility/lock are not baked into the member.
+  assert.equal(moved.opacity, 1);
+  assert.equal(moved.visible, true);
+  assert.equal(moved.locked, false);
+});
+
+test("transformChildGeometryToScene rotates around the group center", () => {
+  const base = groupOf(groupScene());
+  const child = base.children[0];
+  assert.ok(child);
+  const group = {
+    ...base,
+    x: 0,
+    y: 0,
+    width: 200,
+    height: 100,
+    rotation: 90,
+    children: [{ ...child, x: 50, y: 20 }],
+  };
+  const moved = transformChildGeometryToScene(group, group.children[0]);
+  // Child centered on the group center stays centered, rotated with it.
+  assert.equal(moved.x, 50);
+  assert.equal(moved.y, 20);
+  assert.equal(moved.rotation, 90);
 });
 
 // --- alignSceneLayers lock filtering ---

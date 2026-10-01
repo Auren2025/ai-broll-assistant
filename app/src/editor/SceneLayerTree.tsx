@@ -394,18 +394,21 @@ export function SceneLayerTree({
               <strong className="layer-type-name">{layer.name}</strong>
             </button>
           )}
+          {/* Lock lives on the group row only: members are never individually lockable. */}
+          {!parentGroup && (
           <button
             className={`layer-state-button layer-lock-button${layer.locked ? " is-active" : ""}`}
             type="button"
             aria-label={`${layer.locked ? "Unlock" : "Lock"} ${layer.name}`}
             aria-pressed={layer.locked}
-            disabled={!isCurrent || Boolean(parentGroup?.locked)}
+            disabled={!isCurrent}
             onClick={() =>
               onLayerStateChange(sceneId, layer.id, { locked: !layer.locked })
             }
           >
             <span aria-hidden="true" />
           </button>
+          )}
           <button
             className={`layer-state-button layer-visibility-button${layer.visible ? " is-active" : ""}`}
             type="button"

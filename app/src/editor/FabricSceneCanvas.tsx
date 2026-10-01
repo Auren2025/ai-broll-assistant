@@ -12,6 +12,7 @@ import {
 } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import { resolveDragTarget } from "./fabricTargetResolution";
+import { toggleShiftSelection } from "./shiftToggleSelection";
 import { computeDrillEntries } from "./drillEntries";
 import { paintMultiSelectBorders } from "./multiSelectBorders";
 import {
@@ -658,19 +659,44 @@ export function FabricSceneCanvas({
       if (!promotedDragTarget && handleDrillOutsideClick(event)) return;
       if (promotedDragTarget) {
         const { id, object } = promotedDragTarget;
-        // Fabric's own mousedown already selected the child and built the
-        // correct transform for this press (a drag on first press, the
-        // control's scale/rotate action once the child is selected).
-        // Rebuilding it here as a drag would force every control press
-        // into a move, so only fall back to the manual setup when Fabric
-        // didn't already target this object.
-        if (canvas._currentTransform?.target !== object) {
-          canvas.setActiveObject(object);
-          canvas._currentTransform = null;
-          canvas._setupCurrentTransform(pointerEvent, object, false);
+        if (pointerEvent.shiftKey) {
+          // Shift+click toggles the promoted target in/out of the
+          // selection instead of replacing it. Fabric's native
+          // multi-select already ran above but can't know about our
+          // child->group promotion, so rebuild the selection here with
+          // the same toggle + group/child mutual-exclusion semantics the
+          // layer tree uses, and report exactly once.
+          const nextIds = toggleShiftSelection(
+            selectedLayerIdsRef.current,
+            id,
+            sceneRef.current,
+          );
+          isApplyingSelectionRef.current = true;
+          try {
+            applySelectionToCanvas(canvas, nextIds, layerIdToObjectRef.current);
+          } finally {
+            isApplyingSelectionRef.current = false;
+          }
+          // Fully handled: mouse:up must not re-assert the single
+          // promoted target over the multi-select afterwards.
+          promotedDragTarget = null;
+          onSelectedLayerIdsChange(nextIds);
+          canvas.requestRenderAll();
+        } else {
+          // Fabric's own mousedown already selected the child and built the
+          // correct transform for this press (a drag on first press, the
+          // control's scale/rotate action once the child is selected).
+          // Rebuilding it here as a drag would force every control press
+          // into a move, so only fall back to the manual setup when Fabric
+          // didn't already target this object.
+          if (canvas._currentTransform?.target !== object) {
+            canvas.setActiveObject(object);
+            canvas._currentTransform = null;
+            canvas._setupCurrentTransform(pointerEvent, object, false);
+          }
+          onSelectedLayerIdsChange([id]);
+          canvas.requestRenderAll();
         }
-        onSelectedLayerIdsChange([id]);
-        canvas.requestRenderAll();
       }
       // Record the drag start so Shift-lock can detect the initial drag
       // direction (whichever axis the user moves more on first).

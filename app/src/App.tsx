@@ -60,7 +60,6 @@ function App() {
   const [activeInsertionGroupId, setActiveInsertionGroupId] = useState<
     string | null
   >(null);
-  const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
   const [selectedAnimationId, setSelectedAnimationId] = useState<string | null>(
     null,
   );
@@ -772,7 +771,6 @@ function App() {
             scenesById={scenesForTree}
             currentSceneId={scene.id}
             selectedLayerIds={selectedLayerIds}
-            hoveredLayerId={hoveredLayerId}
             activeInsertionGroupId={activeInsertionGroupId}
             inspectorScope={inspectorScope}
             isSceneSwitchDisabled={
@@ -832,7 +830,6 @@ function App() {
                     selection={{
                       selectedLayerIds,
                       onSelectedLayerIdsChange: selection.onCanvasSelection,
-                      onHoveredLayerIdChange: setHoveredLayerId,
                       onGroupEditEnter: selection.onGroupEditEnter,
                       onContextMenuRequest: openLayerContextMenu,
                       drillGroupId: activeInsertionGroupId,

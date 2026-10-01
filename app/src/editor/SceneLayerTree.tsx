@@ -93,7 +93,6 @@ interface SceneLayerTreeProps {
   scenesById: Readonly<Record<string, Scene>>;
   currentSceneId: string;
   selectedLayerIds: readonly string[];
-  hoveredLayerId: string | null;
   activeInsertionGroupId: string | null;
   inspectorScope: InspectorScope;
   isSceneSwitchDisabled: boolean;
@@ -117,7 +116,6 @@ export function SceneLayerTree({
   scenesById,
   currentSceneId,
   selectedLayerIds,
-  hoveredLayerId,
   activeInsertionGroupId,
   inspectorScope,
   isSceneSwitchDisabled,
@@ -292,7 +290,6 @@ export function SceneLayerTree({
     parentGroup: Extract<Layer, { type: "group" }> | null,
   ): ReactNode {
     const isSelected = isCurrent && selectedLayerIds.includes(layer.id);
-    const isHovered = isCurrent && hoveredLayerId === layer.id;
     const isGroup = layer.type === "group";
     const isGroupExpanded = isGroup && expandedGroupIds.includes(layer.id);
     const effectivelyLocked = layer.locked || Boolean(parentGroup?.locked);
@@ -311,7 +308,7 @@ export function SceneLayerTree({
     return (
       <div className="layer-tree-entry" key={layer.id}>
         <div
-          className={`layer-item${isGroup ? " is-group" : ""}${parentGroup ? " is-group-child" : ""}${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}${isInsertionTarget ? " is-insertion-target" : ""}${activeDropTarget === groupDropKey ? " is-group-drop-target" : ""}`}
+          className={`layer-item${isGroup ? " is-group" : ""}${parentGroup ? " is-group-child" : ""}${isSelected ? " is-selected" : ""}${isInsertionTarget ? " is-insertion-target" : ""}${activeDropTarget === groupDropKey ? " is-group-drop-target" : ""}`}
           draggable={canDrag}
           onDragStart={(event) =>
             beginLayerDrag(event, {

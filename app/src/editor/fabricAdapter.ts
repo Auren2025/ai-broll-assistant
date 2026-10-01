@@ -119,27 +119,19 @@ export function applyLayerToFabricObject(
     object.lockScalingFlip = true;
   }
 
+  // Selection uses one language everywhere (Keynote): a thin blue border
+  // with white square handles, for atomic layers, groups and multi-select.
   object.set({
-    borderColor: "#7147e8",
-    borderScaleFactor: 2,
+    borderColor: "#0a84ff",
+    borderScaleFactor: 1,
     cornerColor: "#ffffff",
     cornerSize: 9,
-    cornerStrokeColor: "#7147e8",
+    cornerStrokeColor: "#0a84ff",
     cornerStyle: "rect",
     transparentCorners: false,
     hoverCursor: isLocked ? "default" : "pointer",
     moveCursor: "move",
   });
-
-  if (layer.type === "group") {
-    // Groups select with a thin blue border (Keynote), distinct from the
-    // purple border used for atomic layers.
-    object.set({
-      borderColor: "#0a84ff",
-      borderScaleFactor: 1,
-      cornerStrokeColor: "#0a84ff",
-    });
-  }
 
   if (
     (layer.type === "rectangle" || layer.type === "circle") &&
@@ -532,7 +524,18 @@ export function applySelectionToCanvas(
     return;
   }
 
-  canvas.setActiveObject(new ActiveSelection(selectedObjects, { canvas }));
+  canvas.setActiveObject(
+    new ActiveSelection(selectedObjects, {
+      canvas,
+      borderColor: "#0a84ff",
+      borderScaleFactor: 1,
+      cornerColor: "#ffffff",
+      cornerSize: 9,
+      cornerStrokeColor: "#0a84ff",
+      cornerStyle: "rect",
+      transparentCorners: false,
+    }),
+  );
 }
 
 

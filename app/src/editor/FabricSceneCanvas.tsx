@@ -34,7 +34,6 @@ import {
   sortChildrenByZIndex,
 } from "./magicMove";
 import { useMagicMoveDrag } from "./useMagicMoveDrag";
-import { useCanvasHover } from "./useCanvasHover";
 import { useImageCropGestures } from "./useImageCropGestures";
 import { useGroupDrillIn } from "./useGroupDrillIn";
 import { useGestureCommit } from "./useGestureCommit";
@@ -57,11 +56,10 @@ export interface FabricCanvasDocument {
   onSceneChange: (scene: Scene) => void;
 }
 
-/** Selection cluster: layer selection, hover, group drill-in, context menu. */
+/** Selection cluster: layer selection, group drill-in, context menu. */
 export interface FabricCanvasSelection {
   selectedLayerIds: readonly string[];
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
-  onHoveredLayerIdChange: (layerId: string | null) => void;
   onGroupEditEnter?: (groupId: string) => void;
   onContextMenuRequest: (x: number, y: number) => void;
   /**
@@ -139,7 +137,6 @@ export function FabricSceneCanvas({
   const {
     selectedLayerIds,
     onSelectedLayerIdsChange,
-    onHoveredLayerIdChange,
     onGroupEditEnter,
     onContextMenuRequest,
     drillGroupId = null,
@@ -241,19 +238,6 @@ export function FabricSceneCanvas({
     isApplyingSelectionRef,
     onSceneChange,
     onDrillGestureEnd,
-  });
-  const {
-    updateHover,
-    clearHoverOnMouseOut,
-    paintHoverBorder,
-    clearHover,
-    clearHoverForObject,
-  } = useCanvasHover({
-    drillGroupId,
-    drillGroupIdRef,
-    fabricCanvasRef,
-    objectToLayerIdRef,
-    onHoveredLayerIdChange,
   });
   const {
     handleCropMouseMove,
@@ -557,13 +541,6 @@ export function FabricSceneCanvas({
 
     canvas.on("mouse:move", (event) => {
       if (handleCropMouseMove(canvas, event)) return;
-      updateHover(canvas, event.target);
-    });
-    canvas.on("mouse:out", () => {
-      clearHoverOnMouseOut(canvas);
-    });
-    canvas.on("after:render", ({ ctx }) => {
-      paintHoverBorder(canvas, ctx);
     });
     canvas.on("mouse:up", (event) => {
       lockedAxisRef.current = null;
@@ -659,10 +636,8 @@ export function FabricSceneCanvas({
       if (handleCropMouseDown(event)) return;
       if (!event.target) {
         // Keynote: clicking any blank area exits group editing and
-        // deselects everything. Clear hover state immediately: there is no
-        // mousemove coming to do it.
+        // deselects everything.
         exitDrillIfActive();
-        clearHover();
         onSelectedLayerIdsChange([]);
         return;
       }
@@ -768,8 +743,6 @@ export function FabricSceneCanvas({
   }, [
     addFabricObject,
     canvasElementRef,
-    clearHover,
-    clearHoverOnMouseOut,
     displayScale,
     exitDrillIfActive,
     handleCropDblClick,
@@ -781,7 +754,6 @@ export function FabricSceneCanvas({
     onDrillGestureEnd,
     onDrillGestureTransform,
     onSelectedLayerIdsChange,
-    paintHoverBorder,
     projectHeight,
     projectWidth,
     recordDrillPointerDown,
@@ -791,7 +763,6 @@ export function FabricSceneCanvas({
     scene.id,
     tryEnterDrillForChild,
     tryEnterDrillFromSelectedFrame,
-    updateHover,
   ]);
 
   useEffect(() => {
@@ -867,7 +838,6 @@ export function FabricSceneCanvas({
     const removeAndForget = (object: FabricObject): void => {
       canvas.remove(object);
       forgetObject(object);
-      clearHoverForObject(object);
     };
     isApplyingSelectionRef.current = true;
 
@@ -920,7 +890,6 @@ export function FabricSceneCanvas({
         invalidateDrillFrame();
         objectToLayerId.clear();
         layerIdToObject.clear();
-        clearHover();
 
         entries.forEach((entry) => {
           const object = addFabricObject(canvas, entry.layer);
@@ -1059,7 +1028,7 @@ export function FabricSceneCanvas({
     } finally {
       isApplyingSelectionRef.current = false;
     }
-  }, [addFabricObject, applyDrillPresentation, clearHover, clearHoverForObject, drillGroupId, invalidateDrillFrame, isDrillFrameObject, reapplyCropVisuals, scene, selectedLayerIds, syncDrillBoundary]);
+  }, [addFabricObject, applyDrillPresentation, drillGroupId, invalidateDrillFrame, isDrillFrameObject, reapplyCropVisuals, scene, selectedLayerIds, syncDrillBoundary]);
 
   const canvasWidth = projectWidth * displayScale * zoom;
   const canvasHeight = projectHeight * displayScale * zoom;

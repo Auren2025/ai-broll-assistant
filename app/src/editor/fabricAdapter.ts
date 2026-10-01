@@ -34,6 +34,27 @@ import {
   getCharSpacing,
 } from "./textMetrics";
 
+/**
+ * Keynote-style locked layers: locked objects are selectable (so the user
+ * can inspect or unlock them) but show a gray border with X handles instead
+ * of the blue selection, and every transform is locked. Fabric has no
+ * built-in "locked" flag, so the adapter records it here; the selection
+ * painters read it via isFabricObjectLocked.
+ */
+const lockedFabricObjects = new WeakMap<FabricObject, boolean>();
+
+export function setFabricObjectLocked(
+  object: FabricObject,
+  locked: boolean,
+): void {
+  if (locked) lockedFabricObjects.set(object, true);
+  else lockedFabricObjects.delete(object);
+}
+
+export function isFabricObjectLocked(object: FabricObject): boolean {
+  return lockedFabricObjects.has(object);
+}
+
 export function updateLayerFromFabricObject(
   layer: Layer,
   object: FabricObject,
@@ -119,16 +140,28 @@ export function applyLayerToFabricObject(
     object.lockScalingFlip = true;
   }
 
+  // Selection uses one language everywhere (Keynote): a thin blue border
+  // with white square handles, for atomic layers, groups and multi-select.
+  // Locked layers are selectable too (Keynote-style) but paint a gray
+  // border with X handles instead; every transform stays locked.
+  setFabricObjectLocked(object, isLocked);
   object.set({
-    borderColor: "#7147e8",
-    borderScaleFactor: 2,
+    borderColor: "#0a84ff",
+    borderScaleFactor: 1,
     cornerColor: "#ffffff",
     cornerSize: 9,
-    cornerStrokeColor: "#7147e8",
+    cornerStrokeColor: "#0a84ff",
     cornerStyle: "rect",
     transparentCorners: false,
     hoverCursor: isLocked ? "default" : "pointer",
     moveCursor: "move",
+    lockMovementX: isLocked,
+    lockMovementY: isLocked,
+    lockRotation: isLocked,
+    lockScalingX: isLocked,
+    lockScalingY: isLocked,
+    hasBorders: !isLocked,
+    hasControls: !isLocked,
   });
 
   if (
@@ -153,8 +186,8 @@ export function applyLayerToFabricObject(
       globalCompositeOperation:
         layer.blendMode === "normal" ? "source-over" : layer.blendMode,
       visible: layer.visible,
-      selectable: !isLocked,
-      evented: !isLocked,
+      selectable: true,
+      evented: true,
       activeOn: isChild ? "up" : "down",
     });
     const shapeObject = object.shapeObject;
@@ -210,8 +243,8 @@ export function applyLayerToFabricObject(
       angle: layer.rotation,
       opacity: layer.opacityEnabled ? layer.opacity : 1,
       visible: layer.visible,
-      selectable: !isLocked,
-      evented: !isLocked,
+      selectable: true,
+      evented: true,
       subTargetCheck: true,
       interactive: true,
     });
@@ -242,8 +275,8 @@ export function applyLayerToFabricObject(
     globalCompositeOperation:
       layer.blendMode === "normal" ? "source-over" : layer.blendMode,
     visible: layer.visible,
-    selectable: !isLocked,
-    evented: !isLocked,
+    selectable: true,
+    evented: true,
     activeOn: isChild ? "up" : "down",
   });
 
@@ -366,11 +399,34 @@ export function applyLayerToFabricObject(
       imageFit: layer.fit,
       imageFocalX: layer.focalX,
       imageFocalY: layer.focalY,
+      imageZoom: layer.zoom,
       imagePlaceholderColor: layer.placeholderColor,
     });
     object.dirty = true;
     object.setCoords();
   }
+}
+
+/**
+ * Toggle the canvas-only crop interaction on an image object. Crop mode is
+ * not persisted on the layer: the frame is locked, the resize controls are
+ * hidden, and the object paints its dimmed full-image ghost plus a zoom
+ * handle (see FabricImageLayerObject).
+ */
+export function setImageCropMode(
+  object: FabricObject,
+  cropping: boolean,
+): void {
+  if (!(object instanceof FabricImageLayerObject)) return;
+  object.isCropping = cropping;
+  const locked = isFabricObjectLocked(object);
+  object.set({
+    lockMovementX: cropping || locked,
+    lockMovementY: cropping || locked,
+    hasControls: !cropping && !locked,
+    hoverCursor: cropping ? "move" : locked ? "default" : "pointer",
+  });
+  object.dirty = true;
 }
 
 export function createFabricObjectForLayer(
@@ -424,6 +480,7 @@ export function createFabricObjectForLayer(
         imageFit: layer.fit,
         imageFocalX: layer.focalX,
         imageFocalY: layer.focalY,
+        imageZoom: layer.zoom,
         imagePlaceholderColor: layer.placeholderColor,
       });
       break;
@@ -499,7 +556,17 @@ export function applySelectionToCanvas(
     return;
   }
 
-  canvas.setActiveObject(new ActiveSelection(selectedObjects, { canvas }));
+  // Keynote-style multi-select: the ActiveSelection keeps the members
+  // moving together but renders no chrome of its own. Each member paints
+  // its own border + handles via paintMultiSelectBorders (after:render),
+  // so there is no common outer frame.
+  canvas.setActiveObject(
+    new ActiveSelection(selectedObjects, {
+      canvas,
+      hasBorders: false,
+      hasControls: false,
+    }),
+  );
 }
 
 

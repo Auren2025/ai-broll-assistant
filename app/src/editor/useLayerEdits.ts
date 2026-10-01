@@ -1,18 +1,23 @@
 import { useCallback } from "react";
-import { findLayerById, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
+import { findLayerById, findParentGroup, hugGroupToChildren, isEffectivelyLocked, patchKeysAffectGroupGeometry, scaleGroupChildren, updateLayerById } from "../domain/groupOperations";
 import type { LayerAnimation } from "../domain/layerAnimationSchema";
 import { isLineDrawEligible } from "../domain/lineDraw";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import type { EditableLayerPatch } from "./layerEditing";
 import { computeTextBoxSize } from "./textMetrics";
 
-function findParentGroup(layers: readonly Layer[], layerId: string) {
-  return layers.find((layer) => layer.type === "group" &&
-    layer.children.some((child) => child.id === layerId));
-}
-
 function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+// Keep a group's frame hugging its children after a child geometry change
+// (Keynote behavior): the frame re-fits, children are re-based, nothing moves.
+function hugGroupInLayers(layers: Layer[], groupId: string): Layer[] {
+  return layers.map((layer) =>
+    layer.type === "group" && layer.id === groupId
+      ? hugGroupToChildren(layer)
+      : layer
+  );
 }
 
 export function useLayerEdits(
@@ -20,16 +25,16 @@ export function useLayerEdits(
   selectedLayerId: string | null,
   handleSceneChange: (scene: Scene) => void,
 ) {
-  const patchSelectedLayer = useCallback((patch: EditableLayerPatch) => {
-    if (!scene || !selectedLayerId) return;
-    const selected = findLayerById(scene.layers, selectedLayerId);
-    const parentGroup = findParentGroup(scene.layers, selectedLayerId);
+  const patchLayerById = useCallback((layerId: string, patch: EditableLayerPatch) => {
+    if (!scene) return;
+    const selected = findLayerById(scene.layers, layerId);
+    const parentGroup = findParentGroup(scene.layers, layerId);
     if (!selected || selected.locked || parentGroup?.locked) return;
     const patchKeys = Object.keys(patch);
     if (patchKeys.length === 0) return;
 
     let changed = false;
-    const layers = updateLayerById(scene.layers, selectedLayerId, (layer) => {
+    const layers = updateLayerById(scene.layers, layerId, (layer) => {
       const layerRecord = layer as unknown as Record<string, unknown>;
       const patchRecord = patch as Record<string, unknown>;
       if (!patchKeys.some((key) => layerRecord[key] !== patchRecord[key])) return layer;
@@ -68,13 +73,23 @@ export function useLayerEdits(
         ? { ...merged, animations: merged.animations.filter((animation) => animation.preset !== "line-draw") }
         : merged;
     });
-    if (changed) handleSceneChange({ ...scene, layers });
-  }, [handleSceneChange, scene, selectedLayerId]);
+    if (changed) {
+      const finalLayers = parentGroup && patchKeysAffectGroupGeometry(patchKeys)
+        ? hugGroupInLayers(layers, parentGroup.id)
+        : layers;
+      handleSceneChange({ ...scene, layers: finalLayers });
+    }
+  }, [handleSceneChange, scene]);
+
+  const patchSelectedLayer = useCallback((patch: EditableLayerPatch) => {
+    if (!selectedLayerId) return;
+    patchLayerById(selectedLayerId, patch);
+  }, [patchLayerById, selectedLayerId]);
 
   const changeLayerAnimations = useCallback((layerId: string, animations: LayerAnimation[]) => {
     if (!scene) return;
     const selected = findLayerById(scene.layers, layerId);
-    if (!selected || selected.locked || findParentGroup(scene.layers, layerId)) return;
+    if (!selected || isEffectivelyLocked(scene.layers, layerId)) return;
     let changed = false;
     const layers = updateLayerById(scene.layers, layerId, (layer) => {
       if (JSON.stringify(layer.animations) === JSON.stringify(animations)) return layer;
@@ -115,7 +130,10 @@ export function useLayerEdits(
         y: layer.y - (nextHeight - layer.height) / 2,
       };
     });
-    handleSceneChange({ ...scene, layers });
+    const finalLayers = parentGroup
+      ? hugGroupInLayers(layers, parentGroup.id)
+      : layers;
+    handleSceneChange({ ...scene, layers: finalLayers });
   }, [handleSceneChange, scene]);
 
   const changeAnimationTiming = useCallback((
@@ -139,7 +157,7 @@ export function useLayerEdits(
   }, [changeLayerAnimations, scene]);
 
   return {
-    patchSelectedLayer, changeSelectedLayerAnimations, changeTextLayer,
+    patchLayerById, patchSelectedLayer, changeSelectedLayerAnimations, changeTextLayer,
     changeAnimationTiming, commitMagicMoveTranslation,
   };
 }

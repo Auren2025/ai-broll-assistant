@@ -85,6 +85,35 @@ export function findLayerById(
   return null;
 }
 
+/** The top-level group containing the layer, or null for top-level layers. */
+export function findParentGroup(
+  layers: readonly Layer[],
+  layerId: string,
+): GroupLayer | null {
+  return (
+    layers.find(
+      (layer): layer is GroupLayer =>
+        layer.type === "group" &&
+        layer.children.some((child) => child.id === layerId),
+    ) ?? null
+  );
+}
+
+/**
+ * Effective lock state: a layer is uneditable when it is locked itself or
+ * its parent group is locked. Group members never carry their own lock —
+ * locking is a group-level operation.
+ */
+export function isEffectivelyLocked(
+  layers: readonly Layer[],
+  layerId: string,
+): boolean {
+  const layer = findLayerById(layers, layerId);
+  if (!layer) return false;
+  if (layer.locked) return true;
+  return findParentGroup(layers, layerId)?.locked ?? false;
+}
+
 export function updateLayerById(
   layers: readonly Layer[],
   layerId: string,
@@ -206,6 +235,98 @@ export function scaleGroupChildren(
   return { ...group, width: newWidth, height: newHeight, children };
 }
 
+/**
+ * Axis-aligned bounding box of a child in the group's local coordinates,
+ * accounting for the child's own rotation (applied around its center).
+ */
+function rotatedChildBounds(child: AtomicLayer): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
+  const theta = ((child.rotation ?? 0) * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(theta));
+  const sin = Math.abs(Math.sin(theta));
+  const boundsWidth = child.width * cos + child.height * sin;
+  const boundsHeight = child.width * sin + child.height * cos;
+  const centerX = child.x + child.width / 2;
+  const centerY = child.y + child.height / 2;
+  return {
+    minX: centerX - boundsWidth / 2,
+    minY: centerY - boundsHeight / 2,
+    maxX: centerX + boundsWidth / 2,
+    maxY: centerY + boundsHeight / 2,
+  };
+}
+
+/**
+ * Re-fit a group's frame so it tightly hugs its children (Keynote): the
+ * frame becomes the children's bounding box and the children are re-based
+ * to the new frame origin, so nothing moves visually.
+ *
+ * Rotation-aware: re-fitting moves the rotation pivot (the frame center),
+ * so the frame origin is shifted by the rotated pivot delta to keep every
+ * child visually stationary. With rotation = 0 this reduces to x + minX.
+ * Child rotation is accounted for via each child's rotated bounding box;
+ * re-basing by the unrotated top-left still keeps the (rotation-pivot)
+ * center stationary, so it needs no change.
+ */
+
+/**
+ * Layer patch keys that change a child's occupied bounds and therefore
+ * require the parent group's frame to be re-hugged. Rotation changes a
+ * child's axis-aligned bounds, so it counts as geometry — an inspector
+ * angle edit must re-fit the group exactly like a canvas rotate handle.
+ */
+export function patchKeysAffectGroupGeometry(keys: readonly string[]): boolean {
+  return keys.some((key) =>
+    key === "x" || key === "y" || key === "width" || key === "height" ||
+    key === "rotation"
+  );
+}
+
+export function hugGroupToChildren(group: GroupLayer): GroupLayer {
+  const children = group.children;
+  if (children.length === 0) return group;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const child of children) {
+    const bounds = rotatedChildBounds(child);
+    if (bounds.minX < minX) minX = bounds.minX;
+    if (bounds.minY < minY) minY = bounds.minY;
+    if (bounds.maxX > maxX) maxX = bounds.maxX;
+    if (bounds.maxY > maxY) maxY = bounds.maxY;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return group;
+  const newWidth = Math.max(1, round(maxX - minX));
+  const newHeight = Math.max(1, round(maxY - minY));
+  const theta = (group.rotation * Math.PI) / 180;
+  const deltaX = (minX + maxX) / 2 - group.width / 2;
+  const deltaY = (minY + maxY) / 2 - group.height / 2;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  const centerX = group.x + group.width / 2 + cos * deltaX - sin * deltaY;
+  const centerY = group.y + group.height / 2 + sin * deltaX + cos * deltaY;
+  const nextChildren = children.map(
+    (child): AtomicLayer => ({
+      ...child,
+      x: round(child.x - minX),
+      y: round(child.y - minY),
+    }),
+  );
+  return {
+    ...group,
+    x: round(centerX - newWidth / 2),
+    y: round(centerY - newHeight / 2),
+    width: newWidth,
+    height: newHeight,
+    children: nextChildren,
+  };
+}
+
 export function transformGroupChildToScene(
   group: GroupLayer,
   child: AtomicLayer,
@@ -239,7 +360,8 @@ export function transformGroupChildToScene(
   };
 }
 
-function transformChildGeometryToScene(
+/** Geometry-only child → scene transform (no opacity/visibility/lock baking). */
+export function transformChildGeometryToScene(
   group: GroupLayer,
   child: AtomicLayer,
 ): AtomicLayer {
@@ -343,6 +465,17 @@ export function moveLayerTo(
 
     if (sourceParent) {
       const children = normalizeFrontToBack(frontToBack as AtomicLayer[]);
+      // No-op (dropped back at its own position): keep the original scene
+      // so no history entry or save is produced.
+      if (
+        children.every(
+          (child, index) =>
+            child.id === sourceParent.children[index]?.id &&
+            child.zIndex === sourceParent.children[index]?.zIndex,
+        )
+      ) {
+        return scene;
+      }
       return {
         ...scene,
         layers: scene.layers.map((layer) =>
@@ -350,7 +483,17 @@ export function moveLayerTo(
         ),
       };
     }
-    return { ...scene, layers: normalizeFrontToBack(frontToBack) };
+    const reordered = normalizeFrontToBack(frontToBack);
+    if (
+      reordered.every(
+        (layer, index) =>
+          layer.id === scene.layers[index]?.id &&
+          layer.zIndex === scene.layers[index]?.zIndex,
+      )
+    ) {
+      return scene;
+    }
+    return { ...scene, layers: reordered };
   }
 
   if (destination.beforeLayerId === layerId) return scene;
@@ -382,7 +525,9 @@ export function moveLayerTo(
     .map((layer) => {
       if (layer.type !== "group" || layer.id !== sourceParent?.id) return layer;
       const children = layer.children.filter((child) => child.id !== layerId);
-      return children.length > 0 ? { ...layer, children } : null;
+      // The last member leaving removes the group; otherwise the source
+      // frame hugs its remaining children.
+      return children.length > 0 ? hugGroupToChildren({ ...layer, children }) : null;
     })
     .filter((layer): layer is Layer => layer !== null);
 
@@ -402,7 +547,9 @@ export function moveLayerTo(
     frontToBack.splice(insertionIndex, 0, animationlessLayer as AtomicLayer);
     const children = normalizeFrontToBack(frontToBack);
     rootLayers = rootLayers.map((layer) =>
-      layer.id === targetGroup.id ? { ...targetGroup, children } : layer,
+      layer.id === targetGroup.id
+        ? hugGroupToChildren({ ...targetGroup, children })
+        : layer,
     );
   } else {
     const frontToBack = [...rootLayers].sort(
@@ -487,20 +634,33 @@ export function deleteLayers(
   const selectedIds = new Set(selectedLayerIds);
   const ordered = [...scene.layers].sort((a, b) => a.zIndex - b.zIndex);
   const next: Layer[] = [];
+  let changed = false;
 
   for (const layer of ordered) {
-    if (selectedIds.has(layer.id)) continue;
+    if (selectedIds.has(layer.id)) {
+      changed = true;
+      continue;
+    }
     if (layer.type !== "group") {
       next.push(layer);
       continue;
     }
 
     const children = layer.children.filter((child) => !selectedIds.has(child.id));
-    if (children.length >= 1) {
-      next.push({ ...layer, children });
+    // A group left with no children is removed with its last member.
+    if (children.length === 0) {
+      changed = true;
+      continue;
     }
+    if (children.length === layer.children.length) {
+      next.push(layer);
+      continue;
+    }
+    changed = true;
+    next.push(hugGroupToChildren({ ...layer, children }));
   }
 
+  if (!changed) return scene;
   return {
     ...scene,
     layers: next.map((layer, zIndex) => ({ ...layer, zIndex })),
@@ -580,6 +740,17 @@ export function reorderSelectedLayersZIndex(
       (child) => selectedIds.has(child.id),
       action,
     ).map((child, zIndex) => ({ ...child, zIndex })) as AtomicLayer[];
+    // No-op (already at the edge): return the original scene so no history
+    // entry or save is produced.
+    if (
+      reorderedChildren.every(
+        (child, index) =>
+          child.id === group.children[index]?.id &&
+          child.zIndex === group.children[index]?.zIndex,
+      )
+    ) {
+      return scene;
+    }
 
     return {
       ...scene,
@@ -594,6 +765,17 @@ export function reorderSelectedLayersZIndex(
     (layer) => selectedIds.has(layer.id),
     action,
   );
+  // No-op (already at the edge): return the original scene so no history
+  // entry or save is produced.
+  if (
+    reordered.every(
+      (layer, index) =>
+        layer.id === scene.layers[index]?.id &&
+        index === scene.layers[index]?.zIndex,
+    )
+  ) {
+    return scene;
+  }
 
   return {
     ...scene,

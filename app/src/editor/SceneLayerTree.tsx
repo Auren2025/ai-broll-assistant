@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type DragEvent,
   type MouseEvent,
@@ -37,6 +38,50 @@ interface DraggedLayer {
   parentGroupId: string | null;
 }
 
+function TreeNameEditor({ initialName, label, onCommit, onCancel }: {
+  initialName: string;
+  label: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(initialName);
+  const finishedRef = useRef(false);
+
+  function finish(commit: boolean): void {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    if (commit) {
+      onCommit(draft);
+    } else {
+      onCancel();
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      className="tree-rename-input"
+      aria-label={label}
+      maxLength={120}
+      value={draft}
+      autoFocus
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          finish(true);
+        } else if (event.key === "Escape") {
+          finish(false);
+        }
+      }}
+      onBlur={() => finish(true)}
+    />
+  );
+}
+
 export interface LayerMoveRequest {
   layerId: string;
   parentGroupId: string | null;
@@ -48,7 +93,6 @@ interface SceneLayerTreeProps {
   scenesById: Readonly<Record<string, Scene>>;
   currentSceneId: string;
   selectedLayerIds: readonly string[];
-  hoveredLayerId: string | null;
   activeInsertionGroupId: string | null;
   inspectorScope: InspectorScope;
   isSceneSwitchDisabled: boolean;
@@ -56,13 +100,14 @@ interface SceneLayerTreeProps {
   onSceneSelect: (sceneId: string) => void;
   onSceneContextMenu: (sceneId: string, x: number, y: number) => void;
   onSceneMove: (sceneId: string, insertionIndex: number) => void;
+  onSceneRename: (sceneId: string, name: string) => void;
   onLayerSelect: (sceneId: string, layerId: string, additive: boolean) => void;
-  onGroupEditEnter: (sceneId: string, groupId: string) => void;
+  onLayerRename: (sceneId: string, layerId: string, name: string) => void;
   onLayerMove: (sceneId: string, request: LayerMoveRequest) => void;
   onLayerStateChange: (
     sceneId: string,
     layerId: string,
-    patch: { locked?: boolean; visible?: boolean },
+    patch: { locked?: boolean },
   ) => void;
 }
 
@@ -71,7 +116,6 @@ export function SceneLayerTree({
   scenesById,
   currentSceneId,
   selectedLayerIds,
-  hoveredLayerId,
   activeInsertionGroupId,
   inspectorScope,
   isSceneSwitchDisabled,
@@ -79,8 +123,9 @@ export function SceneLayerTree({
   onSceneSelect,
   onSceneContextMenu,
   onSceneMove,
+  onSceneRename,
   onLayerSelect,
-  onGroupEditEnter,
+  onLayerRename,
   onLayerMove,
   onLayerStateChange,
 }: SceneLayerTreeProps) {
@@ -94,6 +139,11 @@ export function SceneLayerTree({
   const [sceneDropTarget, setSceneDropTarget] = useState<{
     sceneId: string;
     side: "before" | "after";
+  } | null>(null);
+  const [renamingSceneId, setRenamingSceneId] = useState<string | null>(null);
+  const [renamingLayer, setRenamingLayer] = useState<{
+    sceneId: string;
+    layerId: string;
   } | null>(null);
 
   useEffect(() => {
@@ -240,7 +290,6 @@ export function SceneLayerTree({
     parentGroup: Extract<Layer, { type: "group" }> | null,
   ): ReactNode {
     const isSelected = isCurrent && selectedLayerIds.includes(layer.id);
-    const isHovered = isCurrent && hoveredLayerId === layer.id;
     const isGroup = layer.type === "group";
     const isGroupExpanded = isGroup && expandedGroupIds.includes(layer.id);
     const effectivelyLocked = layer.locked || Boolean(parentGroup?.locked);
@@ -259,7 +308,7 @@ export function SceneLayerTree({
     return (
       <div className="layer-tree-entry" key={layer.id}>
         <div
-          className={`layer-item${isGroup ? " is-group" : ""}${parentGroup ? " is-group-child" : ""}${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}${isInsertionTarget ? " is-insertion-target" : ""}${activeDropTarget === groupDropKey ? " is-group-drop-target" : ""}`}
+          className={`layer-item${isGroup ? " is-group" : ""}${parentGroup ? " is-group-child" : ""}${isSelected ? " is-selected" : ""}${isInsertionTarget ? " is-insertion-target" : ""}${activeDropTarget === groupDropKey ? " is-group-drop-target" : ""}`}
           draggable={canDrag}
           onDragStart={(event) =>
             beginLayerDrag(event, {
@@ -310,47 +359,56 @@ export function SceneLayerTree({
           ) : (
             <span className="layer-toggle-spacer" aria-hidden="true" />
           )}
-          <button
-            className="layer-item-main"
-            type="button"
-            aria-pressed={isSelected}
-            disabled={
-              (!isCurrent && isSceneSwitchDisabled) || effectivelyLocked
-            }
-            onClick={(event) => handleLayerClick(event, sceneId, layer.id)}
-            onDoubleClick={
-              isGroup ? () => onGroupEditEnter(sceneId, layer.id) : undefined
-            }
-          >
-            <span className={`layer-icon layer-icon-${layer.type}`}>
-              {getLayerIcon(layer.type)}
-            </span>
-            <strong className="layer-type-name">{layer.name}</strong>
-          </button>
+          {renamingLayer?.sceneId === sceneId &&
+          renamingLayer?.layerId === layer.id ? (
+            <div className="layer-item-main is-renaming">
+              <TreeNameEditor
+                key={layer.id}
+                initialName={layer.name}
+                label="Layer name"
+                onCommit={(name) => {
+                  setRenamingLayer(null);
+                  onLayerRename(sceneId, layer.id, name);
+                }}
+                onCancel={() => setRenamingLayer(null)}
+              />
+            </div>
+          ) : (
+            <button
+              className="layer-item-main"
+              type="button"
+              aria-pressed={isSelected}
+              title="Double-click to rename"
+              disabled={
+                (!isCurrent && isSceneSwitchDisabled) || effectivelyLocked
+              }
+              onClick={(event) => handleLayerClick(event, sceneId, layer.id)}
+              onDoubleClick={() => {
+                if (!isCurrent || renamingLayer || renamingSceneId) return;
+                setRenamingLayer({ sceneId, layerId: layer.id });
+              }}
+            >
+              <span className={`layer-icon layer-icon-${layer.type}`}>
+                {getLayerIcon(layer.type)}
+              </span>
+              <strong className="layer-type-name">{layer.name}</strong>
+            </button>
+          )}
+          {/* Lock lives on the group row only: members are never individually lockable. */}
+          {!parentGroup && (
           <button
             className={`layer-state-button layer-lock-button${layer.locked ? " is-active" : ""}`}
             type="button"
             aria-label={`${layer.locked ? "Unlock" : "Lock"} ${layer.name}`}
             aria-pressed={layer.locked}
-            disabled={!isCurrent || Boolean(parentGroup?.locked)}
+            disabled={!isCurrent}
             onClick={() =>
               onLayerStateChange(sceneId, layer.id, { locked: !layer.locked })
             }
           >
             <span aria-hidden="true" />
           </button>
-          <button
-            className={`layer-state-button layer-visibility-button${layer.visible ? " is-active" : ""}`}
-            type="button"
-            aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`}
-            aria-pressed={layer.visible}
-            disabled={!isCurrent || Boolean(parentGroup?.locked)}
-            onClick={() =>
-              onLayerStateChange(sceneId, layer.id, { visible: !layer.visible })
-            }
-          >
-            <span aria-hidden="true" />
-          </button>
+          )}
         </div>
         {isGroup && isGroupExpanded ? (
           <div className="group-children" aria-label={`${layer.name} layers`}>
@@ -444,19 +502,42 @@ export function SceneLayerTree({
                 >
                   {isExpanded ? "▾" : "▸"}
                 </button>
-                <button
-                  className="scene-tree-main"
-                  type="button"
-                  aria-current={isCurrent ? "page" : undefined}
-                  disabled={isSceneSwitchDisabled}
-                  onClick={() => onSceneSelect(sceneReference.id)}
-                >
-                  <span className="scene-number">{index + 1}</span>
-                  <span className="scene-copy">
-                    <strong>{isSlideProject ? "Page" : "Scene"} {index + 1}</strong>
-                  </span>
-                  {isCurrent ? <span className="current-marker" /> : null}
-                </button>
+                {renamingSceneId === sceneReference.id ? (
+                  <div className="scene-tree-main is-renaming">
+                    <span className="scene-number">{index + 1}</span>
+                    <TreeNameEditor
+                      key={sceneReference.id}
+                      initialName={scene?.name ?? ""}
+                      label="Scene name"
+                      onCommit={(name) => {
+                        setRenamingSceneId(null);
+                        onSceneRename(sceneReference.id, name);
+                      }}
+                      onCancel={() => setRenamingSceneId(null)}
+                    />
+                    {isCurrent ? <span className="current-marker" /> : null}
+                  </div>
+                ) : (
+                  <button
+                    className="scene-tree-main"
+                    type="button"
+                    aria-current={isCurrent ? "page" : undefined}
+                    disabled={isSceneSwitchDisabled}
+                    onClick={() => onSceneSelect(sceneReference.id)}
+                    onDoubleClick={() => {
+                      if (isSceneSwitchDisabled || renamingSceneId) return;
+                      setRenamingSceneId(sceneReference.id);
+                    }}
+                  >
+                    <span className="scene-number">{index + 1}</span>
+                    <span className="scene-copy" title="Double-click to rename">
+                      <strong>
+                        {scene?.name ?? `${isSlideProject ? "Page" : "Scene"} ${index + 1}`}
+                      </strong>
+                    </span>
+                    {isCurrent ? <span className="current-marker" /> : null}
+                  </button>
+                )}
               </div>
 
               {isExpanded ? (

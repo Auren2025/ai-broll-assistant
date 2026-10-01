@@ -8,6 +8,8 @@ import { parseProject } from '../src/domain/projectSchema.ts'
 import { parseScene } from '../src/domain/sceneSchema.ts'
 import type { Project } from '../src/domain/projectSchema.ts'
 import type { Scene as SceneType } from '../src/domain/sceneSchema.ts'
+import { parseSrt } from '../src/srt/parseSrt.ts'
+import type { SubtitleCue } from '../src/domain/subtitleCueSchema.ts'
 import { projectDirectory } from '../scripts/projectDirectory.ts'
 import {
   getImageAssetSizeError,
@@ -881,7 +883,7 @@ async function handlePostScene(
   const newScene: SceneType = {
     schemaVersion: project.schemaVersion,
     id: nextId,
-    topic: `Untitled scene ${nextNumber}`,
+    name: `Scene ${nextNumber}`,
     durationInFrames: NEW_SCENE_DURATION_IN_FRAMES,
     layers: [],
   }
@@ -916,6 +918,480 @@ async function handlePostScene(
     scenes: [...project.scenes],
   }
   nextProject.scenes.splice(insertionIndex, 0, {
+    id: nextId,
+    file: sceneRelPath,
+    ...(project.kind === 'broll' ? { startFrame: endFrameResult.value } : {}),
+  })
+
+  let validatedProject: Project
+  try {
+    validatedProject = parseProject(nextProject)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to construct new project' })
+    return
+  }
+
+  const sceneContent = JSON.stringify(validatedScene, null, 2) + '\n'
+  const projectContent = JSON.stringify(validatedProject, null, 2) + '\n'
+
+  const projectJsonPath = path.join(projectDir, 'project.json')
+
+  const sceneTempPath = buildSceneTempPath(sceneAbsPath)
+  const projectTempPath = buildSceneTempPath(projectJsonPath)
+
+  let sceneTempWritten = false
+  try {
+    await fs.writeFile(sceneTempPath, sceneContent, 'utf-8')
+    sceneTempWritten = true
+    await fs.rename(sceneTempPath, sceneAbsPath)
+  } catch (err) {
+    console.error(err)
+    if (sceneTempWritten) {
+      await fs.unlink(sceneTempPath).catch(() => {})
+    }
+    sendJson(res, 500, { error: 'Failed to save scene' })
+    return
+  }
+
+  let projectTempWritten = false
+  try {
+    await fs.writeFile(projectTempPath, projectContent, 'utf-8')
+    projectTempWritten = true
+    await fs.rename(projectTempPath, projectJsonPath)
+  } catch (err) {
+    console.error(err)
+    if (projectTempWritten) {
+      await fs.unlink(projectTempPath).catch(() => {})
+    }
+    await fs.unlink(sceneAbsPath).catch(() => {})
+    sendJson(res, 500, { error: 'Failed to update project' })
+    return
+  }
+
+  sendJson(res, 201, { project: validatedProject, scene: validatedScene })
+}
+
+async function handleGetSubtitles(
+  res: http.ServerResponse,
+  projectId: string,
+): Promise<void> {
+  const project = await readAndParseProject(res, projectId)
+  if (project === null) return
+
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
+  const srtPath = path.join(projectDir, 'source.srt')
+
+  let raw: string
+  try {
+    raw = await fs.readFile(srtPath, 'utf-8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 200, { cues: [] })
+    } else {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+    }
+    return
+  }
+
+  let cues: SubtitleCue[]
+  try {
+    cues = parseSrt(raw)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 500, { error: 'Invalid subtitle data' })
+    return
+  }
+
+  sendJson(res, 200, { cues })
+}
+
+// Split keeps the project timeline seamless: the first half keeps the source
+// scene id and the second half is inserted right after it as a new scene.
+// Animation timings in the second half shift back by the split offset.
+// Animations that would fall outside either half (including ones straddling
+// the split point) are removed so both scenes stay schema-valid.
+function pruneAnimationsForSplit(
+  layers: SceneType['layers'],
+  keep: (startFrame: number, endFrame: number) => boolean,
+  shift: (startFrame: number) => number,
+): number {
+  let removed = 0
+  const visit = (list: SceneType['layers']): void => {
+    for (const layer of list) {
+      const kept: typeof layer.animations = []
+      for (const animation of layer.animations) {
+        const startFrame = shift(animation.startFrame)
+        const endFrame = startFrame + animation.durationInFrames
+        if (keep(startFrame, endFrame)) {
+          kept.push({ ...animation, startFrame })
+        } else {
+          removed += 1
+        }
+      }
+      layer.animations = kept
+      if (layer.type === 'group') {
+        visit(layer.children)
+      }
+    }
+  }
+  visit(layers)
+  return removed
+}
+
+// Deep-cloned layers keep their visual content, but every layer gets a fresh
+// id so the split-off scene is independent: ids only need to be unique
+// within a scene, so deterministic per-type counters match the editor's style.
+function reassignSplitLayerIds(layers: SceneType['layers']): void {
+  const counters = new Map<string, number>()
+  const visit = (list: SceneType['layers']): void => {
+    for (const layer of list) {
+      const count = (counters.get(layer.type) ?? 0) + 1
+      counters.set(layer.type, count)
+      layer.id = `${layer.type}-${count}`
+      if (layer.type === 'group') {
+        visit(layer.children)
+      }
+    }
+  }
+  visit(layers)
+}
+
+function reassignDuplicatedLayerIds(layers: SceneType['layers']): void {
+  const counters = new Map<string, number>()
+  const visit = (list: SceneType['layers']): void => {
+    for (const layer of list) {
+      const count = (counters.get(layer.type) ?? 0) + 1
+      counters.set(layer.type, count)
+      layer.id = `${layer.type}-${count}`
+      if (layer.type === 'group') {
+        visit(layer.children)
+      }
+    }
+  }
+  visit(layers)
+}
+
+async function handleSplitScene(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  projectId: string,
+  sceneId: string,
+): Promise<void> {
+  const project = await readAndParseProject(res, projectId)
+  if (project === null) return
+
+  const sourceIndex = project.scenes.findIndex(
+    (reference) => reference.id === sceneId,
+  )
+  if (sourceIndex === -1) {
+    sendJson(res, 404, { error: 'Scene not found' })
+    return
+  }
+  const sourceReference = project.scenes[sourceIndex]
+
+  const body = await readRequestBody(req, res)
+  if (body === null) return
+
+  let json: unknown
+  try {
+    json = JSON.parse(body.toString('utf-8'))
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Invalid JSON' })
+    return
+  }
+  const splitFrame = (json as { splitFrame?: unknown } | null)?.splitFrame
+  if (!Number.isInteger(splitFrame)) {
+    sendJson(res, 400, { error: 'Invalid splitFrame' })
+    return
+  }
+
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
+  const sourcePath = path.join(projectDir, sourceReference.file)
+
+  let raw: string
+  try {
+    raw = await fs.readFile(sourcePath, 'utf-8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Scene not found' })
+    } else {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+    }
+    return
+  }
+
+  let sourceScene: SceneType
+  try {
+    sourceScene = parseScene(JSON.parse(raw))
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 500, { error: 'Invalid scene data' })
+    return
+  }
+
+  const sourceStartFrame =
+    project.kind === 'broll'
+      ? (sourceReference.startFrame ?? sourceScene.startFrame)
+      : 0
+  if (sourceStartFrame === undefined) {
+    sendJson(res, 500, { error: 'B-roll scene has no timeline anchor' })
+    return
+  }
+  const sourceEndFrame = sourceStartFrame + sourceScene.durationInFrames
+  const split = splitFrame as number
+  if (split <= sourceStartFrame || split >= sourceEndFrame) {
+    sendJson(res, 400, { error: 'splitFrame must be strictly inside the scene' })
+    return
+  }
+  const firstDuration = split - sourceStartFrame
+  const secondDuration = sourceEndFrame - split
+
+  let maxNumber = 0
+  for (const reference of project.scenes) {
+    const match = SCENE_ID_PATTERN.exec(reference.id)
+    if (match) {
+      maxNumber = Math.max(maxNumber, Number(match[1]))
+    }
+  }
+  const nextNumber = maxNumber + 1
+  const nextId = `scene-${String(nextNumber).padStart(3, '0')}`
+
+  if (project.scenes.some((reference) => reference.id === nextId)) {
+    sendJson(res, 409, { error: `Scene id "${nextId}" already exists` })
+    return
+  }
+
+  const firstScene: SceneType = structuredClone(sourceScene)
+  firstScene.durationInFrames = firstDuration
+  let removedAnimationCount = pruneAnimationsForSplit(
+    firstScene.layers,
+    (_startFrame, endFrame) => endFrame <= firstDuration,
+    (startFrame) => startFrame,
+  )
+
+  const secondScene: SceneType = structuredClone(sourceScene)
+  secondScene.id = nextId
+  secondScene.name = `${sourceScene.name} (part 2)`
+  secondScene.durationInFrames = secondDuration
+  reassignSplitLayerIds(secondScene.layers)
+  removedAnimationCount += pruneAnimationsForSplit(
+    secondScene.layers,
+    (startFrame, endFrame) => startFrame >= 0 && endFrame <= secondDuration,
+    (startFrame) => startFrame - firstDuration,
+  )
+
+  let validatedFirst: SceneType
+  let validatedSecond: SceneType
+  try {
+    validatedFirst = parseScene(firstScene)
+    validatedSecond = parseScene(secondScene)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to construct split scenes' })
+    return
+  }
+
+  const sceneRelPath = `${SCENES_PREFIX}${nextId}.json`
+  const secondAbsPath = path.join(projectDir, sceneRelPath)
+  const firstAbsPath = path.join(projectDir, sourceReference.file)
+
+  try {
+    await fs.access(secondAbsPath)
+    sendJson(res, 409, { error: 'Scene file already exists' })
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+      return
+    }
+  }
+
+  const nextProject: Project = {
+    ...project,
+    scenes: [...project.scenes],
+  }
+  nextProject.scenes.splice(sourceIndex + 1, 0, {
+    id: nextId,
+    file: sceneRelPath,
+    ...(project.kind === 'broll' ? { startFrame: split } : {}),
+  })
+
+  let validatedProject: Project
+  try {
+    validatedProject = parseProject(nextProject)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to construct new project' })
+    return
+  }
+
+  const projectJsonPath = path.join(projectDir, 'project.json')
+
+  const firstTempPath = buildSceneTempPath(firstAbsPath)
+  const secondTempPath = buildSceneTempPath(secondAbsPath)
+  const projectTempPath = buildSceneTempPath(projectJsonPath)
+
+  // Write order: new scene file, first scene file, then project.json. On a
+  // project write failure both scene files roll back so the project never
+  // points at a half-split state.
+  try {
+    await fs.writeFile(
+      secondTempPath,
+      JSON.stringify(validatedSecond, null, 2) + '\n',
+      'utf-8',
+    )
+    await fs.rename(secondTempPath, secondAbsPath)
+    await fs.writeFile(
+      firstTempPath,
+      JSON.stringify(validatedFirst, null, 2) + '\n',
+      'utf-8',
+    )
+    await fs.rename(firstTempPath, firstAbsPath)
+  } catch (err) {
+    console.error(err)
+    await fs.unlink(secondTempPath).catch(() => {})
+    await fs.unlink(firstTempPath).catch(() => {})
+    await fs.unlink(secondAbsPath).catch(() => {})
+    sendJson(res, 500, { error: 'Failed to save scenes' })
+    return
+  }
+
+  try {
+    await fs.writeFile(
+      projectTempPath,
+      JSON.stringify(validatedProject, null, 2) + '\n',
+      'utf-8',
+    )
+    await fs.rename(projectTempPath, projectJsonPath)
+  } catch (err) {
+    console.error(err)
+    await fs.unlink(projectTempPath).catch(() => {})
+    await fs.writeFile(firstAbsPath, raw, 'utf-8').catch(() => {})
+    await fs.unlink(secondAbsPath).catch(() => {})
+    sendJson(res, 500, { error: 'Failed to update project' })
+    return
+  }
+
+  sendJson(res, 201, {
+    project: validatedProject,
+    firstScene: validatedFirst,
+    secondScene: validatedSecond,
+    removedAnimationCount,
+  })
+}
+
+async function handleDuplicateScene(
+  res: http.ServerResponse,
+  projectId: string,
+  sceneId: string,
+): Promise<void> {
+  const project = await readAndParseProject(res, projectId)
+  if (project === null) return
+
+  const sourceIndex = project.scenes.findIndex(
+    (reference) => reference.id === sceneId,
+  )
+  if (sourceIndex === -1) {
+    sendJson(res, 404, { error: 'Scene not found' })
+    return
+  }
+  const sourceReference = project.scenes[sourceIndex]
+
+  const projectDir = projectDirectory(PROJECTS_ROOT, projectId)
+  const sourcePath = path.join(projectDir, sourceReference.file)
+
+  let raw: string
+  try {
+    raw = await fs.readFile(sourcePath, 'utf-8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      sendJson(res, 404, { error: 'Scene not found' })
+    } else {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+    }
+    return
+  }
+
+  let sourceScene: SceneType
+  try {
+    sourceScene = parseScene(JSON.parse(raw))
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 500, { error: 'Invalid scene data' })
+    return
+  }
+
+  let maxNumber = 0
+  for (const reference of project.scenes) {
+    const match = SCENE_ID_PATTERN.exec(reference.id)
+    if (match) {
+      maxNumber = Math.max(maxNumber, Number(match[1]))
+    }
+  }
+  const nextNumber = maxNumber + 1
+  const nextId = `scene-${String(nextNumber).padStart(3, '0')}`
+
+  if (project.scenes.some((reference) => reference.id === nextId)) {
+    sendJson(res, 409, { error: `Scene id "${nextId}" already exists` })
+    return
+  }
+
+  const endFrameResult =
+    project.kind === 'broll'
+      ? await readExistingSceneEndFrames(project, projectDir)
+      : { value: 0, ok: true as const }
+  if (!endFrameResult.ok) {
+    sendJson(res, endFrameResult.error.status, {
+      error: endFrameResult.error.message,
+    })
+    return
+  }
+
+  const duplicatedScene: SceneType = structuredClone(sourceScene)
+  duplicatedScene.id = nextId
+  duplicatedScene.name = `${sourceScene.name} copy`
+  reassignDuplicatedLayerIds(duplicatedScene.layers)
+
+  let validatedScene: SceneType
+  try {
+    validatedScene = parseScene(duplicatedScene)
+  } catch (err) {
+    console.error(err)
+    sendJson(res, 400, { error: 'Failed to construct duplicated scene' })
+    return
+  }
+
+  const sceneRelPath = `${SCENES_PREFIX}${nextId}.json`
+  const sceneAbsPath = path.join(projectDir, sceneRelPath)
+
+  try {
+    await fs.access(sceneAbsPath)
+    sendJson(res, 409, { error: 'Scene file already exists' })
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') {
+      console.error(err)
+      sendJson(res, 500, { error: 'Internal server error' })
+      return
+    }
+  }
+
+  const nextProject: Project = {
+    ...project,
+    scenes: [...project.scenes],
+  }
+  nextProject.scenes.splice(sourceIndex + 1, 0, {
     id: nextId,
     file: sceneRelPath,
     ...(project.kind === 'broll' ? { startFrame: endFrameResult.value } : {}),
@@ -1098,8 +1574,46 @@ const server = http.createServer((req, res) => {
       return
     }
 
+    if (restAfterProject === 'subtitles') {
+      if (method === 'GET') {
+        void handleGetSubtitles(res, projectIdPart)
+        return
+      }
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return
+    }
+
     if (restAfterProject.startsWith(SCENES_PREFIX)) {
-      const sceneId = restAfterProject.slice(SCENES_PREFIX.length)
+      const afterScenes = restAfterProject.slice(SCENES_PREFIX.length)
+      const splitSuffix = '/split'
+      if (afterScenes.endsWith(splitSuffix)) {
+        const sceneId = afterScenes.slice(0, -splitSuffix.length)
+        if (!ID_PATTERN.test(sceneId)) {
+          sendJson(res, 400, { error: 'Invalid scene id' })
+          return
+        }
+        if (method === 'POST') {
+          void handleSplitScene(req, res, projectIdPart, sceneId)
+          return
+        }
+        sendJson(res, 405, { error: 'Method not allowed' })
+        return
+      }
+      const duplicateSuffix = '/duplicate'
+      if (afterScenes.endsWith(duplicateSuffix)) {
+        const sceneId = afterScenes.slice(0, -duplicateSuffix.length)
+        if (!ID_PATTERN.test(sceneId)) {
+          sendJson(res, 400, { error: 'Invalid scene id' })
+          return
+        }
+        if (method === 'POST') {
+          void handleDuplicateScene(res, projectIdPart, sceneId)
+          return
+        }
+        sendJson(res, 405, { error: 'Method not allowed' })
+        return
+      }
+      const sceneId = afterScenes
       if (!ID_PATTERN.test(sceneId)) {
         sendJson(res, 400, { error: 'Invalid scene id' })
         return

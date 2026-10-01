@@ -5,6 +5,7 @@ import { resolveAssetUrl } from "../assetUrl";
 import { buildProjectAssetBaseUrl } from "../api/localService";
 import type { Scene } from "../domain/sceneSchema";
 import { SceneComposition } from "./SceneComposition";
+import { SceneExitTransition } from "./SceneExitTransition";
 
 interface RemotionScenePlayerProps {
   scene: Scene;
@@ -43,11 +44,13 @@ function ScenePreviewComposition({
         from={timelineStartFrame}
         durationInFrames={scene.durationInFrames}
       >
-        <SceneComposition
-          scene={scene}
-          assetBaseUrl={assetBaseUrl}
-          previewBackdrop
-        />
+        <SceneExitTransition scene={scene}>
+          <SceneComposition
+            scene={scene}
+            assetBaseUrl={assetBaseUrl}
+            previewBackdrop
+          />
+        </SceneExitTransition>
       </Sequence>
     </>
   );

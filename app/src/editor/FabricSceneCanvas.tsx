@@ -1,9 +1,10 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from "react";
 import {
   ActiveSelection,
@@ -13,13 +14,20 @@ import {
 } from "fabric";
 import type { Layer, Scene } from "../domain/sceneSchema";
 import { resolveDragTarget } from "./fabricTargetResolution";
+import { toggleShiftSelection } from "./shiftToggleSelection";
+import { computeDrillEntries } from "./drillEntries";
+import {
+  installMultiSelectHitTesting,
+  paintMultiSelectBorders,
+} from "./multiSelectBorders";
+import { paintLockedSelection } from "./lockedSelection";
+import { installGroupHitTesting } from "./groupHitTest";
 import {
   applyLayerToFabricObject,
   applySelectionToCanvas,
   createFabricObjectForLayer,
   isFabricObjectForLayer,
-  updateChildLayerFromFabricObject,
-  updateLayerFromFabricObject,
+  isFabricObjectLocked,
 } from "./fabricAdapter";
 import {
   findLayerByIdOrChild,
@@ -33,38 +41,80 @@ import {
 } from "./fabricObjects";
 import {
   fabricChildrenMatch,
-  resolveMagicMoveContext,
-  roundNumber,
   sortChildrenByZIndex,
 } from "./magicMove";
-import {
-  getMagicMovePath,
-  getMagicMoveTranslationForEndpoint,
-} from "./magicMoveGeometry";
+import { useMagicMoveDrag } from "./useMagicMoveDrag";
+import { useImageCropGestures } from "./useImageCropGestures";
+import { useGroupDrillIn } from "./useGroupDrillIn";
+import { useGestureCommit } from "./useGestureCommit";
 import { computeTextBoxSize } from "./textMetrics";
+import {
+  BASE_CANVAS_SCALE,
+  MIN_CANVAS_ZOOM,
+} from "./useCanvasZoom";
+import {
+  PASTEBOARD_DARK,
+  PASTEBOARD_MARGIN_MIN,
+  canonicalViewport,
+  marginsForViewport,
+  paintPasteboardBase,
+  paintPasteboardDim,
+  pasteboardElementSize,
+  type PasteboardMargins,
+} from "./pasteboard";
 
 registerFabricObjectClasses();
-interface FabricSceneCanvasProps {
+
+/** Document cluster: what is being edited and how the canvas is viewed. */
+export interface FabricCanvasDocument {
   scene: Scene;
   projectId: string;
   projectWidth: number;
   projectHeight: number;
   displayScale?: number;
   zoom?: number;
-  zoomCursorRef?: { current: { x: number; y: number } | null };
+  /**
+   * Bumped by useCanvasZoom.resetZoom on every Fit click. Lets the
+   * centering effect re-run (and recenter the scroll) even when the zoom
+   * value itself does not change.
+   */
+  fitSeq?: number;
+  /** Canvas element owned by App so the pinch-zoom handler can measure it. */
+  canvasElementRef: RefObject<HTMLCanvasElement | null>;
   onSceneChange: (scene: Scene) => void;
+}
+
+/** Selection cluster: layer selection, group drill-in, context menu. */
+export interface FabricCanvasSelection {
+  selectedLayerIds: readonly string[];
   onSelectedLayerIdsChange: (layerIds: string[]) => void;
-  onHoveredLayerIdChange: (layerId: string | null) => void;
   onGroupEditEnter?: (groupId: string) => void;
   onContextMenuRequest: (x: number, y: number) => void;
-  selectedLayerIds: readonly string[];
-  selectedAnimationId?: string | null;
-  onMagicMoveTranslationCommit?: (
+  /**
+   * Id of the group currently drilled into (double-click a group on canvas).
+   * While set, the drilled group keeps its FabricGroup on the canvas and its
+   * children are edited in place; everything else is dimmed / non-interactive
+   * and a Keynote-style frame traces the union of the children.
+   */
+  drillGroupId?: string | null;
+  /** Called when the user clicks outside the drilled group to leave drill-in mode. */
+  onDrillExit?: () => void;
+}
+
+/** Image-crop cluster: crop mode state lives in App, gestures on canvas. */
+export interface FabricCanvasCrop {
+  /** Layer id currently in image-crop mode (canvas-only interaction state). */
+  croppingLayerId?: string | null;
+  onImageCropEnter?: (layerId: string) => void;
+  onImageCropExit?: () => void;
+  onImageCropCommit?: (
     layerId: string,
-    animationId: string,
-    translateX: number,
-    translateY: number,
+    patch: { focalX: number; focalY: number; zoom: number },
   ) => void;
+}
+
+/** Text cluster: programmatic text-edit requests and text content commits. */
+export interface FabricCanvasText {
   pendingTextEditLayerId?: string | null;
   onPendingTextEditConsumed?: () => void;
   onTextLayerChange?: (
@@ -75,31 +125,91 @@ interface FabricSceneCanvasProps {
   ) => void;
 }
 
+/** Animation cluster: magic-move translation commits for the animate tab. */
+export interface FabricCanvasAnimation {
+  selectedAnimationId?: string | null;
+  onMagicMoveTranslationCommit?: (
+    layerId: string,
+    animationId: string,
+    translateX: number,
+    translateY: number,
+  ) => void;
+}
+
+interface FabricSceneCanvasProps {
+  document: FabricCanvasDocument;
+  selection: FabricCanvasSelection;
+  crop: FabricCanvasCrop;
+  text: FabricCanvasText;
+  animation: FabricCanvasAnimation;
+}
+
 export function FabricSceneCanvas({
-  scene,
-  projectId,
-  projectWidth,
-  projectHeight,
-  displayScale = 0.5,
-  zoom = 1,
-  zoomCursorRef,
-  onSceneChange,
-  onSelectedLayerIdsChange,
-  onHoveredLayerIdChange,
-  onGroupEditEnter,
-  onContextMenuRequest,
-  selectedLayerIds,
-  selectedAnimationId,
-  onMagicMoveTranslationCommit,
-  pendingTextEditLayerId,
-  onPendingTextEditConsumed,
-  onTextLayerChange,
+  document,
+  selection,
+  crop,
+  text,
+  animation,
 }: FabricSceneCanvasProps) {
-  const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
+  const {
+    scene,
+    projectId,
+    projectWidth,
+    projectHeight,
+    displayScale = 0.5,
+    zoom = 1,
+    fitSeq = 0,
+    canvasElementRef,
+    onSceneChange,
+  } = document;
+  const {
+    selectedLayerIds,
+    onSelectedLayerIdsChange,
+    onGroupEditEnter,
+    onContextMenuRequest,
+    drillGroupId = null,
+    onDrillExit,
+  } = selection;
+  const {
+    croppingLayerId = null,
+    onImageCropEnter,
+    onImageCropExit,
+    onImageCropCommit,
+  } = crop;
+  const {
+    pendingTextEditLayerId,
+    onPendingTextEditConsumed,
+    onTextLayerChange,
+  } = text;
+  const {
+    selectedAnimationId,
+    onMagicMoveTranslationCommit,
+  } = animation;
   const fabricCanvasRef = useRef<Canvas | null>(null);
+  // Pasteboard margins (scene units, per axis) folded into the viewport pan.
+  // Derived from the real scroll-area size so the element fills it exactly
+  // at minimum zoom; the ref is the source of truth for imperative canvas
+  // ops (the measure effect can grow margins without recreating the canvas),
+  // the state drives the wrapper div size.
+  const [margins, setMargins] = useState<PasteboardMargins>(() => ({
+    x: PASTEBOARD_MARGIN_MIN,
+    y: PASTEBOARD_MARGIN_MIN,
+  }));
+  const marginsRef = useRef(margins);
+  // Live size of the scroll area (the timeline splitter and window resizes
+  // change it). Tracked in state so the centering layout effect below can
+  // re-run after every geometry change and keep the project centered.
+  const [areaSize, setAreaSize] = useState({ width: 0, height: 0 });
+  const elementScale = displayScale * zoom;
+  const elementSceneSize = pasteboardElementSize(
+    projectWidth,
+    projectHeight,
+    margins,
+  );
+  const elementWidth = elementSceneSize.width * elementScale;
+  const elementHeight = elementSceneSize.height * elementScale;
   const layerIdToObjectRef = useRef<Map<string, FabricObject>>(new Map());
   const objectToLayerIdRef = useRef<Map<FabricObject, string>>(new Map());
-  const hoveredObjectRef = useRef<FabricObject | null>(null);
   // Shift-drag axis lock: the dragged's center when Shift is first detected
   // mid-drag, and the locked axis + the pin position of the locked-out
   // axis once the initial direction is clear.
@@ -109,7 +219,6 @@ export function FabricSceneCanvas({
   const sceneRef = useRef<Scene>(scene);
   const projectIdRef = useRef<string>(projectId);
   const contextMenuRequestRef = useRef(onContextMenuRequest);
-  const groupEditEnterRef = useRef(onGroupEditEnter);
   const isApplyingSelectionRef = useRef(false);
   const pendingTextEditRef = useRef<string | null>(null);
   const selectedLayerIdsRef = useRef<readonly string[]>(selectedLayerIds);
@@ -120,26 +229,153 @@ export function FabricSceneCanvas({
     ((layerId: string, text: string, width: number, height: number) => void) |
       undefined
   >(undefined);
-  const [viewportTransform, setViewportTransform] = useState({
-    scale: displayScale,
-    panX: 0,
-    panY: 0,
-  });
-  const [magicMoveDraft, setMagicMoveDraft] = useState<{
-    layerId: string;
-    animationId: string;
-    translateX: number;
-    translateY: number;
-  } | null>(null);
-  const magicMoveDraftRef = useRef(magicMoveDraft);
-  const magicMoveDragRef = useRef<{
-    pointerId: number;
-    layerId: string;
-    animationId: string;
-  } | null>(null);
-  const magicMoveRestoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
+  const [viewportTransform, setViewportTransform] = useState(() =>
+    canonicalViewport(displayScale, {
+      x: PASTEBOARD_MARGIN_MIN,
+      y: PASTEBOARD_MARGIN_MIN,
+    }),
   );
+  // Derive the pasteboard margins from the real scroll-area size so the
+  // element fills it exactly at minimum zoom (see marginsForViewport).
+  // Runs as a layout effect: on mount it settles the margins before the
+  // canvas init effect below runs, and a ResizeObserver keeps them exact
+  // when the window changes. Margins only grow (monotonic): a smaller
+  // window never shrinks the element, so parked layers can't get stranded
+  // outside the interactive area. On growth the canvas is resized
+  // imperatively and the scroll is compensated so the view doesn't jump.
+  useLayoutEffect(() => {
+    const area = canvasElementRef.current?.closest(".canvas-editor-area");
+    if (!(area instanceof HTMLElement)) {
+      return;
+    }
+    const syncMargins = () => {
+      const rect = area.getBoundingClientRect();
+      if (rect.width < 50 || rect.height < 50) {
+        return;
+      }
+      const next = marginsForViewport({
+        areaWidth: rect.width,
+        areaHeight: rect.height,
+        minScale: BASE_CANVAS_SCALE * MIN_CANVAS_ZOOM,
+        projectWidth,
+        projectHeight,
+      });
+      const prev = marginsRef.current;
+      const grown: PasteboardMargins = {
+        x: Math.max(prev.x, next.x),
+        y: Math.max(prev.y, next.y),
+      };
+      if (grown.x === prev.x && grown.y === prev.y) {
+        return;
+      }
+      marginsRef.current = grown;
+      setMargins(grown);
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      const scale = canvas.viewportTransform[0];
+      const size = pasteboardElementSize(projectWidth, projectHeight, grown);
+      canvas.setDimensions({
+        width: size.width * scale,
+        height: size.height * scale,
+      });
+      // Center-zoom: on margin growth the pan resets to canonical — the
+      // project never moves, only the element around it grows. The
+      // centering layout effect below then recenters the scroll.
+      const canonical = canonicalViewport(scale, grown);
+      canvas.setViewportTransform([
+        scale,
+        0,
+        0,
+        scale,
+        canonical.panX,
+        canonical.panY,
+      ]);
+      setViewportTransform(canonical);
+      canvas.requestRenderAll();
+    };
+    syncMargins();
+    const observer = new ResizeObserver(() => {
+      setAreaSize({ width: area.clientWidth, height: area.clientHeight });
+      syncMargins();
+    });
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [canvasElementRef, projectWidth, projectHeight]);
+  const {
+    magicMoveContext,
+    viewportPath,
+    startMagicMoveDrag,
+    updateMagicMoveEndpoint,
+    finishMagicMoveDrag,
+  } = useMagicMoveDrag({
+    scene,
+    selectedLayerIds,
+    selectedAnimationId,
+    viewportTransform,
+    fabricCanvasRef,
+    sceneRef,
+    selectedLayerIdsRef,
+    layerIdToObjectRef,
+    isApplyingSelectionRef,
+    onMagicMoveTranslationCommit,
+  });
+  const {
+    drillGroupIdRef,
+    syncDrillBoundary,
+    applyDrillPresentation,
+    isDrillFrameObject,
+    invalidateDrillFrame,
+    exitDrillIfActive,
+    handleDrillOutsideClick,
+    tryEnterDrillFromSelectedFrame,
+    resolveDblClickTarget,
+    tryEnterDrillForChild,
+    resolveDrillDragTarget,
+    recordDrillPointerDown,
+    recordDrillPointerUp,
+    onDrillGestureTransform,
+    onDrillGestureEnd,
+    repaintDrillFrame,
+  } = useGroupDrillIn({
+    drillGroupId,
+    layerIdToObjectRef,
+    objectToLayerIdRef,
+    sceneRef,
+    selectedLayerIdsRef,
+    onGroupEditEnter,
+    onDrillExit,
+    onSelectedLayerIdsChange,
+  });
+  const { handleGestureModified } = useGestureCommit({
+    objectToLayerIdRef,
+    layerIdToObjectRef,
+    sceneRef,
+    projectIdRef,
+    lockedAxisRef,
+    lockOriginRef,
+    isApplyingSelectionRef,
+    onSceneChange,
+    onDrillGestureEnd,
+  });
+  const {
+    handleCropMouseMove,
+    handleCropMouseDown,
+    handleCropMouseUp,
+    handleCropDblClick,
+    reapplyCropVisuals,
+  } = useImageCropGestures({
+    croppingLayerId,
+    fabricCanvasRef,
+    layerIdToObjectRef,
+    objectToLayerIdRef,
+    sceneRef,
+    drillGroupIdRef,
+    onImageCropEnter,
+    onImageCropExit,
+    onImageCropCommit,
+  });
 
   selectedLayerIdsRef.current = selectedLayerIds;
 
@@ -156,10 +392,6 @@ export function FabricSceneCanvas({
   }, [onContextMenuRequest]);
 
   useEffect(() => {
-    groupEditEnterRef.current = onGroupEditEnter;
-  }, [onGroupEditEnter]);
-
-  useEffect(() => {
     pendingTextEditRef.current = pendingTextEditLayerId ?? null;
   }, [pendingTextEditLayerId]);
 
@@ -172,103 +404,6 @@ export function FabricSceneCanvas({
   useEffect(() => {
     onTextLayerChangeRef.current = onTextLayerChange;
   }, [onTextLayerChange]);
-
-  // Effect: when the scene or the active animation changes, reset the canvas
-  // to its normal editing state and cancel any in-flight magic-move handle
-  // drag. This is the only place we should null `_currentTransform`, because
-  // a scene/animation change means the user has left the previous editing
-  // context and any leftover drag state would be stale.
-  useEffect(() => {
-    if (magicMoveRestoreTimerRef.current !== null) {
-      clearTimeout(magicMoveRestoreTimerRef.current);
-      magicMoveRestoreTimerRef.current = null;
-    }
-    const canvas = fabricCanvasRef.current;
-    if (canvas) {
-      canvas.upperCanvasEl.style.pointerEvents = "";
-      canvas._currentTransform = null;
-      canvas.selection = true;
-      canvas.skipTargetFind = false;
-      isApplyingSelectionRef.current = true;
-      applySelectionToCanvas(
-        canvas,
-        selectedLayerIdsRef.current,
-        layerIdToObjectRef.current,
-      );
-      canvas.requestRenderAll();
-      isApplyingSelectionRef.current = false;
-    }
-    magicMoveDraftRef.current = null;
-    magicMoveDragRef.current = null;
-    setMagicMoveDraft(null);
-  }, [scene.id, selectedAnimationId]);
-
-  // Effect: when the user selects a different layer, only cancel any
-  // in-flight magic-move handle drag state. Do NOT touch the canvas
-  // internals (`_currentTransform`, selection, skipTargetFind, ...):
-  // `mouse:down` has just set up a drag via `_setupCurrentTransform`,
-  // and nulling `_currentTransform` here would silently cancel the drag,
-  // making the freshly-selected layer look selected but un-draggable.
-  // The heavy sync effect already reapplies selection on this change.
-  useEffect(() => {
-    if (magicMoveRestoreTimerRef.current !== null) {
-      clearTimeout(magicMoveRestoreTimerRef.current);
-      magicMoveRestoreTimerRef.current = null;
-    }
-    magicMoveDraftRef.current = null;
-    magicMoveDragRef.current = null;
-    setMagicMoveDraft(null);
-  }, [selectedLayerIds]);
-
-  const syncObjectsToScene = useCallback(
-    (objects: readonly FabricObject[]): void => {
-      const objectByLayerId = new Map<string, FabricObject>();
-
-      for (const object of objects) {
-        const layerId = objectToLayerIdRef.current.get(object);
-
-        if (layerId) {
-          objectByLayerId.set(layerId, object);
-        }
-      }
-
-      if (objectByLayerId.size === 0) {
-        return;
-      }
-
-      const currentScene = sceneRef.current;
-      const updatedScene: Scene = {
-        ...currentScene,
-        layers: currentScene.layers.map((layer) => {
-          if (layer.type === "group") {
-            const groupObject = objectByLayerId.get(layer.id);
-            const nextGroup = groupObject
-              ? updateLayerFromFabricObject(layer, groupObject)
-              : layer;
-            if (nextGroup.type !== "group") return nextGroup;
-            let childChanged = false;
-            const children = nextGroup.children.map((child) => {
-              const childObject = objectByLayerId.get(child.id);
-              if (!childObject) return child;
-              childChanged = true;
-              return updateChildLayerFromFabricObject(
-                nextGroup,
-                child,
-                childObject,
-              );
-            });
-            return childChanged ? { ...nextGroup, children } : nextGroup;
-          }
-          const object = objectByLayerId.get(layer.id);
-          return object ? updateLayerFromFabricObject(layer, object) : layer;
-        }),
-      };
-
-      sceneRef.current = updatedScene;
-      onSceneChange(updatedScene);
-    },
-    [onSceneChange],
-  );
 
   const registerTextEvents = useCallback(
     (canvas: Canvas, object: FabricObject): void => {
@@ -328,8 +463,14 @@ export function FabricSceneCanvas({
           object._updateTextarea();
         }
       });
+
+      // While drilling, typing inside a group child can change its box;
+      // keep the drill frame hugging the children live.
+      object.on("changed", () => {
+        onDrillGestureEnd(canvas);
+      });
     },
-    [],
+    [onDrillGestureEnd],
   );
 
   const addFabricObject = useCallback(
@@ -383,10 +524,17 @@ export function FabricSceneCanvas({
       return;
     }
 
+    const initElementSize = pasteboardElementSize(
+      projectWidth,
+      projectHeight,
+      marginsRef.current,
+    );
     const canvas = new Canvas(canvasElement, {
-      width: projectWidth * displayScale,
-      height: projectHeight * displayScale,
-      backgroundColor: sceneRef.current.backgroundColor ?? "#000000",
+      width: initElementSize.width * displayScale,
+      height: initElementSize.height * displayScale,
+      // The backdrop (pasteboard base + project frame) is painted in
+      // before:render; a flat backgroundColor would cover the whole
+      // enlarged element and hide the project/pasteboard boundary.
       fireRightClick: true,
       selection: true,
       selectionKey: "shiftKey",
@@ -394,8 +542,33 @@ export function FabricSceneCanvas({
       preserveObjectStacking: true,
     });
 
-    canvas.setViewportTransform([displayScale, 0, 0, displayScale, 0, 0]);
-    setViewportTransform({ scale: displayScale, panX: 0, panY: 0 });
+    // Multi-select hit testing: only actual members grab the pointer, the
+    // gaps between them behave as empty canvas. Group members use the same
+    // strict rule as single groups (must hit a visible child).
+    const isDrillActiveGroup = (group: FabricObject) => {
+      const id = objectToLayerIdRef.current.get(group);
+      return id !== undefined && id === drillGroupIdRef.current;
+    };
+    installMultiSelectHitTesting(canvas, { isDrillActiveGroup });
+    // Group hit testing: same Keynote rule — the pointer must land on a
+    // child inside the group to grab it; the group's empty frame gaps
+    // behave as empty canvas. The drilled-in group is excluded so its
+    // frame blank keeps drill semantics.
+    installGroupHitTesting(canvas, { isDrillActiveGroup });
+
+    const initialViewport = canonicalViewport(
+      displayScale,
+      marginsRef.current,
+    );
+    canvas.setViewportTransform([
+      initialViewport.scale,
+      0,
+      0,
+      initialViewport.scale,
+      initialViewport.panX,
+      initialViewport.panY,
+    ]);
+    setViewportTransform(initialViewport);
     fabricCanvasRef.current = canvas;
     const objectToLayerId = objectToLayerIdRef.current;
     const layerIdToObject = layerIdToObjectRef.current;
@@ -430,74 +603,7 @@ export function FabricSceneCanvas({
     };
 
     canvas.on("object:modified", (event) => {
-      lockedAxisRef.current = null;
-      lockOriginRef.current = null;
-      const target = event.target;
-
-      if (!target) {
-        return;
-      }
-      if (
-        target instanceof FabricLayerTextbox &&
-        target.parent instanceof FabricShapeTextObject
-      ) return;
-
-      if (target instanceof ActiveSelection) {
-        const selectedObjects = target.getObjects();
-        const selectedIds = selectedObjects
-          .map((object) => objectToLayerIdRef.current.get(object))
-          .filter((layerId): layerId is string => layerId !== undefined);
-
-        const spaces = new Set(
-          selectedObjects.map((object) => {
-            const parent = object.parent;
-            if (parent instanceof FabricGroup) {
-              return objectToLayerIdRef.current.get(parent) ?? "scene";
-            }
-            return "scene";
-          }),
-        );
-
-        queueMicrotask(() => {
-          isApplyingSelectionRef.current = true;
-
-          try {
-            canvas.discardActiveObject();
-
-            if (spaces.size > 1) {
-              const currentScene = sceneRef.current;
-              for (const selectedObject of selectedObjects) {
-                const layerId = objectToLayerIdRef.current.get(selectedObject);
-                if (!layerId) continue;
-                const layer = findLayerByIdOrChild(currentScene, layerId);
-                const parentGroup = findParentGroupLayer(currentScene, layerId);
-                if (layer) {
-                  applyLayerToFabricObject(
-                    selectedObject,
-                    layer,
-                    parentGroup ?? undefined,
-                    projectIdRef.current,
-                  );
-                }
-              }
-            } else {
-              syncObjectsToScene(selectedObjects);
-            }
-
-            applySelectionToCanvas(
-              canvas,
-              selectedIds,
-              layerIdToObjectRef.current,
-            );
-            canvas.requestRenderAll();
-          } finally {
-            isApplyingSelectionRef.current = false;
-          }
-        });
-        return;
-      }
-
-      syncObjectsToScene([target]);
+      handleGestureModified(event, canvas);
     });
 
     canvas.on("object:resizing", (event) => {
@@ -520,6 +626,9 @@ export function FabricSceneCanvas({
       if (target.parent instanceof FabricGroup) {
         target.parent.dirty = true;
       }
+      // Resizing a shape-text child changes its box; the drill frame stays
+      // hidden during the gesture and re-hugs on mouse-up.
+      onDrillGestureTransform(canvas);
       canvas.requestRenderAll();
     });
 
@@ -563,114 +672,87 @@ export function FabricSceneCanvas({
           target.setCoords();
         }
       }
+      // While drilling, the drill frame hides while a child is being
+      // transformed (Keynote); it reappears fitted on mouse-up.
+      onDrillGestureTransform(canvas);
+    });
+
+    canvas.on("object:scaling", () => {
+      onDrillGestureTransform(canvas);
+    });
+
+    canvas.on("object:rotating", () => {
+      // Rotating a child changes its bounding box; the frame stays hidden
+      // during the gesture and re-hugs on mouse-up.
+      onDrillGestureTransform(canvas);
     });
 
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
-    const resolveHoverTarget = (
-      target: FabricObject | null | undefined,
-    ): FabricObject | null => {
-      if (!target) return null;
-      const parent = target.parent;
-      return parent instanceof FabricGroup ? parent : target;
-    };
 
-    canvas.on("mouse:move", (event) => {
-      const hoverTarget = resolveHoverTarget(event.target);
-      if (hoverTarget === hoveredObjectRef.current) return;
-
-      hoveredObjectRef.current = hoverTarget;
-      onHoveredLayerIdChange(
-        hoverTarget
-          ? (objectToLayerIdRef.current.get(hoverTarget) ?? null)
-          : null,
-      );
-      canvas.requestRenderAll();
-    });
-    canvas.on("mouse:out", () => {
-      if (!hoveredObjectRef.current) return;
-
-      hoveredObjectRef.current = null;
-      onHoveredLayerIdChange(null);
-      canvas.requestRenderAll();
-    });
-    canvas.on("after:render", ({ ctx }) => {
-      const hoveredObject = hoveredObjectRef.current;
-      if (
-        !hoveredObject ||
-        !hoveredObject.visible ||
-        !canvas.getObjects().includes(hoveredObject) ||
-        canvas.getActiveObjects().includes(hoveredObject)
-      ) {
-        return;
+    // A multi-select containing a locked member must not move: lock the
+    // whole ActiveSelection so a locked object can never be dragged along.
+    const freezeSelectionWithLocked = () => {
+      const active = canvas.getActiveObject();
+      if (active instanceof ActiveSelection) {
+        const frozen = active
+          .getObjects()
+          .some((member) => isFabricObjectLocked(member));
+        active.set({ lockMovementX: frozen, lockMovementY: frozen });
       }
+    };
+    canvas.on("selection:created", freezeSelectionWithLocked);
+    canvas.on("selection:updated", freezeSelectionWithLocked);
 
-      hoveredObject._renderControls(ctx, {
-        borderColor: "#7147e8",
-        hasBorders: true,
-        hasControls: false,
+    // Editor backdrop: the pasteboard base and the project frame sit under
+    // every object (before:render).
+    canvas.on("before:render", ({ ctx }) => {
+      paintPasteboardBase(canvas, ctx, {
+        projectWidth,
+        projectHeight,
+        backgroundColor: sceneRef.current.backgroundColor ?? "#000000",
       });
     });
-    canvas.on("mouse:up", () => {
+
+    canvas.on("after:render", ({ ctx }) => {
+      // Pasteboard dim: everything outside the project frame (including
+      // off-project objects and straddling ones' outer parts) dims to the
+      // dark gray, Keynote-style. The project frame itself is never dimmed.
+      paintPasteboardDim(canvas, ctx, { projectWidth, projectHeight });
+      // Re-brighten chrome painted above the dim: selection controls and
+      // the drill-in frame stay fully visible even off-project.
+      canvas.drawControls(ctx);
+      // Keynote-style locked selection: gray border with X handles.
+      paintLockedSelection(canvas, ctx);
+      repaintDrillFrame(canvas, ctx);
+      // Keynote-style multi-select: each member of an ActiveSelection paints
+      // its own border + handles; there is no common outer frame.
+      paintMultiSelectBorders(canvas, ctx);
+    });
+
+    canvas.on("mouse:move", (event) => {
+      if (handleCropMouseMove(canvas, event)) return;
+    });
+    canvas.on("mouse:up", (event) => {
       lockedAxisRef.current = null;
       lockOriginRef.current = null;
+      recordDrillPointerUp(event.e as MouseEvent | undefined);
+      // Safety net: any child gesture that didn't end in object:modified
+      // (e.g. a click without a drag) leaves the drill frame visible.
+      onDrillGestureEnd(canvas);
     });
     canvas.on("mouse:dblclick", (event) => {
-      const selectedLayerId = selectedLayerIdsRef.current.length === 1
-        ? selectedLayerIdsRef.current[0]
-        : null;
-      const selectedObject =
-        selectedLayerId
-          ? layerIdToObjectRef.current.get(selectedLayerId)
-          : undefined;
-      const selectedLayer = selectedLayerId
-        ? findLayerByIdOrChild(sceneRef.current, selectedLayerId)
-        : null;
-      if (
-        selectedObject &&
-        selectedLayer?.type === "group" &&
-        selectedObject.containsPoint(event.scenePoint)
-      ) {
-        canvas.setActiveObject(selectedObject);
-        onSelectedLayerIdsChange([selectedLayer.id]);
-        groupEditEnterRef.current?.(selectedLayer.id);
-        canvas.requestRenderAll();
-        return;
-      }
-      const selectedChildWasHit =
-        selectedObject?.parent instanceof FabricGroup &&
-        selectedObject.containsPoint(event.scenePoint);
-      const childObject = selectedChildWasHit
-        ? selectedObject
-        : [...(event.subTargets ?? []), event.target]
-            .reverse()
-            .find((candidate) => {
-              let current = candidate;
-              while (current) {
-                if (objectToLayerIdRef.current.has(current)) return true;
-                current = current.parent;
-              }
-              return false;
-            });
-      if (!childObject) return;
-      let mappedObject: FabricObject | undefined = childObject;
-      while (mappedObject && !objectToLayerIdRef.current.has(mappedObject)) {
-        mappedObject = mappedObject.parent;
-      }
-      if (!mappedObject) return;
-      const childId = objectToLayerIdRef.current.get(mappedObject);
-      const child = childId
-        ? findLayerByIdOrChild(sceneRef.current, childId)
-        : undefined;
-      if (!child || child.locked) return;
-      if (child.type === "group") {
-        canvas.setActiveObject(mappedObject);
-        onSelectedLayerIdsChange([child.id]);
-        groupEditEnterRef.current?.(child.id);
-        canvas.requestRenderAll();
-        return;
-      }
+      // Double-click an image toggles its crop mode; images win over
+      // group drill-in handling below.
+      if (handleCropDblClick(event)) return;
+      // Double-click a selected group's frame enters drill-in; double-click
+      // a child group enters drill-in for that group.
+      if (tryEnterDrillFromSelectedFrame(event, canvas)) return;
+      const resolved = resolveDblClickTarget(event);
+      if (!resolved) return;
+      if (tryEnterDrillForChild(resolved, canvas)) return;
+      const { mappedObject, child } = resolved;
       const editableText =
         mappedObject instanceof FabricShapeTextObject &&
         (child.type !== "circle" || (child.donut === 0 && child.sweep === 360))
@@ -688,6 +770,16 @@ export function FabricSceneCanvas({
     });
 
     let promotedDragTarget: { id: string; object: FabricObject } | null = null;
+    const canonicalizeTarget = (candidate: FabricObject): FabricObject =>
+      candidate.parent instanceof FabricShapeTextObject
+        ? candidate.parent
+        : candidate;
+    const getParentTarget = (
+      candidate: FabricObject,
+    ): FabricObject | undefined =>
+      candidate.parent instanceof FabricObject
+        ? candidate.parent
+        : undefined;
     canvas.on("mouse:down:before", (event) => {
       const rawTarget = event.target;
       if (!rawTarget) {
@@ -695,17 +787,21 @@ export function FabricSceneCanvas({
         return;
       }
 
+      // Drill-in: a press on a child of the drilled group drags the child
+      // itself, never promoting the drag target up to the group frame.
+      // When a dimmed outside object covers a drill child, the child
+      // underneath wins the press.
+      const drillDragTarget = resolveDrillDragTarget(rawTarget, event, canvas);
+      if (drillDragTarget !== undefined) {
+        promotedDragTarget = drillDragTarget;
+        return;
+      }
+
       const target = resolveDragTarget(
         rawTarget,
         selectedLayerIdsRef.current,
-        (candidate) =>
-          candidate.parent instanceof FabricShapeTextObject
-            ? candidate.parent
-            : candidate,
-        (candidate) =>
-          candidate.parent instanceof FabricObject
-            ? candidate.parent
-            : undefined,
+        canonicalizeTarget,
+        getParentTarget,
         (candidate) => objectToLayerIdRef.current.get(candidate),
         (candidate) =>
           candidate instanceof FabricGroup &&
@@ -727,17 +823,64 @@ export function FabricSceneCanvas({
         );
         return;
       }
+      recordDrillPointerDown(pointerEvent.clientX, pointerEvent.clientY);
+      // Crop gestures take over for the cropping image: drag the zoom
+      // handle to zoom, drag the (dimmed) image to pan. The frame itself
+      // is locked.
+      if (handleCropMouseDown(event)) return;
       if (!event.target) {
+        // Keynote: clicking any blank area exits group editing and
+        // deselects everything.
+        exitDrillIfActive();
         onSelectedLayerIdsChange([]);
         return;
       }
+      // Drill-in: a click outside the drilled group exits drill-in and
+      // selects the clicked layer. Dimmed objects are not selectable, so
+      // the selection is applied manually here. A promoted drill child
+      // (including one underneath a dimmed outside object) already owns
+      // this press, so the outside click must not fire for it.
+      if (!promotedDragTarget && handleDrillOutsideClick(event)) return;
       if (promotedDragTarget) {
         const { id, object } = promotedDragTarget;
-        canvas.setActiveObject(object);
-        onSelectedLayerIdsChange([id]);
-        canvas._currentTransform = null;
-        canvas._setupCurrentTransform(pointerEvent, object, false);
-        canvas.requestRenderAll();
+        if (pointerEvent.shiftKey) {
+          // Shift+click toggles the promoted target in/out of the
+          // selection instead of replacing it. Fabric's native
+          // multi-select already ran above but can't know about our
+          // child->group promotion, so rebuild the selection here with
+          // the same toggle + group/child mutual-exclusion semantics the
+          // layer tree uses, and report exactly once.
+          const nextIds = toggleShiftSelection(
+            selectedLayerIdsRef.current,
+            id,
+            sceneRef.current,
+          );
+          isApplyingSelectionRef.current = true;
+          try {
+            applySelectionToCanvas(canvas, nextIds, layerIdToObjectRef.current);
+          } finally {
+            isApplyingSelectionRef.current = false;
+          }
+          // Fully handled: mouse:up must not re-assert the single
+          // promoted target over the multi-select afterwards.
+          promotedDragTarget = null;
+          onSelectedLayerIdsChange(nextIds);
+          canvas.requestRenderAll();
+        } else {
+          // Fabric's own mousedown already selected the child and built the
+          // correct transform for this press (a drag on first press, the
+          // control's scale/rotate action once the child is selected).
+          // Rebuilding it here as a drag would force every control press
+          // into a move, so only fall back to the manual setup when Fabric
+          // didn't already target this object.
+          if (canvas._currentTransform?.target !== object) {
+            canvas.setActiveObject(object);
+            canvas._currentTransform = null;
+            canvas._setupCurrentTransform(pointerEvent, object, false);
+          }
+          onSelectedLayerIdsChange([id]);
+          canvas.requestRenderAll();
+        }
       }
       // Record the drag start so Shift-lock can detect the initial drag
       // direction (whichever axis the user moves more on first).
@@ -756,6 +899,9 @@ export function FabricSceneCanvas({
       }
     });
     canvas.on("mouse:up", () => {
+      // End of a crop gesture: commit focal/zoom to the layer in one
+      // history entry (no-op inside the hook when no gesture is active).
+      handleCropMouseUp();
       if (!promotedDragTarget) {
         return;
       }
@@ -809,14 +955,6 @@ export function FabricSceneCanvas({
     canvas.requestRenderAll();
 
     return () => {
-      hoveredObjectRef.current = null;
-      magicMoveDraftRef.current = null;
-      magicMoveDragRef.current = null;
-      if (magicMoveRestoreTimerRef.current !== null) {
-        clearTimeout(magicMoveRestoreTimerRef.current);
-        magicMoveRestoreTimerRef.current = null;
-      }
-      onHoveredLayerIdChange(null);
       canvas.upperCanvasEl.removeEventListener("contextmenu", handleContextMenu, true);
       void canvas.dispose();
       fabricCanvasRef.current = null;
@@ -825,13 +963,29 @@ export function FabricSceneCanvas({
     };
   }, [
     addFabricObject,
+    canvasElementRef,
     displayScale,
+    drillGroupIdRef,
+    exitDrillIfActive,
+    handleCropDblClick,
+    handleCropMouseDown,
+    handleCropMouseMove,
+    handleCropMouseUp,
+    handleDrillOutsideClick,
+    handleGestureModified,
+    onDrillGestureEnd,
+    onDrillGestureTransform,
     onSelectedLayerIdsChange,
-    onHoveredLayerIdChange,
     projectHeight,
     projectWidth,
+    recordDrillPointerDown,
+    recordDrillPointerUp,
+    repaintDrillFrame,
+    resolveDblClickTarget,
+    resolveDrillDragTarget,
     scene.id,
-    syncObjectsToScene,
+    tryEnterDrillForChild,
+    tryEnterDrillFromSelectedFrame,
   ]);
 
   useEffect(() => {
@@ -842,41 +996,68 @@ export function FabricSceneCanvas({
     }
 
     const scale = displayScale * zoom;
-    const cursor = zoomCursorRef?.current;
-    const canvasElement = canvasElementRef.current;
-    const rectBefore =
-      cursor && canvasElement ? canvasElement.getBoundingClientRect() : null;
+    const marginsNow = marginsRef.current;
+    const zoomElementSize = pasteboardElementSize(
+      projectWidth,
+      projectHeight,
+      marginsNow,
+    );
 
     canvas.setDimensions({
-      width: projectWidth * scale,
-      height: projectHeight * scale,
+      width: zoomElementSize.width * scale,
+      height: zoomElementSize.height * scale,
     });
 
-    let panX = 0;
-    let panY = 0;
+    // Center-zoom: the project is always centered in the visible area, so
+    // zoom only changes its size. The pan re-anchors to the canonical
+    // margin-folded origin; the centering layout effect below keeps the DOM
+    // scroll centered on the project.
+    const next = canonicalViewport(scale, marginsNow);
 
-    // Zoom toward the cursor: keep the scene point under the pointer fixed.
-    if (cursor && canvasElement && rectBefore) {
-      const currentScale = canvas.viewportTransform[0];
-      const currentPanX = canvas.viewportTransform[4];
-      const currentPanY = canvas.viewportTransform[5];
-      const sceneX = (cursor.x - rectBefore.left - currentPanX) / currentScale;
-      const sceneY = (cursor.y - rectBefore.top - currentPanY) / currentScale;
-      const rectAfter = canvasElement.getBoundingClientRect();
-      panX = cursor.x - rectAfter.left - sceneX * scale;
-      panY = cursor.y - rectAfter.top - sceneY * scale;
-    }
-
-    canvas.setViewportTransform([scale, 0, 0, scale, panX, panY]);
-    setViewportTransform({ scale, panX, panY });
+    canvas.setViewportTransform([
+      next.scale,
+      0,
+      0,
+      next.scale,
+      next.panX,
+      next.panY,
+    ]);
+    setViewportTransform(next);
     canvas.requestRenderAll();
   }, [
+    canvasElementRef,
     displayScale,
     projectHeight,
     projectWidth,
     scene.id,
     zoom,
-    zoomCursorRef,
+  ]);
+
+  // The project is always centered in the viewport: zoom only changes its
+  // size, never its position. Re-center the scroll whenever the geometry
+  // changes — zoom, Fit, scene switch, project resize, margin growth, or
+  // the area itself resizing (timeline splitter, window). Manual panning
+  // via the scrollbars is the user's own action and is left alone; the next
+  // geometry change recenters.
+  // The project sits centered in the pasteboard element by construction
+  // (symmetric margins), so centering the scroll content centers the
+  // project — no margin math needed.
+  useLayoutEffect(() => {
+    const area = canvasElementRef.current?.closest(".canvas-editor-area");
+    if (!(area instanceof HTMLElement)) {
+      return;
+    }
+    area.scrollLeft = (area.scrollWidth - area.clientWidth) / 2;
+    area.scrollTop = (area.scrollHeight - area.clientHeight) / 2;
+  }, [
+    areaSize,
+    canvasElementRef,
+    fitSeq,
+    margins,
+    projectHeight,
+    projectWidth,
+    scene.id,
+    zoom,
   ]);
 
   useEffect(() => {
@@ -901,10 +1082,6 @@ export function FabricSceneCanvas({
     const removeAndForget = (object: FabricObject): void => {
       canvas.remove(object);
       forgetObject(object);
-      if (hoveredObjectRef.current === object) {
-        hoveredObjectRef.current = null;
-        onHoveredLayerIdChange(null);
-      }
     };
     isApplyingSelectionRef.current = true;
 
@@ -926,21 +1103,26 @@ export function FabricSceneCanvas({
       if (!editingObject) {
         canvas.discardActiveObject();
       }
-      canvas.backgroundColor = scene.backgroundColor ?? "#000000";
+      // Note: the scene background is painted by paintPasteboardBase in
+      // before:render (project frame only); canvas.backgroundColor must
+      // stay unset so it doesn't cover the pasteboard.
 
-      const sortedLayers = [...scene.layers].sort(
-        (first, second) => first.zIndex - second.zIndex,
-      );
-      const topLevelIds = new Set(sortedLayers.map((layer) => layer.id));
+      const entries = computeDrillEntries(scene.layers, drillGroupId);
+      const topLevelIds = new Set(entries.map((entry) => entry.layer.id));
       const desiredLayerIds = new Set<string>();
-      for (const layer of sortedLayers) {
-        desiredLayerIds.add(layer.id);
-        if (layer.type === "group") {
-          layer.children.forEach((child) => desiredLayerIds.add(child.id));
+      for (const entry of entries) {
+        desiredLayerIds.add(entry.layer.id);
+        if (entry.layer.type === "group") {
+          entry.layer.children.forEach((child) => desiredLayerIds.add(child.id));
         }
       }
 
       const hasStructuralMismatch = canvas.getObjects().some((object) => {
+        // The drill frame is not a layer; never treat it as a structural
+        // change.
+        if (isDrillFrameObject(object)) {
+          return false;
+        }
         const layerId = objectToLayerId.get(object);
         return layerId === undefined || !topLevelIds.has(layerId);
       });
@@ -949,15 +1131,18 @@ export function FabricSceneCanvas({
         for (const object of [...canvas.getObjects()]) {
           canvas.remove(object);
         }
+        // The removal above also drops the drill frame; clear the ref so
+        // syncDrillBoundary recreates it instead of reusing the detached one.
+        invalidateDrillFrame();
         objectToLayerId.clear();
         layerIdToObject.clear();
-        hoveredObjectRef.current = null;
-        onHoveredLayerIdChange(null);
 
-        sortedLayers.forEach((layer) => {
-          addFabricObject(canvas, layer);
+        entries.forEach((entry) => {
+          const object = addFabricObject(canvas, entry.layer);
+          applyDrillPresentation(entry, object);
         });
 
+        syncDrillBoundary(canvas);
         applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
 
         if (editingLayerId) {
@@ -987,7 +1172,8 @@ export function FabricSceneCanvas({
         }
       }
 
-      sortedLayers.forEach((layer, index) => {
+      entries.forEach((entry, index) => {
+        const layer = entry.layer;
         let object = layerIdToObject.get(layer.id);
 
         if (object && !isFabricObjectForLayer(object, layer)) {
@@ -1050,8 +1236,19 @@ export function FabricSceneCanvas({
           applyLayerToFabricObject(object, layer, undefined, projectIdRef.current);
         }
 
+        applyDrillPresentation(entry, object);
+
         canvas.moveObjectTo(object, index);
       });
+
+      // Hug the drilled group's children with the drill frame (or remove the
+      // frame when drill-in ends).
+      syncDrillBoundary(canvas);
+
+      // Scene sync does not know about crop mode; re-apply the canvas-only
+      // crop visuals so a sync (e.g. the crop commit itself) never drops
+      // them mid-session.
+      reapplyCropVisuals(layerIdToObject);
 
       if (!editingObject) {
         applySelectionToCanvas(canvas, selectedLayerIds, layerIdToObject);
@@ -1077,128 +1274,10 @@ export function FabricSceneCanvas({
     } finally {
       isApplyingSelectionRef.current = false;
     }
-  }, [addFabricObject, onHoveredLayerIdChange, scene, selectedLayerIds]);
+  }, [addFabricObject, applyDrillPresentation, drillGroupId, invalidateDrillFrame, isDrillFrameObject, reapplyCropVisuals, scene, selectedLayerIds, syncDrillBoundary]);
 
-  const magicMoveContext = resolveMagicMoveContext(
-    scene,
-    selectedLayerIds,
-    selectedAnimationId,
-  );
-  const activeMagicMoveDraft =
-    magicMoveContext &&
-    magicMoveDraft?.layerId === magicMoveContext.layer.id &&
-    magicMoveDraft.animationId === magicMoveContext.animation.id
-      ? magicMoveDraft
-      : null;
-  const magicMoveTranslation = magicMoveContext
-    ? {
-        x:
-          activeMagicMoveDraft?.translateX ??
-          magicMoveContext.animation.translateX,
-        y:
-          activeMagicMoveDraft?.translateY ??
-          magicMoveContext.animation.translateY,
-      }
-    : null;
-  const magicMovePath =
-    magicMoveContext && magicMoveTranslation
-      ? getMagicMovePath(
-          magicMoveContext.layer,
-          magicMoveTranslation,
-          magicMoveContext.parentGroup ?? undefined,
-        )
-      : null;
-  const canvasWidth = projectWidth * displayScale * zoom;
-  const canvasHeight = projectHeight * displayScale * zoom;
-  const toViewport = (point: { x: number; y: number }) => ({
-    x: point.x * viewportTransform.scale + viewportTransform.panX,
-    y: point.y * viewportTransform.scale + viewportTransform.panY,
-  });
-  const viewportPath = magicMovePath
-    ? {
-        start: toViewport(magicMovePath.start),
-        end: toViewport(magicMovePath.end),
-      }
-    : null;
-
-  function updateMagicMoveEndpoint(
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ): void {
-    const drag = magicMoveDragRef.current;
-    const canvas = fabricCanvasRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !canvas) return;
-    const currentScene = sceneRef.current;
-    const layer = findLayerByIdOrChild(currentScene, drag.layerId);
-    if (!layer) return;
-    const parentGroup = findParentGroupLayer(currentScene, drag.layerId);
-    const bounds = canvas.upperCanvasEl.getBoundingClientRect();
-    const transform = canvas.viewportTransform;
-    const endpoint = {
-      x: (event.clientX - bounds.left - transform[4]) / transform[0],
-      y: (event.clientY - bounds.top - transform[5]) / transform[3],
-    };
-    const translation = getMagicMoveTranslationForEndpoint(
-      layer,
-      endpoint,
-      parentGroup ?? undefined,
-    );
-    const draft = {
-      layerId: drag.layerId,
-      animationId: drag.animationId,
-      translateX: roundNumber(translation.x),
-      translateY: roundNumber(translation.y),
-    };
-    magicMoveDraftRef.current = draft;
-    setMagicMoveDraft(draft);
-  }
-
-  function finishMagicMoveDrag(
-    event: ReactPointerEvent<HTMLButtonElement>,
-    commit: boolean,
-  ): void {
-    const drag = magicMoveDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const draft = magicMoveDraftRef.current;
-    magicMoveDragRef.current = null;
-    magicMoveDraftRef.current = null;
-    setMagicMoveDraft(null);
-    if (
-      commit &&
-      draft &&
-      draft.layerId === drag.layerId &&
-      draft.animationId === drag.animationId
-    ) {
-      onMagicMoveTranslationCommit?.(
-        drag.layerId,
-        drag.animationId,
-        draft.translateX,
-        draft.translateY,
-      );
-    }
-    if (magicMoveRestoreTimerRef.current !== null) {
-      clearTimeout(magicMoveRestoreTimerRef.current);
-    }
-    magicMoveRestoreTimerRef.current = setTimeout(() => {
-      const canvas = fabricCanvasRef.current;
-      if (canvas) {
-        canvas.upperCanvasEl.style.pointerEvents = "";
-        canvas._currentTransform = null;
-        canvas.selection = true;
-        canvas.skipTargetFind = false;
-        applySelectionToCanvas(
-          canvas,
-          selectedLayerIdsRef.current,
-          layerIdToObjectRef.current,
-        );
-        canvas.requestRenderAll();
-      }
-      isApplyingSelectionRef.current = false;
-      magicMoveRestoreTimerRef.current = null;
-    }, 100);
-  }
+  const canvasWidth = elementWidth;
+  const canvasHeight = elementHeight;
 
   return (
     <div
@@ -1207,7 +1286,7 @@ export function FabricSceneCanvas({
         width: canvasWidth,
         height: canvasHeight,
         overflow: "hidden",
-        background: scene.backgroundColor ?? "#000000",
+        background: PASTEBOARD_DARK,
       }}
     >
       <canvas ref={canvasElementRef} />
@@ -1270,30 +1349,7 @@ export function FabricSceneCanvas({
               left: viewportPath.end.x,
               top: viewportPath.end.y,
             }}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              const canvas = fabricCanvasRef.current;
-              if (canvas) {
-                if (magicMoveRestoreTimerRef.current !== null) {
-                  clearTimeout(magicMoveRestoreTimerRef.current);
-                  magicMoveRestoreTimerRef.current = null;
-                }
-                isApplyingSelectionRef.current = true;
-                canvas._currentTransform = null;
-                canvas.selection = false;
-                canvas.skipTargetFind = true;
-                canvas.discardActiveObject();
-                canvas.upperCanvasEl.style.pointerEvents = "none";
-                canvas.requestRenderAll();
-              }
-              event.currentTarget.setPointerCapture(event.pointerId);
-              magicMoveDragRef.current = {
-                pointerId: event.pointerId,
-                layerId: magicMoveContext.layer.id,
-                animationId: magicMoveContext.animation.id,
-              };
-            }}
+            onPointerDown={startMagicMoveDrag}
             onPointerMove={updateMagicMoveEndpoint}
             onPointerUp={(event) => finishMagicMoveDrag(event, true)}
             onPointerCancel={(event) => finishMagicMoveDrag(event, false)}

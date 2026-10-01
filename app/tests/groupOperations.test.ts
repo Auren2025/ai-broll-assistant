@@ -6,12 +6,16 @@ import {
   cloneLayersToTop,
   deleteLayers,
   duplicateSelectedLayers,
+  hugGroupToChildren,
   insertLayerIntoGroup,
   makeGroup,
   moveLayerTo,
+  patchKeysAffectGroupGeometry,
   reorderSelectedLayersZIndex,
   ungroupLayer,
 } from "../src/domain/groupOperations";
+import type { GroupLayer } from "../src/domain/groupLayerSchema";
+import type { AtomicLayer } from "../src/domain/atomicLayerSchema";
 
 function rect(id: string, x: number, y: number, zIndex: number) {
   return {
@@ -45,7 +49,7 @@ function sceneWith(...layers: unknown[]): Scene {
   return parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 200,
     layers,
@@ -500,4 +504,192 @@ test("animated groups require explicit animation removal before ungrouping", () 
   parseScene(next);
   assert.deepEqual(next.layers.map((layer) => layer.id), ["rectangle-1", "rectangle-2"]);
   assert.deepEqual(next.layers.map((layer) => layer.animations), [[], []]);
+});
+
+function groupFixture(
+  frame: { x: number; y: number; width: number; height: number; rotation: number },
+  children: { id: string; x: number; y: number; width: number; height: number }[],
+): GroupLayer {
+  return {
+    id: "group-1",
+    name: "Group 1",
+    type: "group",
+    ...frame,
+    opacity: 1,
+    opacityEnabled: true,
+    blendMode: "normal",
+    zIndex: 0,
+    visible: true,
+    locked: false,
+    animations: [],
+    children: children.map((child, index) => ({
+      ...rect(child.id, child.x, child.y, index),
+      width: child.width,
+      height: child.height,
+    })),
+  } as unknown as GroupLayer;
+}
+
+// Scene-space center of a child, using the same convention as the renderer:
+// children are positioned relative to the group frame's top-left, the group
+// rotates around its frame center.
+function childSceneCenter(group: GroupLayer, child: AtomicLayer) {
+  const theta = (group.rotation * Math.PI) / 180;
+  const px = child.x + child.width / 2 - group.width / 2;
+  const py = child.y + child.height / 2 - group.height / 2;
+  return {
+    x: group.x + group.width / 2 + px * Math.cos(theta) - py * Math.sin(theta),
+    y: group.y + group.height / 2 + px * Math.sin(theta) + py * Math.cos(theta),
+  };
+}
+
+function sceneCenters(group: GroupLayer) {
+  return group.children.map((child) => childSceneCenter(group, child));
+}
+
+test("hugGroupToChildren expands the frame when a child is dragged out", () => {
+  const group = groupFixture({ x: 0, y: 0, width: 200, height: 200, rotation: 0 }, [
+    { id: "rectangle-1", x: 150, y: 150, width: 100, height: 100 },
+  ]);
+  const next = hugGroupToChildren(group);
+  assert.equal(next.x, 150);
+  assert.equal(next.y, 150);
+  assert.equal(next.width, 100);
+  assert.equal(next.height, 100);
+  assert.deepEqual([next.children[0]?.x, next.children[0]?.y], [0, 0]);
+  // The re-fitted group still validates against the schema.
+  parseScene(sceneWith(next));
+});
+
+test("hugGroupToChildren shrinks the frame when children move inward", () => {
+  const group = groupFixture({ x: 0, y: 0, width: 200, height: 200, rotation: 0 }, [
+    { id: "rectangle-1", x: 0, y: 0, width: 50, height: 50 },
+    { id: "rectangle-2", x: 50, y: 40, width: 50, height: 50 },
+  ]);
+  const next = hugGroupToChildren(group);
+  assert.equal(next.x, 0);
+  assert.equal(next.y, 0);
+  assert.equal(next.width, 100);
+  assert.equal(next.height, 90);
+  assert.deepEqual(
+    next.children.map((child) => [child.x, child.y]),
+    [[0, 0], [50, 40]],
+  );
+});
+
+test("hugGroupToChildren keeps children visually stationary in a rotated group", () => {
+  const group = groupFixture(
+    { x: 100, y: 80, width: 200, height: 160, rotation: 30 },
+    [
+      { id: "rectangle-1", x: 150, y: 20, width: 100, height: 60 },
+      { id: "rectangle-2", x: -40, y: 100, width: 80, height: 40 },
+    ],
+  );
+  const before = sceneCenters(group);
+  const next = hugGroupToChildren(group);
+  // Frame tightly hugs the children bbox.
+  assert.equal(next.width, 290);
+  assert.equal(next.height, 120);
+  const after = sceneCenters(next);
+  for (let i = 0; i < before.length; i++) {
+    assert.ok(Math.abs(after[i]!.x - before[i]!.x) < 0.01);
+    assert.ok(Math.abs(after[i]!.y - before[i]!.y) < 0.01);
+  }
+  parseScene(sceneWith(next));
+});
+
+test("hugGroupToChildren pivot-compensates a 90-degree rotated group", () => {
+  const group = groupFixture(
+    { x: 100, y: 100, width: 200, height: 200, rotation: 90 },
+    [{ id: "rectangle-1", x: 150, y: 0, width: 100, height: 100 }],
+  );
+  const before = sceneCenters(group);
+  const next = hugGroupToChildren(group);
+  assert.equal(next.x, 200);
+  assert.equal(next.y, 250);
+  assert.equal(next.width, 100);
+  assert.equal(next.height, 100);
+  assert.deepEqual([next.children[0]?.x, next.children[0]?.y], [0, 0]);
+  const after = sceneCenters(next);
+  assert.ok(Math.abs(after[0]!.x - before[0]!.x) < 0.01);
+  assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
+});
+
+test("hugGroupToChildren accounts for child rotation in the union", () => {
+  const group = groupFixture(
+    { x: 0, y: 0, width: 400, height: 400, rotation: 0 },
+    [{ id: "rectangle-1", x: 100, y: 100, width: 100, height: 50 }],
+  );
+  // Rotate the child 90 degrees: its axis-aligned bounds become 50x100
+  // around the same center (150, 125).
+  const rotated = {
+    ...group,
+    children: [{ ...group.children[0]!, rotation: 90 }],
+  } as GroupLayer;
+  const before = sceneCenters(rotated);
+  const next = hugGroupToChildren(rotated);
+  // Rotated bounds: minX=125, maxX=175, minY=75, maxY=175.
+  assert.equal(next.x, 125);
+  assert.equal(next.y, 75);
+  assert.equal(next.width, 50);
+  assert.equal(next.height, 100);
+  assert.deepEqual([next.children[0]?.x, next.children[0]?.y], [-25, 25]);
+  assert.equal(next.children[0]?.rotation, 90);
+  // The child's scene-space center (its rotation pivot) is unchanged.
+  const after = sceneCenters(next);
+  assert.ok(Math.abs(after[0]!.x - before[0]!.x) < 0.01);
+  assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
+  parseScene(sceneWith(next));
+});
+
+test("hugGroupToChildren accounts for a non-right-angle child rotation", () => {
+  const group = groupFixture(
+    { x: 0, y: 0, width: 400, height: 400, rotation: 0 },
+    [{ id: "rectangle-1", x: 100, y: 100, width: 100, height: 50 }],
+  );
+  // Rotate the child 45 degrees: its axis-aligned bounds grow beyond the
+  // unrotated 100x50 box around the same center (150, 125).
+  const rotated = {
+    ...group,
+    children: [{ ...group.children[0]!, rotation: 45 }],
+  } as GroupLayer;
+  const before = sceneCenters(rotated);
+  const next = hugGroupToChildren(rotated);
+  // 100x50 at 45°: bounds are ~106.07 x 106.07 around (150, 125), so the
+  // frame must cover roughly x in [97, 203], y in [72, 178].
+  assert.ok(Math.abs(next.width - 106) <= 1);
+  assert.ok(Math.abs(next.height - 106) <= 1);
+  assert.ok(next.x <= 97 && next.x + next.width >= 203);
+  assert.ok(next.y <= 72 && next.y + next.height >= 178);
+  assert.equal(next.children[0]?.rotation, 45);
+  // The child's scene-space center (its rotation pivot) is unchanged.
+  const after = sceneCenters(next);
+  assert.ok(Math.abs(after[0]!.x - before[0]!.x) < 0.01);
+  assert.ok(Math.abs(after[0]!.y - before[0]!.y) < 0.01);
+  parseScene(sceneWith(next));
+});
+
+test("patchKeysAffectGroupGeometry treats rotation as geometry", () => {
+  // An inspector angle edit must re-fit the parent group, exactly like a
+  // canvas rotate handle does.
+  assert.equal(patchKeysAffectGroupGeometry(["rotation"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["x"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["y"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["width"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["height"]), true);
+  assert.equal(patchKeysAffectGroupGeometry(["opacity"]), false);
+  assert.equal(patchKeysAffectGroupGeometry(["name"]), false);
+  assert.equal(patchKeysAffectGroupGeometry([]), false);
+});
+
+test("hugGroupToChildren is a no-op for an already hugging group", () => {
+  const group = groupFixture({ x: 10, y: 20, width: 100, height: 60, rotation: 0 }, [
+    { id: "rectangle-1", x: 0, y: 0, width: 100, height: 60 },
+  ]);
+  const next = hugGroupToChildren(group);
+  assert.deepEqual(
+    { x: next.x, y: next.y, width: next.width, height: next.height },
+    { x: 10, y: 20, width: 100, height: 60 },
+  );
+  assert.deepEqual([next.children[0]?.x, next.children[0]?.y], [0, 0]);
 });

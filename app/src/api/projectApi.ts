@@ -1,5 +1,9 @@
 import { parseProject, type Project } from "../domain/projectSchema";
 import { parseScene, type Scene } from "../domain/sceneSchema";
+import {
+  SubtitleCueListSchema,
+  type SubtitleCue,
+} from "../domain/subtitleCueSchema";
 import { getImageAssetSizeError } from "../imageAssetPolicy";
 
 const resourceEtags = new Map<string, string>();
@@ -166,6 +170,37 @@ export interface CreateSceneResult {
   scene: Scene;
 }
 
+export async function duplicateScene(
+  projectId: string,
+  sceneId: string,
+): Promise<CreateSceneResult> {
+  const { body: input } = await fetchJson(
+    `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/duplicate`,
+    {
+      method: "POST",
+    },
+  );
+
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("project" in input) ||
+    !("scene" in input)
+  ) {
+    throw new Error("Server returned an unexpected payload for duplicate scene");
+  }
+
+  const payload = input as { project: unknown; scene: unknown };
+  const duplicatedProject = parseProject(payload.project);
+  const duplicatedScene = parseScene(payload.scene);
+  const [project, scene] = await Promise.all([
+    fetchProject(duplicatedProject.id),
+    fetchScene(duplicatedProject.id, duplicatedScene.id),
+  ]);
+
+  return { project, scene };
+}
+
 export async function createScene(
   projectId: string,
   index?: number,
@@ -195,6 +230,87 @@ export async function createScene(
   ]);
 
   return { project, scene };
+}
+
+export async function fetchSubtitles(
+  projectId: string,
+): Promise<SubtitleCue[]> {
+  const { body: input } = await fetchJson(
+    `/api/projects/${encodeURIComponent(projectId)}/subtitles`,
+  );
+
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("cues" in input)
+  ) {
+    throw new Error("Server returned an unexpected payload for subtitles");
+  }
+
+  const rawCues = (input as { cues: unknown }).cues;
+  // An empty cue list is valid over the API (e.g. no source.srt); the
+  // schema's min(1) only applies to parsing an actual SRT file.
+  if (Array.isArray(rawCues) && rawCues.length === 0) {
+    return [];
+  }
+  return SubtitleCueListSchema.parse(rawCues);
+}
+
+export interface SplitSceneResult {
+  project: Project;
+  firstScene: Scene;
+  secondScene: Scene;
+  removedAnimationCount: number;
+}
+
+export async function splitScene(
+  projectId: string,
+  sceneId: string,
+  splitFrame: number,
+): Promise<SplitSceneResult> {
+  const { body: input } = await fetchJson(
+    `/api/projects/${encodeURIComponent(projectId)}/scenes/${encodeURIComponent(sceneId)}/split`,
+    {
+      method: "POST",
+      body: JSON.stringify({ splitFrame }),
+    },
+  );
+
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    !("project" in input) ||
+    !("firstScene" in input) ||
+    !("secondScene" in input) ||
+    !("removedAnimationCount" in input)
+  ) {
+    throw new Error("Server returned an unexpected payload for split scene");
+  }
+
+  const payload = input as {
+    project: unknown;
+    firstScene: unknown;
+    secondScene: unknown;
+    removedAnimationCount: unknown;
+  };
+  const splitProject = parseProject(payload.project);
+  const firstScene = parseScene(payload.firstScene);
+  const secondScene = parseScene(payload.secondScene);
+  if (typeof payload.removedAnimationCount !== "number") {
+    throw new Error("Server returned an unexpected payload for split scene");
+  }
+  const [project, first, second] = await Promise.all([
+    fetchProject(splitProject.id),
+    fetchScene(splitProject.id, firstScene.id),
+    fetchScene(splitProject.id, secondScene.id),
+  ]);
+
+  return {
+    project,
+    firstScene: first,
+    secondScene: second,
+    removedAnimationCount: payload.removedAnimationCount,
+  };
 }
 
 export async function deleteScene(

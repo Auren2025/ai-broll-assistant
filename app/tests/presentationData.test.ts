@@ -22,7 +22,7 @@ const project = {
 const scene = (id: string, startFrame: number) => ({
   schemaVersion: 1 as const,
   id,
-  topic: id,
+  name: id,
   startFrame,
   durationInFrames: 30,
   layers: [],

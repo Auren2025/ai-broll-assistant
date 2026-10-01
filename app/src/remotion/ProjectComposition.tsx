@@ -4,6 +4,7 @@ import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
 import { sceneStartFrame } from "../domain/scenePlacement";
 import { SceneComposition } from "./SceneComposition";
+import { SceneExitTransition } from "./SceneExitTransition";
 
 export interface ProjectCompositionProps {
   project: Project;
@@ -42,11 +43,13 @@ export function ProjectComposition({
           durationInFrames={scene.durationInFrames}
           name={`${project.name} · ${scene.id}`}
         >
-          <SceneComposition
-            scene={scene}
-            assetBaseUrl={assetBaseUrl}
-            previewBackdrop={previewBackdrop}
-          />
+          <SceneExitTransition scene={scene}>
+            <SceneComposition
+              scene={scene}
+              assetBaseUrl={assetBaseUrl}
+              previewBackdrop={previewBackdrop}
+            />
+          </SceneExitTransition>
         </Sequence>
       ))}
     </AbsoluteFill>

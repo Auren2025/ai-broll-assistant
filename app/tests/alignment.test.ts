@@ -42,7 +42,7 @@ function sceneWith(...layers: unknown[]): Scene {
   return parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "t",
+    name: "t",
     startFrame: 0,
     durationInFrames: 200,
     layers,
@@ -250,15 +250,21 @@ test("abut actions inside a group work in group-local coordinates", () => {
   );
   // b's group-local x should snap so b.left = a.right = 150 → b.x = 150.
   // (roundCoordinate applies; with these round numbers it's exact.)
+  // The group's frame then hugs its children: children span local x 50..250,
+  // y 50..110, so the frame moves to (150, 150, 200x60) and children re-base.
   const g = result.layers.find((l) => l.type === "group");
   assert.ok(g && g.type === "group");
+  assert.equal(g.x, 150);
+  assert.equal(g.y, 150);
+  assert.equal(g.width, 200);
+  assert.equal(g.height, 60);
   const b = g.children.find((c) => c.id === "b");
   assert.ok(b);
-  assert.equal(b.x, 150);
-  // a unchanged
+  assert.equal(b.x, 100); // scene x = 150 + 100 = 250, i.e. still a.right
+  // a unchanged in scene terms (re-based to the hugged frame)
   const a = g.children.find((c) => c.id === "a");
   assert.ok(a);
-  assert.equal(a.x, 50);
+  assert.deepEqual([a.x, a.y], [0, 0]);
 });
 
 test("existing 6-way alignment still works after refactor (sanity check)", () => {

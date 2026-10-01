@@ -47,6 +47,12 @@ export interface HistoryControllerRefs {
   documentVersions: DocumentVersionTracker;
   isApplyingHistoryRef: { current: boolean };
   isSceneLoadingRef: { current: boolean };
+  /**
+   * Shared with the save controller: true while an undo/redo step is writing
+   * to disk, so the external refresh does not mistake our writes for
+   * another tab's changes.
+   */
+  sceneOperationActiveRef: { current: boolean };
 }
 
 export interface HistoryControllerSetters {
@@ -123,19 +129,54 @@ export function useHistoryController({ refs, setters }: UseHistoryControllerOpti
         (sceneId) => !currentSceneIds.has(sceneId),
       );
 
+      // History restore is an explicit user intent: the snapshot is the source
+      // of truth, so writes bypass the If-Match precondition (force). The
+      // custom scene endpoints (split/duplicate) rewrite files outside the
+      // etag-tracked save flow, which would otherwise fail with 412 here.
+      //
+      // Ordering matters because both the scene PUT and the scene DELETE
+      // endpoints validate the scene id against the references in the
+      // on-disk project.json:
+      // - restored (e.g. redo of a split/delete): write the project FIRST so
+      //   the resurrected scene files have a reference to satisfy the PUT.
+      // - removed (e.g. undo of a split/add): DELETE first, while the
+      //   on-disk project still references the scene, then the project.
       if (restoredSceneIds.length > 0) {
-        await saveProject(snapshot.project);
+        await saveProject(snapshot.project, { force: true });
         for (const sceneId of restoredSceneIds) {
           const restoredScene = snapshot.scenesById[sceneId];
           if (!restoredScene) throw new Error(`Missing scene snapshot: ${sceneId}`);
-          await saveScene(snapshot.project.id, restoredScene);
+          await saveScene(snapshot.project.id, restoredScene, { force: true });
         }
-      } else if (removedSceneIds.length > 0) {
-        for (const sceneId of removedSceneIds) {
-          await deleteSceneRequest(current.project.id, sceneId);
+      } else {
+        if (removedSceneIds.length > 0) {
+          for (const sceneId of removedSceneIds) {
+            await deleteSceneRequest(current.project.id, sceneId);
+          }
         }
-        await saveProject(snapshot.project);
+        await saveProject(snapshot.project, { force: true });
       }
+      // Scenes that exist on both sides but changed content (e.g. the first
+      // half of a split scene): write the snapshot's version back, otherwise
+      // the on-disk file keeps the post-operation content and a reload would
+      // lose data.
+      for (const sceneId of targetSceneIds) {
+        if (
+          currentSceneIds.has(sceneId) &&
+          !restoredSceneIds.includes(sceneId)
+        ) {
+          const before = current.scenesById[sceneId];
+          const after = snapshot.scenesById[sceneId];
+          if (
+            before &&
+            after &&
+            JSON.stringify(before) !== JSON.stringify(after)
+          ) {
+            await saveScene(snapshot.project.id, after, { force: true });
+          }
+        }
+      }
+      await saveProject(snapshot.project, { force: true });
 
       setters.setProject(snapshot.project);
       setters.setScene(snapshot.scene);
@@ -160,6 +201,7 @@ export function useHistoryController({ refs, setters }: UseHistoryControllerOpti
     const current = editorSnapshotRef.current;
     if (!current || undoStackRef.current.length === 0) return;
     refs.isApplyingHistoryRef.current = true;
+    refs.sceneOperationActiveRef.current = true;
     try {
       await applyHistoryStep(
         undoStackRef.current, redoStackRef.current, current, applyHistorySnapshot,
@@ -168,16 +210,18 @@ export function useHistoryController({ refs, setters }: UseHistoryControllerOpti
       setters.setSceneError(setters.getErrorMessage(error));
       setters.onConflict?.(error);
     } finally {
+      refs.sceneOperationActiveRef.current = false;
       refs.isApplyingHistoryRef.current = false;
       refreshAvailability();
     }
-  }, [applyHistorySnapshot, refreshAvailability, refs.isApplyingHistoryRef, refs.isSceneLoadingRef, setters]);
+  }, [applyHistorySnapshot, refreshAvailability, refs.isApplyingHistoryRef, refs.isSceneLoadingRef, refs.sceneOperationActiveRef, setters]);
 
   const handleRedo = useCallback(async () => {
     if (refs.isApplyingHistoryRef.current || refs.isSceneLoadingRef.current) return;
     const current = editorSnapshotRef.current;
     if (!current || redoStackRef.current.length === 0) return;
     refs.isApplyingHistoryRef.current = true;
+    refs.sceneOperationActiveRef.current = true;
     try {
       await applyHistoryStep(
         redoStackRef.current, undoStackRef.current, current, applyHistorySnapshot,
@@ -186,10 +230,11 @@ export function useHistoryController({ refs, setters }: UseHistoryControllerOpti
       setters.setSceneError(setters.getErrorMessage(error));
       setters.onConflict?.(error);
     } finally {
+      refs.sceneOperationActiveRef.current = false;
       refs.isApplyingHistoryRef.current = false;
       refreshAvailability();
     }
-  }, [applyHistorySnapshot, refreshAvailability, refs.isApplyingHistoryRef, refs.isSceneLoadingRef, setters]);
+  }, [applyHistorySnapshot, refreshAvailability, refs.isApplyingHistoryRef, refs.isSceneLoadingRef, refs.sceneOperationActiveRef, setters]);
 
   return {
     setSnapshot: (snapshot: EditorSnapshot | null) => {

@@ -13,6 +13,12 @@ export interface SaveControllerHooks {
   scenesByIdRef: { current: Record<string, Scene> };
   activeSaveCountRef: { current: number };
   externalRefreshRunningRef: { current: boolean };
+  /**
+   * Synchronously true while a scene operation (split/duplicate/add/delete)
+   * is in flight. Set before the first await so the external refresh can
+   * tell our own in-flight writes apart from another tab's changes.
+   */
+  sceneOperationActiveRef: { current: boolean };
   /** Initial values used to schedule the auto-save and refresh loop. */
   autoSaveDelayMs: number;
   externalRefreshIntervalMs: number;
@@ -20,10 +26,12 @@ export interface SaveControllerHooks {
 
 export interface SaveControllerSetters {
   setIsSaving: (value: boolean) => void;
-  setIsSavePending: (value: boolean) => void;
+  /** Optional: notified when a save enters/leaves the queue. */
+  onSavePendingChange?: (value: boolean) => void;
   setSaveError: (message: string | null) => void;
   setHasSaveConflict: (value: boolean) => void;
-  setIsExternalRefreshRunning: (value: boolean) => void;
+  /** Optional: notified when the external-refresh poll starts/finishes. */
+  onExternalRefreshRunningChange?: (value: boolean) => void;
   /** Apply a disk snapshot that overrides the editor state. */
   applyExternalSnapshot: (project: Project, scenes: Scene[]) => void;
   /** Track when a scene save resolves server-side, e.g. to refresh caches. */
@@ -32,10 +40,10 @@ export interface SaveControllerSetters {
   onExternalError: (message: string) => void;
   /** Mark the current change versions as acknowledged by the disk. */
   markCurrentStateSaved: () => void;
+  /** Recompute the dirty flag from the version counters (call after a save). */
+  updateDirtyState: () => void;
   /** Clear undo/redo stacks when the disk replaces the in-memory document. */
   clearHistory: () => void;
-  /** Reset selection/animation inspector that depend on the prior scene set. */
-  resetSelection: () => void;
 }
 
 export interface SaveControllerOptions {
@@ -65,6 +73,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
     scenesByIdRef,
     activeSaveCountRef,
     externalRefreshRunningRef,
+    sceneOperationActiveRef,
   } = hooks;
 
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -97,7 +106,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
         return saveQueueRef.current;
       }
 
-      settersRef.current.setIsSavePending(true);
+      settersRef.current.onSavePendingChange?.(true);
       const { result, settled } = enqueueSave(saveQueueRef.current, async () => {
         activeSaveCountRef.current += 1;
         settersRef.current.setIsSaving(true);
@@ -114,6 +123,11 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
             force,
           );
           settersRef.current.setHasSaveConflict(false);
+          // The save succeeded: sync the dirty flag from the version
+          // counters. Without this the UI stays on "Waiting to save…"
+          // forever even though everything is on disk. Recomputing (rather
+          // than blindly clearing) keeps edits made during the save dirty.
+          settersRef.current.updateDirtyState();
         } catch (error: unknown) {
           settersRef.current.setSaveError(error instanceof Error ? error.message : "Unknown error");
           settersRef.current.setHasSaveConflict(error instanceof ExternalChangeConflictError);
@@ -123,7 +137,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
           if (activeSaveCountRef.current === 0) settersRef.current.setIsSaving(false);
         }
       });
-      saveQueueRef.current = settled.then(() => settersRef.current.setIsSavePending(false));
+      saveQueueRef.current = settled.then(() => settersRef.current.onSavePendingChange?.(false));
       return result;
     },
     [
@@ -138,9 +152,9 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
 
   const runExternalRefresh = useCallback(
     async (signal?: AbortSignal): Promise<void> => {
-      if (externalRefreshRunningRef.current) return;
+      if (externalRefreshRunningRef.current || sceneOperationActiveRef.current) return;
       externalRefreshRunningRef.current = true;
-      settersRef.current.setIsExternalRefreshRunning(true);
+      settersRef.current.onExternalRefreshRunningChange?.(true);
       try {
         const beforeProject = projectRef.current;
         if (!beforeProject) return;
@@ -163,6 +177,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
           documentVersions.snapshot();
         if (
           signal?.aborted ||
+          sceneOperationActiveRef.current ||
           latestProjectVersion !== beforeProjectVersion ||
           latestSceneVersion !== beforeSceneVersion ||
           activeSaveCountRef.current > 0
@@ -177,7 +192,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
         if (!isAbortError(error)) settersRef.current.onExternalError(error instanceof Error ? error.message : "Unknown error");
       } finally {
         externalRefreshRunningRef.current = false;
-        settersRef.current.setIsExternalRefreshRunning(false);
+        settersRef.current.onExternalRefreshRunningChange?.(false);
       }
     },
     [
@@ -185,6 +200,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
       documentVersions,
       externalRefreshRunningRef,
       projectRef,
+      sceneOperationActiveRef,
       scenesByIdRef,
     ],
   );

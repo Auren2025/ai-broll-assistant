@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { Layer } from "../domain/sceneSchema";
 import type {
   AnimationEasing,
@@ -17,6 +17,14 @@ import {
   getAnimationPresets,
 } from "./animationCatalog";
 import { BufferedNumberInput } from "./BufferedNumberInput";
+
+/**
+ * Spinner step (seconds) for the animation duration/start number inputs.
+ * The underlying model stores whole frames, so typed values still round to
+ * the nearest frame; this only controls how far each spinner click moves.
+ * 0.1s feels snappier than a single frame (1/30s) for timing tweaks.
+ */
+const ANIMATION_TIME_STEP_SECONDS = 0.1;
 
 const EASINGS = [
   { value: "linear", label: "None" },
@@ -115,6 +123,8 @@ function BufferedRange({
     if (draft !== value) onCommit(draft);
   }
 
+  const fillPercent = max === min ? 0 : ((draft - min) / (max - min)) * 100;
+
   return (
     <input
       type="range"
@@ -123,6 +133,7 @@ function BufferedRange({
       max={max}
       step={step}
       value={draft}
+      style={{ "--slider-fill": `${fillPercent}%` } as CSSProperties}
       onChange={(event) => setDraft(Number(event.currentTarget.value))}
       onPointerUp={commit}
       onKeyUp={commit}
@@ -273,11 +284,16 @@ export function LayerAnimationPanel({
               <div className="animation-time-input">
                 <BufferedNumberInput
                   aria-label="Animation duration in seconds"
-                  min={1 / fps}
+                  // NOTE: min must stay a multiple of the step (0 here).
+                  // The native number spinner anchors its step grid at min,
+                  // so min={1/fps} would make clicks land on 0.933/0.833
+                  // instead of 0.9/0.8. The real floor (1 frame) is enforced
+                  // in onValueChange below.
+                  min={0}
                   max={
                     (sceneDurationInFrames - selectedAnimation.startFrame) / fps
                   }
-                  step={1 / fps}
+                  step={ANIMATION_TIME_STEP_SECONDS}
                   value={Number(
                     (selectedAnimation.durationInFrames / fps).toFixed(3),
                   )}
@@ -315,7 +331,7 @@ export function LayerAnimationPanel({
                       selectedAnimation.durationInFrames) /
                     fps
                   }
-                  step={1 / fps}
+                  step={ANIMATION_TIME_STEP_SECONDS}
                   value={Number((selectedAnimation.startFrame / fps).toFixed(3))}
                   onValueChange={(seconds) => {
                     const startFrame = Math.min(

@@ -22,14 +22,45 @@ export const LayerSchema = z.union([AtomicLayerSchema, GroupLayerSchema]);
 
 export type Layer = z.infer<typeof LayerSchema>;
 
+// Scene exit-transition rules:
+// - exitTransition is optional; absent means a hard cut to the next scene.
+// - When present, the named outro effect plays over the last durationInFrames
+//   frames of this scene. It never overlaps the next scene (no crossfades):
+//   scene entrances are handled by layer animations, this control only
+//   handles the exit. New effect types are added to
+//   SceneExitTransitionTypeSchema; each may use its own duration.
+export const SceneExitTransitionTypeSchema = z.enum(["fade-out"]);
+
+export type SceneExitTransitionType = z.infer<typeof SceneExitTransitionTypeSchema>;
+
+export const SceneExitTransitionSchema = z.object({
+  type: SceneExitTransitionTypeSchema,
+  durationInFrames: z.number().int().min(1),
+});
+
+export type SceneExitTransition = z.infer<typeof SceneExitTransitionSchema>;
+
+// Legacy page transition, superseded by the unified scene exitTransition.
+// Nothing reads it anymore (the inspector no longer exposes it); it is kept
+// only so older project files still parse under SceneSchema's .strict().
+export const SceneTransitionSchema = z
+  .object({
+    type: z.enum(["none", "fade", "slide"]),
+  })
+  .strict();
+
+export type SceneTransition = z.infer<typeof SceneTransitionSchema>;
+
 export const SceneSchema = z
   .object({
     schemaVersion: z.union([z.literal(1), z.literal(2)]),
     id: z.string().min(1),
-    topic: z.string().min(1),
+    name: z.string().min(1),
     startFrame: z.number().int().nonnegative().optional(),
     durationInFrames: z.number().int().positive(),
     backgroundColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+    exitTransition: SceneExitTransitionSchema.optional(),
+    transition: SceneTransitionSchema.optional(),
     layers: z.array(LayerSchema),
   })
   .strict()
@@ -111,6 +142,46 @@ export const SceneSchema = z
 
 export type Scene = z.infer<typeof SceneSchema>;
 
+/**
+ * Normalize legacy scene data to the current product rules. Applied to every
+ * scene that enters through parseScene (project load, import), before history
+ * is initialized:
+ * - `visible: false` no longer exists as a feature: every layer renders.
+ * - Group members are never individually locked: lock state lives on the group.
+ * - Group members never own animations: entry clears them, so legacy member
+ *   animations are dropped here instead of being merged into the group.
+ *
+ * Returns the original scene reference when nothing needs normalizing.
+ */
+function normalizeLegacyScene(scene: Scene): Scene {
+  let changed = false;
+  const layers = scene.layers.map((layer) => {
+    const visibleLayer = layer.visible ? layer : { ...layer, visible: true };
+    if (visibleLayer !== layer) changed = true;
+    if (visibleLayer.type !== "group") return visibleLayer;
+    let childrenChanged = false;
+    const children = visibleLayer.children.map((child) => {
+      if (child.visible && !child.locked && child.animations.length === 0) {
+        return child;
+      }
+      childrenChanged = true;
+      return { ...child, visible: true, locked: false, animations: [] };
+    });
+    if (childrenChanged) changed = true;
+    return childrenChanged ? { ...visibleLayer, children } : visibleLayer;
+  });
+  return changed ? { ...scene, layers } : scene;
+}
+
 export function parseScene(input: unknown): Scene {
-  return SceneSchema.parse(input);
+  if (input !== null && typeof input === "object" && "topic" in input) {
+    // Migrate scenes saved before the topic field was renamed to name.
+    const { topic, ...rest } = input as Record<string, unknown>;
+    return normalizeLegacyScene(
+      SceneSchema.parse(
+        "name" in rest ? rest : { ...rest, name: topic },
+      ),
+    );
+  }
+  return normalizeLegacyScene(SceneSchema.parse(input));
 }

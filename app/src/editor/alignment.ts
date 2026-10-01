@@ -1,5 +1,5 @@
 import type { Layer, Scene } from "../domain/sceneSchema";
-import { getCombinedBounds, getLayerBounds } from "../domain/groupOperations";
+import { getCombinedBounds, getLayerBounds, hugGroupToChildren } from "../domain/groupOperations";
 
 export type AlignmentAction =
   | "left"
@@ -141,10 +141,14 @@ export function alignSceneLayers(
 
   for (const layer of scene.layers) {
     if (selectedLayerIdSet.has(layer.id)) {
+      // Locked layers are not editable: align only the editable selection.
+      if (layer.locked) continue;
       getSpace("scene", projectWidth, projectHeight).layers.push(layer);
     } else if (layer.type === "group") {
-      const childLayers = layer.children.filter((child) =>
-        selectedLayerIdSet.has(child.id),
+      // Locking a group locks all its members.
+      if (layer.locked) continue;
+      const childLayers = layer.children.filter(
+        (child) => selectedLayerIdSet.has(child.id) && !child.locked,
       );
       if (childLayers.length > 0) {
         getSpace(layer.id, layer.width, layer.height).layers.push(...childLayers);
@@ -357,7 +361,8 @@ export function alignSceneLayers(
           y: nextY,
         };
       });
-      return { ...layer, children };
+      // Keep the group's frame hugging its children after the move.
+      return hugGroupToChildren({ ...layer, children });
     }
 
     return layer;

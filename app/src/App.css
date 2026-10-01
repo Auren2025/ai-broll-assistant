@@ -2,6 +2,14 @@
   color: #202124;
   background: #e9eaed;
 
+  /* Brand tokens (confirmed): purple is limited to three stops; plain
+     selection blue is #0a84ff (canvas code only). */
+  --accent: #6857e5;
+  --accent-strong: #5845c9;
+  --accent-soft: #efedff;
+  /* RGB triplet for alpha variants: rgb(var(--accent-rgb) / 24%). */
+  --accent-rgb: 104 87 229;
+
   /* Panel divider lines. --divider-strong separates major regions (topbar,
      sidebars, canvas); --divider separates sections within a panel. */
   --divider-strong: #d9dadd;
@@ -61,10 +69,10 @@ button {
   place-items: center;
   border-radius: 9px;
   color: #fff;
-  background: #6857e5;
+  background: var(--accent);
   font-size: 15px;
   font-weight: 750;
-  box-shadow: 0 5px 14px rgb(104 87 229 / 24%);
+  box-shadow: 0 5px 14px rgb(var(--accent-rgb) / 24%);
 }
 
 .project-context h1 {
@@ -116,8 +124,8 @@ button {
 
 .topbar .editor-tool:hover,
 .topbar .editor-tool.is-active {
-  color: #5545cf;
-  background: #efedff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .topbar .editor-tool.editor-tool-icon {
@@ -130,6 +138,11 @@ button {
   place-items: center;
   font-size: 14px;
   font-weight: 700;
+}
+
+.topbar .editor-tool.editor-tool-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .topbar button,
@@ -173,12 +186,12 @@ button {
 .button-primary {
   min-width: 66px;
   color: #fff;
-  background: #6857e5;
-  box-shadow: 0 4px 10px rgb(104 87 229 / 18%);
+  background: var(--accent);
+  box-shadow: 0 4px 10px rgb(var(--accent-rgb) / 18%);
 }
 
 .button-primary:hover:not(:disabled) {
-  background: #5848d5;
+  background: var(--accent-strong);
 }
 
 .button-primary:disabled {
@@ -229,6 +242,15 @@ button {
   overflow: hidden;
   max-width: 240px;
   color: #bb3f45;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-notice {
+  overflow: hidden;
+  max-width: 320px;
+  color: #6a5fb8;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -306,7 +328,7 @@ button {
 
 .scene-tree-row.is-slide.is-drop-before::before,
 .scene-tree-row.is-slide.is-drop-after::after {
-  background: #6556d8;
+  background: var(--accent);
   border-radius: 2px;
   content: "";
   height: 3px;
@@ -329,7 +351,7 @@ button {
 }
 
 .scene-tree-row.is-current {
-  background: #efedff;
+  background: var(--accent-soft);
 }
 
 .tree-toggle,
@@ -350,7 +372,7 @@ button {
 }
 
 .tree-toggle:disabled {
-  color: #6556d8;
+  color: var(--accent);
   cursor: default;
 }
 
@@ -484,7 +506,7 @@ button {
 }
 
 .layer-drop-zone.is-active::after {
-  background: #6554e8;
+  background: var(--accent);
   box-shadow: 0 0 0 1px rgb(101 84 232 / 14%);
 }
 
@@ -500,14 +522,9 @@ button {
   background: #f3f3f7;
 }
 
-.layer-item.is-hovered:not(.is-selected) {
-  color: #5845c9;
-  background: #eee9ff;
-}
-
 .scene-item.is-current,
 .layer-item.is-selected {
-  background: #efedff;
+  background: var(--accent-soft);
 }
 
 .scene-item:disabled {
@@ -553,6 +570,32 @@ button {
   white-space: nowrap;
 }
 
+.scene-tree-main.is-renaming {
+  cursor: text;
+}
+
+.layer-item-main.is-renaming {
+  display: block;
+  cursor: text;
+}
+
+.tree-rename-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tree-rename-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 25%);
+}
+
 .scene-copy small,
 .layer-copy small {
   overflow: hidden;
@@ -566,7 +609,7 @@ button {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #6857e5;
+  background: var(--accent);
 }
 
 .sidebar-hint {
@@ -597,12 +640,12 @@ button {
 
 .layer-item.is-insertion-target {
   background: #e8e4ff;
-  box-shadow: inset 3px 0 #6554e8, inset 0 -1px #d9d3ff;
+  box-shadow: inset 3px 0 var(--accent), inset 0 -1px #d9d3ff;
 }
 
 .layer-item.is-group-drop-target {
   background: #ded8ff;
-  outline: 2px solid #6554e8;
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -704,36 +747,6 @@ button {
   transform-origin: bottom left;
 }
 
-.layer-visibility-button span {
-  position: relative;
-  width: 14px;
-  height: 9px;
-  border: 1px solid currentcolor;
-  border-radius: 50%;
-}
-
-.layer-visibility-button span::before {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentcolor;
-  content: "";
-}
-
-.layer-visibility-button:not(.is-active) span::after {
-  position: absolute;
-  top: 3px;
-  left: -2px;
-  width: 17px;
-  height: 1px;
-  background: currentcolor;
-  content: "";
-  transform: rotate(-40deg);
-}
-
 .canvas-workspace {
   display: grid;
   grid-template-rows: minmax(0, 1fr) 224px;
@@ -749,6 +762,55 @@ button {
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
+  /* Keynote-style pasteboard: one continuous dark gray field outside the
+     project. Must match PASTEBOARD_DARK in editor/pasteboard.ts (the
+     PASTEBOARD_BASE + PASTEBOARD_DIM composite) so the dark gray continues
+     past the canvas element bounds with no visible edge. */
+  background: #939499;
+}
+
+/* Thin minimal scrollbars for all editor scroll areas. */
+.canvas-editor-area,
+.inspector-scroll,
+.sidebar-left,
+.animation-timeline-grid {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(0 0 0 / 38%) transparent;
+}
+
+.canvas-editor-area::-webkit-scrollbar,
+.inspector-scroll::-webkit-scrollbar,
+.sidebar-left::-webkit-scrollbar,
+.animation-timeline-grid::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.canvas-editor-area::-webkit-scrollbar-track,
+.inspector-scroll::-webkit-scrollbar-track,
+.sidebar-left::-webkit-scrollbar-track,
+.animation-timeline-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.canvas-editor-area::-webkit-scrollbar-thumb,
+.inspector-scroll::-webkit-scrollbar-thumb,
+.sidebar-left::-webkit-scrollbar-thumb,
+.animation-timeline-grid::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 38%);
+  border-radius: 4px;
+}
+
+.canvas-editor-area::-webkit-scrollbar-thumb:hover,
+.inspector-scroll::-webkit-scrollbar-thumb:hover,
+.sidebar-left::-webkit-scrollbar-thumb:hover,
+.animation-timeline-grid::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 52%);
+}
+
+.canvas-editor-area::-webkit-scrollbar-corner,
+.animation-timeline-grid::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .canvas-zoom-controls {
@@ -781,8 +843,8 @@ button {
 }
 
 .canvas-zoom-controls button:hover {
-  color: #5545cf;
-  background: #efedff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .canvas-zoom-controls .canvas-zoom-fit {
@@ -828,12 +890,12 @@ button {
 .timeline-resize-handle:focus-visible span,
 .canvas-workspace.is-resizing .timeline-resize-handle span {
   width: 48px;
-  background: #6857e5;
+  background: var(--accent);
 }
 
 .timeline-resize-handle:focus-visible {
   outline: 0;
-  box-shadow: inset 0 0 0 1px #6857e5;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .canvas-workspace.is-resizing,
@@ -847,21 +909,29 @@ button {
   min-width: 100%;
   min-height: 100%;
   width: max-content;
-  align-items: center;
-  justify-content: center;
   padding: 20px;
 }
 
 .canvas-frame {
   flex: 0 0 auto;
-  background: #fff;
-  box-shadow:
-    0 1px 2px rgb(28 31 38 / 8%),
-    0 18px 50px rgb(28 31 38 / 12%);
+  /* Safe centering: margin auto centers the frame while it fits, and
+     collapses to zero when it overflows so the top/left stay reachable
+     by scrolling (justify-content: center would clip them). */
+  margin: auto;
+  position: relative;
+  /* Transparent: the frame wraps the enlarged canvas element (project +
+     pasteboard margin), whose bounds are arbitrary. The project card
+     itself (drop shadow + hairline) is painted inside the canvas, so the
+     frame adds no chrome of its own. */
+  background: transparent;
 }
 
 .canvas-frame.is-preview {
   position: relative;
+  /* Black behind the preview player: the scene fades to transparent, and
+     black is what this (dark-video) pipeline previews against. Export keeps
+     the real alpha channel. */
+  background: #000;
 }
 
 .magic-move-overlay {
@@ -929,33 +999,80 @@ button {
   padding: 3px 9px;
   border-radius: 999px;
   color: #fff;
-  background: rgb(104 87 229 / 92%);
+  background: rgb(var(--accent-rgb) / 92%);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.4px;
   pointer-events: none;
 }
 
+.drill-breadcrumb {
+  position: absolute;
+  z-index: 10;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid #e7e4f3;
+  box-shadow: 0 1px 3px rgb(28 31 38 / 10%);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8a8496;
+  pointer-events: auto;
+}
+
+.drill-breadcrumb-exit {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.drill-breadcrumb-exit:hover {
+  text-decoration: underline;
+}
+
+.drill-breadcrumb-sep {
+  color: #c9c4d6;
+}
+
+.drill-breadcrumb-current {
+  color: #2c2833;
+  font-weight: 600;
+}
+
 .inspector-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0;
-  padding: 8px;
+  gap: 4px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--divider);
   background: #fff;
 }
 
 .inspector-tabs button {
-  height: 36px;
-  color: #97979b;
-  background: #f2f1f3;
+  height: 34px;
+  border-radius: 8px;
+  color: #8a8a90;
+  background: transparent;
   font-size: 13px;
   font-weight: 500;
 }
 
+.inspector-tabs button:hover {
+  color: #55555c;
+  background: #f4f4f6;
+}
+
 .inspector-tabs button.is-active {
-  color: #fff;
-  background: #19171c;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
   font-weight: 600;
 }
 
@@ -1001,49 +1118,12 @@ button {
 }
 
 .scene-tree-row.is-scene-selected {
-  background: #efedff;
+  background: var(--accent-soft);
 }
 
 .scene-design-panel {
   color: #19171c;
   background: #fff;
-}
-
-.scene-design-header {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  height: 53px;
-  box-sizing: border-box;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--divider);
-}
-
-.scene-design-header h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.scene-design-icon {
-  position: relative;
-  width: 14px;
-  height: 11px;
-  border: 1px solid #29282d;
-}
-
-.scene-design-icon::after {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  width: 0;
-  height: 0;
-  border-top: 2.5px solid transparent;
-  border-bottom: 2.5px solid transparent;
-  border-left: 4px solid #29282d;
-  content: "";
 }
 
 .scene-design-section {
@@ -1100,7 +1180,7 @@ button {
 
 .scene-design-panel input:focus,
 .scene-design-panel select:focus {
-  box-shadow: inset 0 0 0 1px #7a40ed;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .scene-design-panel input[type="number"] {
@@ -1141,7 +1221,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: var(--accent);
 }
 
 .scene-color-inputs {
@@ -1220,10 +1300,9 @@ button {
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  height: 53px;
+  height: 40px;
   box-sizing: border-box;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--divider);
 }
 
 .layer-design-header h3 {
@@ -1234,29 +1313,6 @@ button {
   line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.layer-design-name-input {
-  min-width: 0;
-  height: 28px;
-  box-sizing: border-box;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  padding: 0 6px;
-  color: inherit;
-  background: transparent;
-  font: inherit;
-  font-weight: 600;
-}
-
-.layer-design-name-input:hover {
-  border-color: #d8d5dc;
-}
-
-.layer-design-name-input:focus {
-  border-color: #8b5cf6;
-  outline: none;
-  background: #fff;
 }
 
 .layer-design-type-icon {
@@ -1283,9 +1339,8 @@ button {
 .layer-align-row {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  height: 52px;
   align-items: center;
-  padding: 12px 8px;
+  padding: 8px;
   border-bottom: 1px solid var(--divider);
 }
 
@@ -1300,8 +1355,8 @@ button {
 }
 
 .layer-align-row button:hover {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .layer-align-row button:disabled {
@@ -1330,8 +1385,8 @@ button {
 }
 
 .layer-distribute-row button:hover:not(:disabled) {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .layer-distribute-row button:disabled {
@@ -1366,7 +1421,7 @@ button {
 .selection-actions-menu summary:hover,
 .selection-actions-menu[open] summary {
   color: #604bd2;
-  background: #efedff;
+  background: var(--accent-soft);
 }
 
 .selection-actions-menu > div {
@@ -1397,8 +1452,8 @@ button {
 }
 
 .selection-actions-menu > div button:hover:not(:disabled) {
-  color: #5845c9;
-  background: #efedff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .selection-actions-menu > div button:disabled {
@@ -1414,14 +1469,14 @@ button {
   border: 0;
   border-radius: 7px;
   color: #fff;
-  background: #6857e5;
+  background: var(--accent);
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
 }
 
 .selection-actions-section .selection-group-button:hover:not(:disabled) {
-  background: #5848d5;
+  background: var(--accent-strong);
 }
 
 .selection-actions-section .selection-group-button:disabled {
@@ -1431,73 +1486,69 @@ button {
 }
 
 .selection-actions-section .selection-ghost-button {
-  color: #5845c9;
-  background: #efedff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
-.layer-arrange-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 0 12px 4px 16px;
+.layer-arrange-segment {
+  display: flex;
+  padding: 2px;
+  border-radius: 10px;
+  background: rgb(242 241 243 / 70%);
 }
 
-.layer-arrange-row button {
-  height: 30px;
-  padding: 0;
+.layer-arrange-single {
+  margin: 0 16px 4px;
+}
+
+.layer-arrange-segment button {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 3px;
   border: 0;
-  border-radius: 6px;
-  color: #97979b;
-  background: rgb(242 241 243 / 35%);
-  font-size: 13px;
+  border-radius: 8px;
+  color: #55555c;
+  background: transparent;
   cursor: pointer;
 }
 
-.layer-arrange-row button:hover {
-  color: #7a40ed;
-  background: #f2ecfd;
+.layer-arrange-segment button + button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: rgb(0 0 0 / 10%);
 }
 
-.layer-actions-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+.layer-arrange-segment button:hover {
+  color: var(--accent);
+  background: rgb(255 255 255 / 75%);
+}
+
+.layer-arrange-segment button span {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.layer-image-actions {
+  display: flex;
+  gap: 8px;
   padding: 8px 16px 0;
 }
 
-.layer-actions-row button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid #d8d9df;
-  border-radius: 7px;
-  color: #19171c;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.layer-actions-row button:hover {
-  border-color: #bfc1ca;
-  background: #f8f8fa;
-}
-
-.layer-actions-row button.is-danger {
-  color: #c0392b;
-  border-color: #e6b9b3;
-}
-
-.layer-actions-row button.is-danger:hover {
-  background: #fdf0ef;
-}
-
-.layer-actions-row kbd {
-  color: #97979b;
-  font: inherit;
-  font-size: 10px;
+.layer-image-actions .layer-image-replace {
+  flex: 1;
+  width: auto;
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .layer-image-replace {
@@ -1518,15 +1569,26 @@ button {
   background: #f8f8fa;
 }
 
+/* Zoom slider row: full-width track under the label row. */
+.layer-zoom-block {
+  padding-bottom: 6px;
+}
+
+.layer-zoom-block input[type="range"].layer-zoom-slider {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 2px 16px 0;
+}
+
 .layer-design-section {
-  padding: 12px 0;
+  padding: 8px 0;
   border-bottom: 1px solid var(--divider);
 }
 
 .layer-design-section h4,
 .layer-section-title {
   display: flex;
-  height: 36px;
+  height: 28px;
   align-items: center;
   padding: 0 8px 0 16px;
   margin: 0;
@@ -1550,7 +1612,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: var(--accent);
 }
 
 .layer-design-row {
@@ -1620,7 +1682,7 @@ button {
 .layer-design-panel input:focus,
 .layer-design-panel select:focus,
 .layer-design-panel button:focus-visible {
-  box-shadow: inset 0 0 0 1px #7a40ed;
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .layer-double-input {
@@ -1641,7 +1703,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: var(--accent);
 }
 
 .layer-single-input {
@@ -1690,8 +1752,8 @@ button {
 }
 
 .layer-segmented-control button.is-active {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .layer-checkbox-row input {
@@ -1720,7 +1782,7 @@ button {
   width: 13px;
   height: 13px;
   margin: 0;
-  accent-color: #7a40ed;
+  accent-color: var(--accent);
 }
 
 .layer-opacity-row {
@@ -1756,8 +1818,8 @@ button {
 }
 
 .layer-corner-main button.is-active {
-  color: #7a40ed;
-  background: #f2ecfd;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .layer-corner-grid {
@@ -1857,9 +1919,59 @@ button {
   padding: 0 8px;
 }
 
-.inspector-panel input[type="range"] {
+/* Unified inspector slider: slim track with light-purple fill, small solid
+   purple thumb. Fill amount comes from the inline --slider-fill variable
+   (0-100%). */
+.inspector-scroll input[type="range"] {
+  --slider-fill: 50%;
+  -webkit-appearance: none;
+  appearance: none;
   height: 20px;
   padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.inspector-scroll input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    to right,
+    rgb(var(--accent-rgb) / 45%) var(--slider-fill),
+    #e2e0e8 var(--slider-fill)
+  );
+}
+
+.inspector-scroll input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+
+.inspector-scroll input[type="range"]::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: #e2e0e8;
+}
+
+.inspector-scroll input[type="range"]::-moz-range-progress {
+  height: 2px;
+  border-radius: 1px;
+  background: rgb(var(--accent-rgb) / 45%);
+}
+
+.inspector-scroll input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
 }
 
 .inspector-panel textarea {
@@ -1871,8 +1983,8 @@ button {
 .inspector-panel input:focus,
 .inspector-panel textarea:focus,
 .inspector-panel select:focus {
-  border-color: #8475e9;
-  box-shadow: 0 0 0 2px rgb(104 87 229 / 10%);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 10%);
 }
 
 .animation-stack {
@@ -1980,7 +2092,7 @@ button {
 }
 
 .animation-timeline-ruler.is-scrubbable:focus-visible {
-  outline: 2px solid #6951df;
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -2027,8 +2139,8 @@ button {
 
 .animation-event-label:hover,
 .animation-event-label.is-selected {
-  color: #5140c8;
-  background: #f0edff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .animation-event-label > span {
@@ -2078,6 +2190,73 @@ button {
   width: 1px;
   background: #ebe8ee;
   pointer-events: none;
+}
+
+.subtitle-timeline-label {
+  align-items: center;
+  cursor: default;
+}
+
+.subtitle-timeline-label:hover {
+  color: #39353d;
+  background: #fff;
+}
+
+.subtitle-timeline-label strong {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.subtitle-timeline-track {
+  background: #f4f2f7;
+  cursor: context-menu;
+}
+
+.subtitle-cue-block {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  z-index: 2;
+  overflow: hidden;
+  padding: 3px 8px;
+  border: 1px solid #d9d4e2;
+  border-radius: 4px;
+  color: #4c4653;
+  background: #fff;
+  font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timeline-split-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid #e4e1e7;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(35, 28, 48, 0.16);
+}
+
+.timeline-split-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: #39353d;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-split-menu button:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .animation-timeline-playhead {
@@ -2138,7 +2317,7 @@ button {
 }
 
 .animation-event-bar.phase-enter {
-  background: #6951df;
+  background: var(--accent);
 }
 
 .animation-event-bar.phase-emphasis {
@@ -2225,7 +2404,7 @@ button {
 
 .animation-phase-tabs button.is-active {
   color: #fff;
-  background: #6857e5;
+  background: var(--accent);
 }
 
 .animation-inspector-empty {
@@ -2243,8 +2422,8 @@ button {
   place-items: center;
   margin-bottom: 14px;
   border-radius: 12px;
-  color: #7565dc;
-  background: #efedff;
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .animation-inspector-empty h3 {
@@ -2319,8 +2498,8 @@ button {
 
 .animation-preset-grid button:hover,
 .animation-preset-grid button.is-current {
-  border-color: #7868dd;
-  color: #5545c8;
+  border-color: var(--accent);
+  color: var(--accent-strong);
   background: #f2efff;
 }
 
@@ -2362,7 +2541,7 @@ button {
   width: 24px;
   height: 24px;
   border-radius: 3px;
-  background: #7565dc;
+  background: var(--accent);
   content: "";
 }
 
@@ -2373,7 +2552,7 @@ button {
 
 .animation-preset-preview.preset-line-draw::before {
   box-sizing: border-box;
-  border: 3px solid #7565dc;
+  border: 3px solid var(--accent);
   border-left-color: transparent;
   border-radius: 50%;
   background: transparent;
@@ -2383,12 +2562,12 @@ button {
 .animation-preset-preview.preset-wipe::before {
   width: 14px;
   border-radius: 2px;
-  box-shadow: 8px 0 10px rgb(117 101 220 / 55%);
+  box-shadow: 8px 0 10px rgb(var(--accent-rgb) / 55%);
 }
 
 .animation-preset-preview.preset-dissolve-in::before {
   opacity: 0.45;
-  background: linear-gradient(180deg, #7565dc, #aaa2e7);
+  background: linear-gradient(180deg, var(--accent), var(--accent-soft));
 }
 
 .animation-preset-preview.preset-scale-in::before {
@@ -2427,8 +2606,8 @@ button {
   margin-top: 12px;
   border: 0;
   border-radius: 7px;
-  color: #5545c8;
-  background: #efedff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
   font-size: 10px;
   font-weight: 650;
   cursor: pointer;
@@ -2487,9 +2666,6 @@ button {
 
 .animation-control-section input[type="range"] {
   width: 100%;
-  height: 4px;
-  accent-color: #6857e5;
-  cursor: pointer;
 }
 
 .animation-vector-inputs {
@@ -2556,7 +2732,7 @@ button {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: #6857e5;
+  accent-color: var(--accent);
 }
 
 .animation-remove-button {
@@ -2586,10 +2762,10 @@ button {
 }
 
 .layer-context-menu {
-  background: #211f24;
-  border: 1px solid #3d3942;
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  background: #fff;
+  border: 1px solid #e8e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(35 33 39 / 12%);
   min-width: 190px;
   padding: 5px;
   position: fixed;
@@ -2601,7 +2777,7 @@ button {
   background: transparent;
   border: 0;
   border-radius: 5px;
-  color: #f5f2f7;
+  color: #39353d;
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -2612,7 +2788,16 @@ button {
 }
 
 .layer-context-menu button:hover {
-  background: #7542e8;
+  background: #f4f4f6;
+}
+
+.layer-context-menu button.is-danger {
+  color: #e24767;
+}
+
+.layer-context-menu button.is-danger:hover {
+  background: #d43a3a;
+  color: #fff;
 }
 
 .layer-context-menu button:disabled {
@@ -2629,23 +2814,6 @@ button {
 
 .scene-context-menu {
   min-width: 190px;
-}
-
-.layer-group-hint {
-  color: #8d8793;
-  font-size: 11px;
-  line-height: 1.4;
-  margin: 8px 0 0;
-}
-
-.layer-image-source {
-  overflow: hidden;
-  max-width: 60%;
-  color: #5b5e67;
-  font-size: 11px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .app-stage {
@@ -2674,7 +2842,7 @@ button {
   height: 24px;
   margin: 0 auto;
   border: 3px solid #d9d5fb;
-  border-top-color: #6857e5;
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -2748,6 +2916,8 @@ button {
 .preview-player {
   overflow: hidden;
   box-shadow: 0 20px 60px rgb(0 0 0 / 35%);
+  /* Same black backdrop as the in-canvas preview. */
+  background: #000;
 }
 
 .preview-waiting {

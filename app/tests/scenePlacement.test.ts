@@ -7,7 +7,7 @@ import { sceneStartFrame } from "../src/domain/scenePlacement";
 const scene = parseScene({
   schemaVersion: 2,
   id: "scene-001",
-  topic: "One",
+  name: "One",
   durationInFrames: 30,
   layers: [],
 });

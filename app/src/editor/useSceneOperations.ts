@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { createScene, deleteScene as deleteSceneRequest, fetchScene } from "../api/projectApi";
-import type { Project } from "../domain/projectSchema";
+import { createScene, deleteScene as deleteSceneRequest, duplicateScene as duplicateSceneRequest, fetchScene, splitScene as splitSceneRequest } from "../api/projectApi";
 import { moveSceneReference } from "../domain/sceneOrder";
+import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
 import type { InspectorScope } from "./useEditorSelection";
 import type { DocumentVersionTracker } from "./versionTracker";
@@ -14,27 +14,32 @@ interface SceneOperationsOptions {
     isSceneLoading: boolean;
     isCreatingScene: boolean;
     hasSaveConflict: boolean;
+    /**
+     * Set synchronously while a scene operation is in flight so the
+     * external refresh can distinguish our own writes from another tab's.
+     */
+    sceneOperationActiveRef: RefObject<boolean>;
   };
   state: {
-    setProject: Dispatch<SetStateAction<Project | null>>;
-    setScene: Dispatch<SetStateAction<Scene | null>>;
+    setProject: (project: Project | null) => void;
+    setScene: (scene: Scene | null) => void;
+    /** Needs the updater form to merge concurrently loaded scenes. */
     setScenesById: Dispatch<SetStateAction<Record<string, Scene>>>;
-    setSelectedLayerIds: Dispatch<SetStateAction<string[]>>;
-    setActiveInsertionGroupId: Dispatch<SetStateAction<string | null>>;
-    setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
-    setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
-    setIsSceneLoading: Dispatch<SetStateAction<boolean>>;
-    setIsCreatingScene: Dispatch<SetStateAction<boolean>>;
-    setSceneError: Dispatch<SetStateAction<string | null>>;
-    setCreateSceneError: Dispatch<SetStateAction<string | null>>;
-    setSlideMenu: Dispatch<SetStateAction<{ sceneId: string; x: number; y: number } | null>>;
+    setSelectedLayerIds: (ids: string[]) => void;
+    setActiveInsertionGroupId: (id: string | null) => void;
+    setSelectedAnimationId: (id: string | null) => void;
+    setInspectorScope: (scope: InspectorScope) => void;
+    setIsSceneLoading: (value: boolean) => void;
+    setIsCreatingScene: (value: boolean) => void;
+    setSceneError: (message: string | null) => void;
+    setCreateSceneError: (message: string | null) => void;
+    setSlideMenu: (menu: { sceneId: string; x: number; y: number } | null) => void;
   };
   actions: {
     queueCurrentSave: (force?: boolean) => Promise<void>;
     recordHistory: () => void;
     undoStack: RefObject<unknown[]>;
     markCurrentStateSaved: () => void;
-    clearHistory: () => void;
     handleProjectChange: (project: Project) => void;
     versions: DocumentVersionTracker;
   };
@@ -45,7 +50,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function useSceneOperations({ document, state, actions }: SceneOperationsOptions) {
-  const { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict } = document;
+  const { project, scene, scenesById, isSceneLoading, isCreatingScene, hasSaveConflict, sceneOperationActiveRef } = document;
   const {
     setProject, setScene, setScenesById, setSelectedLayerIds,
     setActiveInsertionGroupId, setSelectedAnimationId, setInspectorScope,
@@ -53,21 +58,21 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
   } = state;
   const {
     queueCurrentSave, recordHistory, undoStack, markCurrentStateSaved,
-    clearHistory, handleProjectChange, versions,
+    handleProjectChange, versions,
   } = actions;
 
   async function selectScene(
     sceneId: string, nextSelectedLayerIds: string[] = [], nextScope: InspectorScope = "scene",
-  ): Promise<boolean> {
-    if (!project) return false;
+  ): Promise<Scene | null> {
+    if (!project) return null;
     if (sceneId === scene?.id) {
       setActiveInsertionGroupId(null);
       setSelectedLayerIds(nextSelectedLayerIds);
       setSelectedAnimationId(null);
       setInspectorScope(nextScope);
-      return true;
+      return scene;
     }
-    if (isSceneLoading || hasSaveConflict) return false;
+    if (isSceneLoading || hasSaveConflict) return null;
     setIsSceneLoading(true);
     setSceneError(null);
     try {
@@ -81,11 +86,15 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       setInspectorScope(nextScope);
       versions.markSceneChanged();
       markCurrentStateSaved();
-      clearHistory();
-      return true;
+      // NOTE: do NOT clearHistory() here. The undo snapshots are
+      // project-wide (project + all scenes + current scene/selection), so
+      // undo survives a scene switch: it simply restores the snapshot's
+      // scene as current. Clearing on switch is what made Cmd+Z die after
+      // split -> switch scenes.
+      return loadedScene;
     } catch (error: unknown) {
       setSceneError(errorMessage(error));
-      return false;
+      return null;
     } finally {
       setIsSceneLoading(false);
     }
@@ -97,6 +106,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       setSceneError("A project must contain at least one scene");
       return;
     }
+    sceneOperationActiveRef.current = true;
     recordHistory();
     setIsSceneLoading(true);
     setSceneError(null);
@@ -124,6 +134,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       undoStack.current.pop();
       setSceneError(errorMessage(error));
     } finally {
+      sceneOperationActiveRef.current = false;
       setIsSceneLoading(false);
     }
   }
@@ -131,6 +142,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
   async function addScene(index?: number): Promise<void> {
     if (!project || isCreatingScene) return;
     setSlideMenu(null);
+    sceneOperationActiveRef.current = true;
     setIsCreatingScene(true);
     setCreateSceneError(null);
     setSceneError(null);
@@ -152,6 +164,7 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
       undoStack.current.pop();
       setCreateSceneError(errorMessage(error));
     } finally {
+      sceneOperationActiveRef.current = false;
       setIsCreatingScene(false);
     }
   }
@@ -164,5 +177,74 @@ export function useSceneOperations({ document, state, actions }: SceneOperations
     handleProjectChange({ ...project, scenes });
   }
 
-  return { selectScene, deleteScene, addScene, moveScene };
+  async function duplicateScene(sceneId: string): Promise<void> {
+    if (!project || isCreatingScene) return;
+    setSlideMenu(null);
+    sceneOperationActiveRef.current = true;
+    setIsCreatingScene(true);
+    setCreateSceneError(null);
+    setSceneError(null);
+    recordHistory();
+    try {
+      await queueCurrentSave();
+      const { project: nextProject, scene: newScene } = await duplicateSceneRequest(project.id, sceneId);
+      setProject(nextProject);
+      setScene(newScene);
+      setScenesById((current) => ({ ...current, [newScene.id]: newScene }));
+      setSelectedLayerIds([]);
+      setSelectedAnimationId(null);
+      setInspectorScope("scene");
+      versions.markProjectChanged();
+      versions.markSceneChanged();
+      markCurrentStateSaved();
+    } catch (error: unknown) {
+      undoStack.current.pop();
+      setCreateSceneError(errorMessage(error));
+    } finally {
+      sceneOperationActiveRef.current = false;
+      setIsCreatingScene(false);
+    }
+  }
+
+  async function splitScene(sceneId: string, splitFrame: number): Promise<number> {
+    if (!project || isCreatingScene) return 0;
+    sceneOperationActiveRef.current = true;
+    setIsCreatingScene(true);
+    setCreateSceneError(null);
+    setSceneError(null);
+    recordHistory();
+    try {
+      await queueCurrentSave();
+      const {
+        project: nextProject,
+        firstScene,
+        secondScene,
+        removedAnimationCount,
+      } = await splitSceneRequest(project.id, sceneId, splitFrame);
+      setProject(nextProject);
+      // Stay on the first half: it keeps the source scene id, and its layer
+      // ids are unchanged so the current layer selection stays valid.
+      setScene(firstScene);
+      setScenesById((current) => ({
+        ...current,
+        [firstScene.id]: firstScene,
+        [secondScene.id]: secondScene,
+      }));
+      setSelectedAnimationId(null);
+      setInspectorScope("scene");
+      versions.markProjectChanged();
+      versions.markSceneChanged();
+      markCurrentStateSaved();
+      return removedAnimationCount;
+    } catch (error: unknown) {
+      undoStack.current.pop();
+      setCreateSceneError(errorMessage(error));
+      return 0;
+    } finally {
+      sceneOperationActiveRef.current = false;
+      setIsCreatingScene(false);
+    }
+  }
+
+  return { selectScene, deleteScene, addScene, moveScene, duplicateScene, splitScene };
 }

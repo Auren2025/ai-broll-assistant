@@ -40,6 +40,7 @@ export type EditableLayerPatch = Partial<{
   arrowEndStyle: "none" | "triangle" | "line" | "diamond" | "circle";
   src: string | null;
   fit: ImageFit;
+  zoom: number;
   focalX: number;
   focalY: number;
   placeholderColor: string;

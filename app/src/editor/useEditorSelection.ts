@@ -1,13 +1,8 @@
 import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { findLayerById } from "../domain/groupOperations";
-import type { Layer, Scene } from "../domain/sceneSchema";
+import { findLayerById, findParentGroup } from "../domain/groupOperations";
+import type { Scene } from "../domain/sceneSchema";
 
 export type InspectorScope = "scene" | "layer";
-
-function findParentGroup(layers: readonly Layer[], layerId: string) {
-  return layers.find((layer) => layer.type === "group" &&
-    layer.children.some((child) => child.id === layerId));
-}
 
 function hasSameLayerIds(first: readonly string[], second: readonly string[]): boolean {
   return first.length === second.length && first.every((layerId) => second.includes(layerId));
@@ -16,12 +11,14 @@ function hasSameLayerIds(first: readonly string[], second: readonly string[]): b
 interface SelectionOptions {
   scene: Scene | null;
   sceneRef: RefObject<Scene | null>;
+  /** Needs the updater form to skip redundant selection updates. */
   setSelectedLayerIds: Dispatch<SetStateAction<string[]>>;
+  /** Needs the updater form to preserve drill state across renders. */
   setActiveInsertionGroupId: Dispatch<SetStateAction<string | null>>;
-  setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
-  setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
-  setInspectorTab: Dispatch<SetStateAction<"design" | "animate">>;
-  selectScene: (sceneId: string, layerIds?: string[], scope?: InspectorScope) => Promise<boolean>;
+  setSelectedAnimationId: (id: string | null) => void;
+  setInspectorScope: (scope: InspectorScope) => void;
+  setInspectorTab: (tab: "design" | "animate") => void;
+  selectScene: (sceneId: string, layerIds?: string[], scope?: InspectorScope) => Promise<Scene | null>;
 }
 
 export function useEditorSelection({
@@ -33,7 +30,9 @@ export function useEditorSelection({
     setSelectedAnimationId(null);
     setInspectorScope(layerIds.length > 0 ? "layer" : "scene");
     setActiveInsertionGroupId((current) => {
-      if (!current || layerIds.length === 0) return null;
+      // Clearing the selection never exits drill-in: the canvas decides
+      // explicitly (click outside the drilled group exits via onDrillExit).
+      if (!current) return null;
       const currentScene = sceneRef.current;
       const group = currentScene ? findLayerById(currentScene.layers, current) : null;
       if (!group || group.type !== "group") return null;

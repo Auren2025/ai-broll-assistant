@@ -79,6 +79,7 @@ test("makeLayerIdGenerator returns a unique id per original layer and reuses cac
     focalY: 0.5,
     placeholderColor: "#d1d5db",
     cornerRadius: 0,
+    zoom: 1,
   };
   const arrowId = generator(imageLayer);
   assert.equal(arrowId, "image-1");

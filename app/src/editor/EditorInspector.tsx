@@ -9,7 +9,6 @@ import type { InspectorScope } from "./useEditorSelection";
 interface EditorInspectorProps {
   project: Project;
   scene: Scene;
-  sceneNumber: number;
   maximumDurationInFrames: number;
   selection: {
     tab: "design" | "animate";
@@ -30,14 +29,16 @@ interface EditorInspectorProps {
     onReorder: ComponentProps<typeof MultiLayerPropertiesPanel>["onReorder"];
     onPatch: ComponentProps<typeof LayerPropertiesPanel>["onPatch"];
     onReplaceImage: () => void;
-    onDeleteLayer: () => void;
+    onImageCropEnter: (layerId: string) => void;
+    onImageCropExit: () => void;
+    croppingLayerId: string | null;
     onAnimationSelect: (id: string | null) => void;
     onAnimationsChange: ComponentProps<typeof LayerAnimationPanel>["onAnimationsChange"];
   };
 }
 
 export function EditorInspector({
-  project, scene, sceneNumber, maximumDurationInFrames, selection, actions,
+  project, scene, maximumDurationInFrames, selection, actions,
 }: EditorInspectorProps) {
   return (
     <aside className="sidebar sidebar-right">
@@ -53,7 +54,7 @@ export function EditorInspector({
         {selection.tab === "design" ? (
           selection.scope === "scene" ? (
             <ScenePropertiesPanel key={scene.id} scene={scene} project={project}
-              sceneNumber={sceneNumber} maximumDurationInFrames={maximumDurationInFrames}
+              maximumDurationInFrames={maximumDurationInFrames}
               onProjectChange={actions.onProjectChange} onSceneChange={actions.onSceneChange} />
           ) : selection.layerIds.length > 1 ? (
             <MultiLayerPropertiesPanel selectionCount={selection.layerIds.length}
@@ -64,8 +65,11 @@ export function EditorInspector({
             <LayerPropertiesPanel key={`${scene.id}:${selection.layer?.id ?? ""}`}
               layer={selection.layer} projectId={project.id} onPatch={actions.onPatch}
               onAlign={actions.onAlign} onReplaceImage={actions.onReplaceImage}
-              onDuplicate={actions.onDuplicate} onReorder={actions.onReorder}
-              onDeleteLayer={actions.onDeleteLayer} />
+              onReorder={actions.onReorder}
+              isGroupChild={selection.isGroupChild}
+              onImageCropEnter={actions.onImageCropEnter}
+              onImageCropExit={actions.onImageCropExit}
+              croppingLayerId={actions.croppingLayerId} />
           )
         ) : (
           <LayerAnimationPanel

@@ -5,15 +5,18 @@ import {
   deleteLayers,
   duplicateSelectedLayers,
   findLayerById,
-  getAllLayers,
+  findParentGroup,
   insertLayerIntoGroup,
+  isEffectivelyLocked,
   makeGroup,
   moveLayerTo,
   reorderSelectedLayersZIndex,
+  transformChildGeometryToScene,
   ungroupLayer,
+  updateLayerById,
   type ZOrderAction,
 } from "../domain/groupOperations";
-import { getNextLayerId, makeLayerIdGenerator } from "../domain/layerIds";
+import { getNextProjectLayerId, makeProjectLayerIdGenerator } from "../domain/layerIds";
 import type { AtomicLayer } from "../domain/atomicLayerSchema";
 import type { Project } from "../domain/projectSchema";
 import type { Layer, Scene } from "../domain/sceneSchema";
@@ -26,6 +29,8 @@ export type AddableLayerType = "text" | "rectangle" | "circle" | "triangle" | "a
 interface LayerSelectionState {
   scene: Scene | null;
   selectedLayerIds: string[];
+  /** Explicitly targeted animation (e.g. a timeline strip); Delete removes it first. */
+  selectedAnimationId: string | null;
   inspectorScope: "scene" | "layer";
   activeInsertionGroupId: string | null;
 }
@@ -33,6 +38,8 @@ interface LayerSelectionState {
 interface LayerCommandState {
   selection: LayerSelectionState;
   project: Project | null;
+  /** Every loaded scene; new layer ids must be unique project-wide. */
+  allScenes: Scene[];
   isUploadingImage: boolean;
   sceneOperationRunning: boolean;
   isApplyingHistory: boolean;
@@ -53,6 +60,7 @@ interface LayerCommandSetters {
   setSceneError: (message: string | null) => void;
   setPendingTextEditLayerId: (value: string | null) => void;
   setImageUploadError: (message: string | null) => void;
+  setHasClipboard: (value: boolean) => void;
 }
 
 interface LayerCommandHandlers {
@@ -86,6 +94,39 @@ export interface LayerCommands {
 const DEFAULT_IMAGE_PLACEHOLDER_WIDTH = 640;
 const DEFAULT_IMAGE_PLACEHOLDER_HEIGHT = 360;
 
+/**
+ * Remove one animation from its layer. Returns the updated scene, or null
+ * when the animation is not a valid delete target (stale id, locked layer,
+ * or group member). Pure: safe to unit test without React.
+ */
+export function removeLayerAnimation(
+  scene: Scene,
+  layerId: string,
+  animationId: string,
+): Scene | null {
+  const layer = findLayerById(scene.layers, layerId);
+  // Group members never own animations (cleared on entry), so there is no
+  // valid animation target on a member — regardless of lock state.
+  if (
+    !layer ||
+    !layer.animations.some((animation) => animation.id === animationId) ||
+    isEffectivelyLocked(scene.layers, layerId) ||
+    findParentGroup(scene.layers, layerId)
+  ) {
+    return null;
+  }
+  const animations = layer.animations.filter(
+    (animation) => animation.id !== animationId,
+  );
+  return {
+    ...scene,
+    layers: updateLayerById(scene.layers, layer.id, (target) => ({
+      ...target,
+      animations,
+    })),
+  };
+}
+
 function buildImagePlaceholderLayer(project: Project, scene: Scene, id: string): AtomicLayer {
   const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
   const width = Math.min(DEFAULT_IMAGE_PLACEHOLDER_WIDTH, project.width);
@@ -110,6 +151,7 @@ function buildImagePlaceholderLayer(project: Project, scene: Scene, id: string):
     fit: "contain",
     focalX: 0.5,
     focalY: 0.5,
+    zoom: 1,
     placeholderColor: "#d1d5db",
     cornerRadius: 0,
     stroke: null,
@@ -286,7 +328,7 @@ function buildShapeLayer(
 
 export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommands {
   const { state, refs, setters, handlers } = options;
-  const { selection, project, isUploadingImage, sceneOperationRunning, isApplyingHistory } = state;
+  const { selection, project, allScenes, isUploadingImage, sceneOperationRunning, isApplyingHistory } = state;
 
   const buildImagePlaceholder = useCallback(
     (scene: Scene, id: string) => {
@@ -316,10 +358,31 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     [handlers, selection, setters],
   );
 
+  const deleteSelectedAnimation = useCallback((): boolean => {
+    const { scene, selectedLayerIds, selectedAnimationId } = selection;
+    if (!scene || selectedAnimationId === null) return false;
+    const layerId = selectedLayerIds[0];
+    const updatedScene =
+      layerId !== undefined
+        ? removeLayerAnimation(scene, layerId, selectedAnimationId)
+        : null;
+    // Always consume Delete here and clear the animation target: a stale id
+    // must be a no-op, never fall through to deleting the whole layer.
+    if (updatedScene) handlers.handleSceneChange(updatedScene);
+    setters.setSelectedAnimationId(null);
+    return true;
+  }, [handlers, selection, setters]);
+
   const deleteSelection = useCallback(() => {
-    const { scene, selectedLayerIds, inspectorScope, activeInsertionGroupId } = selection;
+    const { scene, selectedLayerIds, selectedAnimationId, inspectorScope, activeInsertionGroupId } = selection;
     if (!scene) return;
     if (inspectorScope === "layer") {
+      // An explicitly selected animation (timeline strip) is the Delete
+      // target; otherwise Delete removes the selected layer(s).
+      if (selectedAnimationId !== null) {
+        deleteSelectedAnimation();
+        return;
+      }
       if (selectedLayerIds.length === 0) return;
       handlers.handleSceneChange(deleteLayers(scene, selectedLayerIds));
       if (activeInsertionGroupId && selectedLayerIds.includes(activeInsertionGroupId)) {
@@ -329,12 +392,12 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
       setters.setSelectedAnimationId(null);
       setters.setInspectorScope("scene");
     }
-  }, [handlers, selection, setters]);
+  }, [deleteSelectedAnimation, handlers, selection, setters]);
 
   const groupSelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
     if (!scene) return;
-    const groupId = getNextLayerId(scene.layers, "group");
+    const groupId = getNextProjectLayerId(allScenes, "group");
     const groupNumber = Number(groupId.split("-").at(-1)) || 1;
     const updatedScene = makeGroup(scene, selectedLayerIds, groupId, `Group ${groupNumber}`);
     if (!updatedScene) return;
@@ -344,7 +407,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     setters.setInspectorScope("layer");
     setters.setActiveInsertionGroupId(null);
     setters.setContextMenu(null);
-  }, [handlers, selection, setters]);
+  }, [allScenes, handlers, selection, setters]);
 
   const ungroupSelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
@@ -389,7 +452,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
       }
     }
     if (targets.length !== selectedLayerIds.length) return;
-    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
+    const generator = makeProjectLayerIdGenerator(allScenes);
     const idByOriginal = new Map<Layer, string>();
     for (const target of targets) idByOriginal.set(target, generator(target));
     const newIdFor = (original: Layer): string =>
@@ -414,15 +477,37 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     setters.setSelectedAnimationId(null);
     setters.setInspectorScope("layer");
     setters.setContextMenu(null);
-  }, [handlers, selection, setters]);
+  }, [allScenes, handlers, selection, setters]);
 
   const copySelection = useCallback(() => {
     const { scene, selectedLayerIds } = selection;
     if (!scene || selectedLayerIds.length === 0) return;
-    const selectedIdSet = new Set(selectedLayerIds);
-    const topLevel = scene.layers.filter((layer) => selectedIdSet.has(layer.id));
-    if (topLevel.length === 0) return;
-    refs.clipboardLayersRef.current = JSON.parse(JSON.stringify(topLevel)) as Layer[];
+    const selectedSet = new Set(selectedLayerIds);
+    // A selected group already carries its members: skip members whose
+    // parent group is also selected.
+    const selectedGroupIds = new Set(
+      scene.layers
+        .filter((layer) => layer.type === "group" && selectedSet.has(layer.id))
+        .map((layer) => layer.id),
+    );
+    const copied: Layer[] = [];
+    for (const layerId of selectedLayerIds) {
+      const layer = findLayerById(scene.layers, layerId);
+      if (!layer) continue;
+      const parent = findParentGroup(scene.layers, layerId);
+      if (parent && layer.type !== "group") {
+        if (selectedGroupIds.has(parent.id)) continue;
+        // Members live in group-local coordinates: convert to scene space so
+        // the paste lands where the member visually was. Geometry only —
+        // group opacity/visibility/lock are not baked in.
+        copied.push(transformChildGeometryToScene(parent, layer));
+      } else if (!parent) {
+        copied.push(layer);
+      }
+    }
+    if (copied.length === 0) return;
+    refs.clipboardLayersRef.current = JSON.parse(JSON.stringify(copied)) as Layer[];
+    setters.setHasClipboard(true);
     setters.setContextMenu(null);
   }, [refs, selection, setters]);
 
@@ -430,7 +515,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     const { scene, activeInsertionGroupId } = selection;
     const clipboard = refs.clipboardLayersRef.current;
     if (!scene || !clipboard || clipboard.length === 0) return;
-    const generator = makeLayerIdGenerator(getAllLayers(scene.layers));
+    const generator = makeProjectLayerIdGenerator(allScenes);
     const idByOriginal = new Map<Layer, string>();
     for (const layer of clipboard) idByOriginal.set(layer, generator(layer));
     const newIdFor = (original: Layer): string =>
@@ -473,7 +558,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     setters.setSelectedAnimationId(null);
     setters.setInspectorScope("layer");
     setters.setContextMenu(null);
-  }, [handlers, refs, selection, setters]);
+  }, [allScenes, handlers, refs, selection, setters]);
 
   const reorderSelection = useCallback(
     (action: ZOrderAction) => {
@@ -506,7 +591,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     (type: AddableLayerType) => {
       const { scene } = selection;
       if (!scene || !project) return;
-      const id = getNextLayerId(scene.layers, type);
+      const id = getNextProjectLayerId(allScenes, type);
       const zIndex = Math.max(-1, ...scene.layers.map((layer) => layer.zIndex)) + 1;
       const layer: AtomicLayer =
         type === "text"
@@ -515,7 +600,7 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
       if (type === "text") setters.setPendingTextEditLayerId(layer.id);
       commitNewLayer(layer);
     },
-    [commitNewLayer, project, selection, setters],
+    [allScenes, commitNewLayer, project, selection, setters],
   );
 
   const addImagePlaceholder = useCallback(() => {
@@ -529,10 +614,10 @@ export function useLayerCommands(options: UseLayerCommandsOptions): LayerCommand
     ) {
       return;
     }
-    const id = getNextLayerId(scene.layers, "image");
+    const id = getNextProjectLayerId(allScenes, "image");
     const layer = buildImagePlaceholderLayer(project, scene, id);
     commitNewLayer(layer);
-  }, [commitNewLayer, isApplyingHistory, isUploadingImage, project, sceneOperationRunning, selection]);
+  }, [allScenes, commitNewLayer, isApplyingHistory, isUploadingImage, project, sceneOperationRunning, selection]);
 
   return {
     deleteSelection,

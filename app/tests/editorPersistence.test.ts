@@ -42,7 +42,7 @@ test("queued saves cannot overlap and duplicate captured versions write only onc
   const save = () => saveChangedResources(snapshot, versions, resources);
   const first = enqueueSave(Promise.resolve(), save);
   const duplicate = enqueueSave(first.settled, save);
-  const secondScene = { ...snapshot.scene, topic: "New edit" };
+  const secondScene = { ...snapshot.scene, name: "New edit" };
   const next = enqueueSave(duplicate.settled, () => saveChangedResources(
     { ...snapshot, scene: secondScene, sceneVersion: 2 }, versions, resources,
   ));

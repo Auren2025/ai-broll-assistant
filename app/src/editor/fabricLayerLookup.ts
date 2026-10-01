@@ -1,4 +1,5 @@
 import type { GroupLayer } from "../domain/groupLayerSchema";
+import { findParentGroup } from "../domain/groupOperations";
 import type { Layer, Scene } from "../domain/sceneSchema";
 
 export function findLayerByIdOrChild(scene: Scene, layerId: string): Layer | null {
@@ -18,13 +19,5 @@ export function findParentGroupLayer(
   scene: Scene,
   layerId: string,
 ): GroupLayer | null {
-  for (const layer of scene.layers) {
-    if (
-      layer.type === "group" &&
-      layer.children.some((candidate) => candidate.id === layerId)
-    ) {
-      return layer;
-    }
-  }
-  return null;
+  return findParentGroup(scene.layers, layerId);
 }

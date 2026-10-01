@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { getAssetUrl } from "../api/projectApi";
 import type { ZOrderAction } from "../domain/groupOperations";
 import type { ImageFit } from "../domain/imageLayerSchema";
@@ -13,7 +13,12 @@ import {
 } from "./alignment";
 import { BufferedNumberInput } from "./BufferedNumberInput";
 import type { EditableLayerPatch } from "./layerEditing";
-import { matchingImageSize } from "./imageSizing";
+import { fitFrameToImageSize, matchingImageSize } from "./imageSizing";
+import {
+  IMAGE_CROP_ZOOM_MAX,
+  IMAGE_CROP_ZOOM_MIN,
+  clampImageCropZoom,
+} from "./imageCrop";
 
 const FONT_OPTIONS: { label: string; options: string[] }[] = [
   {
@@ -41,9 +46,11 @@ interface LayerPropertiesPanelProps {
   onPatch: (patch: EditableLayerPatch) => void;
   onAlign: (action: AlignmentAction) => void;
   onReplaceImage: () => void;
-  onDuplicate: () => void;
   onReorder: (action: ZOrderAction) => void;
-  onDeleteLayer: () => void;
+  isGroupChild: boolean;
+  onImageCropEnter: (layerId: string) => void;
+  onImageCropExit: () => void;
+  croppingLayerId: string | null;
 }
 
 function LayerSizeControls({
@@ -131,26 +138,174 @@ function LayerSizeControls({
   );
 }
 
-const ARRANGE_BUTTONS: { action: ZOrderAction; label: string; icon: string }[] =
-  [
-    { action: "back", label: "Send to back", icon: "⏮" },
-    { action: "backward", label: "Send backward", icon: "◀" },
-    { action: "forward", label: "Bring forward", icon: "▶" },
-    { action: "front", label: "Bring to front", icon: "⏭" },
-  ];
+/** Loads the natural pixel size of an image asset for the inspector. */
+function useImageNaturalSize(
+  projectId: string,
+  src: string | null,
+): { naturalWidth: number; naturalHeight: number } | null {
+  const imageUrl = src ? getAssetUrl(projectId, src) : null;
+  const [size, setSize] = useState<{
+    url: string;
+    naturalWidth: number;
+    naturalHeight: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!imageUrl) {
+      setSize(null);
+      return;
+    }
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (active) {
+        setSize(
+          image.naturalWidth > 0 && image.naturalHeight > 0
+            ? {
+              url: imageUrl,
+              naturalWidth: image.naturalWidth,
+              naturalHeight: image.naturalHeight,
+            }
+            : null,
+        );
+      }
+    };
+    image.onerror = () => {
+      if (active) {
+        setSize(null);
+      }
+    };
+    image.src = imageUrl;
+    return () => {
+      active = false;
+    };
+  }, [imageUrl]);
+  return size && imageUrl && size.url === imageUrl ? size : null;
+}
+
+/**
+ * Zoom percent input with local text state: typing never fights the slider,
+ * and the value commits once on blur/Enter (one undo entry).
+ */
+function ZoomPercentInput({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (zoom: number) => void;
+}) {
+  const [text, setText] = useState<string | null>(null);
+  function commit() {
+    if (text !== null) {
+      const parsed = Number(text);
+      if (text.trim() !== "" && Number.isFinite(parsed)) {
+        onCommit(clampImageCropZoom(parsed / 100));
+      }
+      setText(null);
+    }
+  }
+  return (
+    <div className="layer-single-input">
+      <input
+        type="number"
+        aria-label="Image zoom percent"
+        min={Math.round(IMAGE_CROP_ZOOM_MIN * 100)}
+        max={Math.round(IMAGE_CROP_ZOOM_MAX * 100)}
+        step={10}
+        value={text ?? String(Math.round(value * 100))}
+        onChange={(event) => setText(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      <span>%</span>
+    </div>
+  );
+}
+
+/** Zoom control: label row with editable percent, full-width slider below. */
+function ImageZoomSlider({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (zoom: number) => void;
+}) {
+  const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? value;
+  const commitSlider = () => {
+    if (draft !== null) {
+      onCommit(draft);
+      setDraft(null);
+    }
+  };
+  const fillPercent =
+    ((shown - IMAGE_CROP_ZOOM_MIN) /
+      (IMAGE_CROP_ZOOM_MAX - IMAGE_CROP_ZOOM_MIN)) *
+    100;
+  return (
+    <div className="layer-zoom-block">
+      <div className="layer-design-row">
+        <span>Zoom</span>
+        <ZoomPercentInput value={shown} onCommit={onCommit} />
+      </div>
+      <input
+        type="range"
+        className="layer-zoom-slider"
+        min={IMAGE_CROP_ZOOM_MIN}
+        max={IMAGE_CROP_ZOOM_MAX}
+        step={0.1}
+        aria-label="Image crop zoom"
+        value={shown}
+        style={{ "--slider-fill": `${fillPercent}%` } as CSSProperties}
+        onChange={(event) => setDraft(Number(event.currentTarget.value))}
+        onPointerUp={commitSlider}
+        onBlur={commitSlider}
+      />
+    </div>
+  );
+}
+
+function LayerStackIcon({ count, highlight }: { count: 2 | 3; highlight: number }) {  const centers = count === 3 ? [8.5, 13.5, 18.5] : [11, 16];
+  return (
+    <svg viewBox="0 0 24 30" width="20" height="25" aria-hidden="true">
+      {centers.map((cy, index) => (
+        <path
+          key={cy}
+          d={`M12 ${cy - 3.5}l7.5 3.5-7.5 3.5-7.5-3.5z`}
+          fill="currentColor"
+          opacity={index === highlight ? 1 : 0.28}
+        />
+      ))}
+    </svg>
+  );
+}
+
+const ARRANGE_BUTTONS: {
+  action: ZOrderAction;
+  label: string;
+  title: string;
+  icon: ReactNode;
+}[] = [
+  { action: "back", label: "Back", title: "Send to back", icon: <LayerStackIcon count={3} highlight={2} /> },
+  { action: "backward", label: "Backward", title: "Send backward", icon: <LayerStackIcon count={2} highlight={1} /> },
+  { action: "forward", label: "Forward", title: "Bring forward", icon: <LayerStackIcon count={2} highlight={0} /> },
+  { action: "front", label: "Front", title: "Bring to front", icon: <LayerStackIcon count={3} highlight={0} /> },
+];
 
 function ArrangeControls({ onReorder }: { onReorder: (action: ZOrderAction) => void }) {
   return (
-    <div className="layer-arrange-row" role="group" aria-label="Layer z-order">
+    <div className="layer-arrange-segment layer-arrange-single" role="group" aria-label="Layer z-order">
       {ARRANGE_BUTTONS.map((button) => (
         <button
           key={button.action}
           type="button"
-          title={button.label}
-          aria-label={button.label}
+          title={button.title}
+          aria-label={button.title}
           onClick={() => onReorder(button.action)}
         >
           {button.icon}
+          <span>{button.label}</span>
         </button>
       ))}
     </div>
@@ -408,37 +563,15 @@ function ShapeTextControls({
   );
 }
 
-function LayerNameInput({
-  layer,
-  onPatch,
-}: {
-  layer: Layer;
-  onPatch: (patch: EditableLayerPatch) => void;
-}) {
-  const [input, setInput] = useState(layer.name);
-
-  useEffect(() => {
-    setInput(layer.name);
-  }, [layer.id, layer.name]);
-
-  return (
-    <input
-      className="layer-design-name-input"
-      type="text"
-      aria-label="Layer name"
-      title={`${layer.type} layer`}
-      maxLength={120}
-      value={input}
-      onChange={(event) => {
-        const value = event.currentTarget.value;
-        setInput(value);
-        const name = value.trim();
-        if (name.length > 0) onPatch({ name });
-      }}
-      onBlur={() => setInput(layer.name)}
-    />
-  );
-}
+const LAYER_TYPE_LABELS: Record<Layer["type"], string> = {
+  text: "Text",
+  rectangle: "Rectangle",
+  circle: "Ellipse",
+  triangle: "Triangle",
+  arrow: "Arrow",
+  image: "Image",
+  group: "Group",
+};
 
 export function LayerPropertiesPanel({
   layer,
@@ -446,10 +579,17 @@ export function LayerPropertiesPanel({
   onPatch,
   onAlign,
   onReplaceImage,
-  onDuplicate,
   onReorder,
-  onDeleteLayer,
+  isGroupChild,
+  onImageCropEnter,
+  onImageCropExit,
+  croppingLayerId,
 }: LayerPropertiesPanelProps) {
+  // Hook before the early return: hooks must run unconditionally.
+  const imageNaturalSize = useImageNaturalSize(
+    projectId,
+    layer?.type === "image" ? layer.src : null,
+  );
   if (!layer) return <p className="app-stage">Select a layer to view its properties.</p>;
 
   const isText = layer.type === "text";
@@ -459,6 +599,27 @@ export function LayerPropertiesPanel({
   const isImage = layer.type === "image";
   const isGroup = layer.type === "group";
   const shapeText = isRectangle || isCircle ? layer.shapeText : null;
+  const isCroppingThis = isImage && croppingLayerId === layer.id;
+
+  function handleFitFrameToImage() {
+    // Contain mode: shrink the frame to the visible image rect, dropping
+    // the transparent padding. The frame center stays fixed.
+    if (!layer) return;
+    if (!isImage || !imageNaturalSize) return;
+    const fitted = fitFrameToImageSize(
+      layer.width,
+      layer.height,
+      imageNaturalSize.naturalWidth,
+      imageNaturalSize.naturalHeight,
+    );
+    if (!fitted) return;
+    onPatch({
+      x: layer.x + (layer.width - fitted.width) / 2,
+      y: layer.y + (layer.height - fitted.height) / 2,
+      width: fitted.width,
+      height: fitted.height,
+    });
+  }
   const hasFill = isText || isRectangle || isCircle || layer.type === "triangle";
   const hasStroke = !isGroup;
   const stroke = isGroup ? null : layer.stroke;
@@ -472,7 +633,7 @@ export function LayerPropertiesPanel({
         <span className={`layer-design-type-icon layer-icon-${layer.type}`} aria-hidden="true">
           {layer.type === "text" ? "T" : layer.type === "circle" ? "○" : layer.type === "triangle" ? "△" : layer.type === "group" ? "◇" : layer.type === "image" ? "▣" : layer.type === "arrow" ? "→" : "□"}
         </span>
-        <LayerNameInput layer={layer} onPatch={onPatch} />
+        <h3>{LAYER_TYPE_LABELS[layer.type]}</h3>
       </header>
 
       <LayerAlignmentControls selectionCount={1} onAlign={onAlign} />
@@ -480,18 +641,6 @@ export function LayerPropertiesPanel({
       <section className="layer-design-section layer-arrange-section">
         <h4>Arrange</h4>
         <ArrangeControls onReorder={onReorder} />
-        <div className="layer-actions-row">
-          <button type="button" onClick={onDuplicate}>
-            <span>Duplicate</span><kbd>⌘D</kbd>
-          </button>
-          <button
-            type="button"
-            className="is-danger"
-            onClick={onDeleteLayer}
-          >
-            Delete
-          </button>
-        </div>
       </section>
 
       <section className="layer-design-section layer-layout-section">
@@ -511,13 +660,17 @@ export function LayerPropertiesPanel({
             <span>°</span>
           </div>
         </div>
+        <div className="layer-toggle-value-row layer-opacity-row">
+          <strong>Opacity</strong>
+          <div className={`layer-single-input layer-wide-input${layer.opacityEnabled ? "" : " is-disabled"}`}><BufferedNumberInput min="0" max="100" aria-label="Layer opacity" disabled={!layer.opacityEnabled} value={Math.round(layer.opacity * 100)} onValueChange={(value) => onPatch({ opacity: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div>
+          <input type="checkbox" aria-label="Enable layer opacity" checked={layer.opacityEnabled} onChange={(event) => onPatch({ opacityEnabled: event.currentTarget.checked })} />
+        </div>
       </section>
 
       {isGroup ? (
         <section className="layer-design-section">
           <h4>Group</h4>
           <div className="layer-design-row"><span>Layers</span><strong>{layer.children.length}</strong></div>
-          <p className="layer-group-hint">Group resizing keeps its aspect ratio.</p>
         </section>
       ) : null}
 
@@ -550,14 +703,6 @@ export function LayerPropertiesPanel({
       {shapeText && (isRectangle || (isCircle && layer.donut === 0 && layer.sweep === 360)) ? (
         <ShapeTextControls value={shapeText} onChange={(nextShapeText) => onPatch({ shapeText: nextShapeText })} />
       ) : null}
-
-      <section className="layer-design-section layer-opacity-section">
-        <div className="layer-toggle-value-row layer-opacity-row">
-          <strong>Opacity</strong>
-          <div className={`layer-single-input layer-wide-input${layer.opacityEnabled ? "" : " is-disabled"}`}><BufferedNumberInput min="0" max="100" aria-label="Layer opacity" disabled={!layer.opacityEnabled} value={Math.round(layer.opacity * 100)} onValueChange={(value) => onPatch({ opacity: Math.min(1, Math.max(0, value / 100)) })} /><span>%</span></div>
-          <input type="checkbox" aria-label="Enable layer opacity" checked={layer.opacityEnabled} onChange={(event) => onPatch({ opacityEnabled: event.currentTarget.checked })} />
-        </div>
-      </section>
 
       {isRectangle || isTriangle ? (
         <section className="layer-design-section layer-corner-section">
@@ -603,23 +748,57 @@ export function LayerPropertiesPanel({
             </select>
           </label>
           {layer.fit === "cover" ? (
+            <ImageZoomSlider
+              value={layer.zoom}
+              onCommit={(zoom) => onPatch({ zoom })}
+            />
+          ) : null}
+          {isCroppingThis ? (
+            <div className="layer-image-actions">
+              <button
+                type="button"
+                className="layer-image-replace"
+                onClick={onImageCropExit}
+              >
+                Done cropping
+              </button>
+            </div>
+          ) : (
             <>
-              <div className="layer-design-row">
-                <span>Focus X</span>
-                <div className="layer-single-input layer-wide-input">
-                  <BufferedNumberInput min="0" max="100" step="1" aria-label="Image horizontal focus percent" title="0 left, 50 center, 100 right" value={Math.round(layer.focalX * 100)} onValueChange={(value) => onPatch({ focalX: Math.min(1, Math.max(0, value / 100)) })} />
-                  <span>%</span>
-                </div>
-              </div>
-              <div className="layer-design-row">
-                <span>Focus Y</span>
-                <div className="layer-single-input layer-wide-input">
-                  <BufferedNumberInput min="0" max="100" step="1" aria-label="Image vertical focus percent" title="0 top, 50 center, 100 bottom" value={Math.round(layer.focalY * 100)} onValueChange={(value) => onPatch({ focalY: Math.min(1, Math.max(0, value / 100)) })} />
-                  <span>%</span>
-                </div>
+              {layer.fit === "contain" ? (
+                <button
+                  type="button"
+                  className="layer-image-replace"
+                  onClick={handleFitFrameToImage}
+                  disabled={layer.src === null || imageNaturalSize === null}
+                  title="Shrink the frame to the visible image, removing empty padding"
+                >
+                  Fit frame to image
+                </button>
+              ) : null}
+              <div className="layer-image-actions">
+                <button
+                  type="button"
+                  className="layer-image-replace"
+                  onClick={() => onImageCropEnter(layer.id)}
+                  disabled={layer.src === null || layer.locked || isGroupChild}
+                  title={isGroupChild
+                    ? "Ungroup the image first to crop it"
+                    : "Double-click the image on canvas to enter as well"}
+                >
+                  Crop
+                </button>
+                <button
+                  type="button"
+                  className="layer-image-replace"
+                  onClick={onReplaceImage}
+                  title={layer.src ?? undefined}
+                >
+                  {layer.src === null ? "Load" : "Replace"}
+                </button>
               </div>
             </>
-          ) : null}
+          )}
           {layer.src === null ? (
             <div className="layer-design-row layer-paint-row">
               <span>Placeholder color</span>
@@ -630,14 +809,6 @@ export function LayerPropertiesPanel({
               />
             </div>
           ) : null}
-          <div className="layer-design-row"><span>Source</span><strong className="layer-image-source">{layer.src ?? "Not loaded"}</strong></div>
-          <button
-            type="button"
-            className="layer-image-replace"
-            onClick={onReplaceImage}
-          >
-            {layer.src === null ? "Load image…" : "Replace image…"}
-          </button>
         </section>
       ) : null}
 

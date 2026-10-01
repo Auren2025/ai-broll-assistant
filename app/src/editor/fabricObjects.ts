@@ -1,7 +1,8 @@
-import { FabricObject, Group as FabricGroup, LayoutManager, FixedLayout, Rect, Textbox, classRegistry } from "fabric";
+import { FabricObject, Group as FabricGroup, LayoutManager, FixedLayout, Point, Rect, Textbox, classRegistry, util } from "fabric";
 import { getShapeTextContentBox } from "../domain/shapeTextLayout";
 import type { ShapeText } from "../domain/shapeTextSchema";
 import { imagePlacement } from "./imagePlacement";
+import { IMAGE_CROP_GHOST_ALPHA } from "./imageCrop";
 import { applyTextCase, getCharSpacing } from "./textMetrics";
 
 export type CornerRadii = {
@@ -330,7 +331,14 @@ export class FabricImageLayerObject extends FabricObject {
   declare imageFit: "fill" | "contain" | "cover";
   declare imageFocalX: number;
   declare imageFocalY: number;
+  declare imageZoom: number;
   declare imagePlaceholderColor: string;
+  /**
+   * Crop mode: the frame is locked and the whole image is shown dimmed
+   * behind it so the user can pan/zoom the image inside the fixed frame.
+   * Managed by the canvas, not persisted on the layer.
+   */
+  declare isCropping: boolean;
 
   private htmlImage: HTMLImageElement | null = null;
   private imageLoadFailed = false;
@@ -348,6 +356,8 @@ export class FabricImageLayerObject extends FabricObject {
       (options.imageFit as "fill" | "contain" | "cover" | undefined) ?? "fill";
     this.imageFocalX = (options.imageFocalX as number | undefined) ?? 0.5;
     this.imageFocalY = (options.imageFocalY as number | undefined) ?? 0.5;
+    this.imageZoom = (options.imageZoom as number | undefined) ?? 1;
+    this.isCropping = (options.isCropping as boolean | undefined) ?? false;
     this.imagePlaceholderColor =
       (options.imagePlaceholderColor as string | undefined) ?? "#d1d5db";
     this.loadImage();
@@ -403,6 +413,90 @@ export class FabricImageLayerObject extends FabricObject {
     };
   }
 
+  /** Image placement in object-centered coordinates, or null before load. */
+  getCropImagePlacement(): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null {
+    if (!this.htmlImage) return null;
+    return imagePlacement(
+      this.imageFit,
+      this.htmlImage.naturalWidth || this.htmlImage.width,
+      this.htmlImage.naturalHeight || this.htmlImage.height,
+      this.width,
+      this.height,
+      this.imageFocalX,
+      this.imageFocalY,
+      this.imageZoom,
+    );
+  }
+
+  /**
+   * Zoom-handle center/radius in object-centered coordinates, matching what
+   * drawCropZoomHandle paints. Updated on every render while cropping.
+   */
+  cropZoomHandle: { x: number; y: number; radius: number } | null = null;
+
+  /**
+   * Convert a canvas-plane point (e.g. event.scenePoint) to the
+   * object-centered local coordinates that _render draws in. Rotation
+   * aware, so crop hit-testing works on rotated images.
+   */
+  toCropLocalPoint(scenePoint: { x: number; y: number }): {
+    x: number;
+    y: number;
+  } {
+    const inverse = util.invertTransform(this.calcTransformMatrix());
+    const local = util.transformPoint(
+      new Point(scenePoint.x, scenePoint.y),
+      inverse,
+    );
+    return { x: local.x, y: local.y };
+  }
+
+  private drawCropZoomHandle(ctx: CanvasRenderingContext2D): void {
+    const unit = 1 / Math.max(this.canvas?.getZoom() ?? 1, 0.001);
+    const radius = 11 * unit;
+    const gap = 7 * unit;
+    // Inside the frame's bottom-right corner: clicking here must hit the
+    // image object itself, otherwise Fabric treats the pointer as landing
+    // on empty canvas and clears the selection (which exits crop mode).
+    const cx = this.width / 2 - radius - gap;
+    const cy = this.height / 2 - radius - gap;
+    this.cropZoomHandle = { x: cx, y: cy, radius: radius + 5 * unit };
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.lineWidth = 2 * unit;
+    ctx.strokeStyle = "#7147e8";
+    ctx.stroke();
+    // Magnifier glyph.
+    const lensRadius = 4 * unit;
+    const lensX = cx - 1.4 * unit;
+    const lensY = cy - 1.4 * unit;
+    ctx.beginPath();
+    ctx.arc(lensX, lensY, lensRadius, 0, Math.PI * 2);
+    ctx.lineWidth = 1.8 * unit;
+    ctx.strokeStyle = "#7147e8";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(lensX + lensRadius * 0.72, lensY + lensRadius * 0.72);
+    ctx.lineTo(
+      lensX + lensRadius * 0.72 + 3.6 * unit,
+      lensY + lensRadius * 0.72 + 3.6 * unit,
+    );
+    ctx.lineWidth = 2.2 * unit;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#7147e8";
+    ctx.stroke();
+    ctx.restore();
+  }
+
   override _render(ctx: CanvasRenderingContext2D): void {
     const w = this.width;
     const h = this.height;
@@ -411,21 +505,29 @@ export class FabricImageLayerObject extends FabricObject {
     }
 
     const cornerRadii = this.getEffectiveCornerRadii();
+    const placement = this.getCropImagePlacement();
+    const cropping = this.isCropping && placement !== null;
+
+    if (cropping && this.htmlImage) {
+      // Ghost pass: the whole image dimmed and unclipped, so the user sees
+      // what lies outside the crop frame while panning/zooming.
+      ctx.save();
+      ctx.globalAlpha = IMAGE_CROP_GHOST_ALPHA;
+      ctx.drawImage(
+        this.htmlImage,
+        placement.x,
+        placement.y,
+        placement.width,
+        placement.height,
+      );
+      ctx.restore();
+    }
 
     ctx.save();
     roundedRectanglePath(ctx, w, h, cornerRadii);
     ctx.clip();
 
-    if (this.htmlImage) {
-      const placement = imagePlacement(
-        this.imageFit,
-        this.htmlImage.naturalWidth || this.htmlImage.width,
-        this.htmlImage.naturalHeight || this.htmlImage.height,
-        w,
-        h,
-        this.imageFocalX,
-        this.imageFocalY,
-      );
+    if (this.htmlImage && placement) {
       ctx.drawImage(
         this.htmlImage,
         placement.x,
@@ -449,6 +551,12 @@ export class FabricImageLayerObject extends FabricObject {
       ctx.lineWidth = this.imageStrokeWidth * 2;
       ctx.stroke();
       ctx.restore();
+    }
+
+    if (cropping) {
+      this.drawCropZoomHandle(ctx);
+    } else {
+      this.cropZoomHandle = null;
     }
   }
 }

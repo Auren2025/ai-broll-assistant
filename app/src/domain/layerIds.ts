@@ -1,4 +1,4 @@
-import type { Layer } from "./sceneSchema";
+import type { Layer, Scene } from "./sceneSchema";
 import { getAllLayers } from "./groupOperations";
 
 export function nextIdForType(usedIds: ReadonlySet<string>, type: string): string {
@@ -48,4 +48,28 @@ export function makeLayerIdGenerator(
     sequences.set(type, sequence);
     return `${type}-${sequence}`;
   };
+}
+
+/**
+ * All layers across every scene in the project. Layer ids are used as
+ * project-wide identifiers (selection state, tree highlight), so new ids
+ * must be unique across scenes, not just within the current one. Copying a
+ * group into another scene used to reuse ids like `group-1`, which made the
+ * same id appear selected in both scenes.
+ */
+export function getAllProjectLayers(scenes: readonly Scene[]): Layer[] {
+  return scenes.flatMap((scene) => getAllLayers(scene.layers));
+}
+
+export function getNextProjectLayerId(
+  scenes: readonly Scene[],
+  type: string,
+): string {
+  return getNextLayerId(getAllProjectLayers(scenes), type);
+}
+
+export function makeProjectLayerIdGenerator(
+  scenes: readonly Scene[],
+): (original: Layer) => string {
+  return makeLayerIdGenerator(getAllProjectLayers(scenes));
 }

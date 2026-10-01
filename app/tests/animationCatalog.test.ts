@@ -14,7 +14,7 @@ function rectangle(stroke: string | null) {
   return parseScene({
     schemaVersion: 1,
     id: "scene-001",
-    topic: "Animation catalog",
+    name: "Animation catalog",
     startFrame: 0,
     durationInFrames: 120,
     layers: [

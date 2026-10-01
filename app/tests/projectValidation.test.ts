@@ -25,7 +25,7 @@ function makeProjectDirectory(source?: string): string {
     JSON.stringify({
       schemaVersion: 1,
       id: "scene-001",
-      topic: "Validation test scene",
+      name: "Validation test scene",
       startFrame: 0,
       durationInFrames: 30,
       layers: [],
@@ -111,7 +111,7 @@ test("project validation accepts an unfilled image placeholder", () => {
       JSON.stringify({
         schemaVersion: 1,
         id: "scene-001",
-        topic: "Validation test scene",
+        name: "Validation test scene",
         startFrame: 0,
         durationInFrames: 30,
         layers: [

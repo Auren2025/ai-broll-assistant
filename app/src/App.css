@@ -1061,6 +1061,27 @@ button {
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
+  /* Thin minimal scrollbar, matching the canvas area. */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(0 0 0 / 38%) transparent;
+}
+
+.inspector-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.inspector-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspector-scroll::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 38%);
+  border-radius: 4px;
+}
+
+.inspector-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(0 0 0 / 52%);
 }
 
 .inspector-scroll:has(.scene-design-panel),

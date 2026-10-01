@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import {
+  ActiveSelection,
   Canvas,
   FabricObject,
   Group as FabricGroup,
@@ -19,12 +20,14 @@ import {
   installMultiSelectHitTesting,
   paintMultiSelectBorders,
 } from "./multiSelectBorders";
+import { paintLockedSelection } from "./lockedSelection";
 import { installGroupHitTesting } from "./groupHitTest";
 import {
   applyLayerToFabricObject,
   applySelectionToCanvas,
   createFabricObjectForLayer,
   isFabricObjectForLayer,
+  isFabricObjectLocked,
 } from "./fabricAdapter";
 import {
   findLayerByIdOrChild,
@@ -688,6 +691,20 @@ export function FabricSceneCanvas({
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
 
+    // A multi-select containing a locked member must not move: lock the
+    // whole ActiveSelection so a locked object can never be dragged along.
+    const freezeSelectionWithLocked = () => {
+      const active = canvas.getActiveObject();
+      if (active instanceof ActiveSelection) {
+        const frozen = active
+          .getObjects()
+          .some((member) => isFabricObjectLocked(member));
+        active.set({ lockMovementX: frozen, lockMovementY: frozen });
+      }
+    };
+    canvas.on("selection:created", freezeSelectionWithLocked);
+    canvas.on("selection:updated", freezeSelectionWithLocked);
+
     // Editor backdrop: the pasteboard base and the project frame sit under
     // every object (before:render).
     canvas.on("before:render", ({ ctx }) => {
@@ -706,6 +723,8 @@ export function FabricSceneCanvas({
       // Re-brighten chrome painted above the dim: selection controls and
       // the drill-in frame stay fully visible even off-project.
       canvas.drawControls(ctx);
+      // Keynote-style locked selection: gray border with X handles.
+      paintLockedSelection(canvas, ctx);
       repaintDrillFrame(canvas, ctx);
       // Keynote-style multi-select: each member of an ActiveSelection paints
       // its own border + handles; there is no common outer frame.

@@ -424,6 +424,7 @@ export function useGroupDrillIn(
       if (
         selectedObject &&
         selectedLayer?.type === "group" &&
+        !selectedLayer.locked &&
         selectedObject.containsPoint(event.scenePoint)
       ) {
         if (isDragThenClickDblClick()) return true;

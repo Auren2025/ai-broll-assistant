@@ -1,6 +1,8 @@
 import { ActiveSelection, Group as FabricGroup } from "fabric";
 import type { Canvas, FabricObject, Point } from "fabric";
 import { findTopmostDrillChildAtPoint } from "./drillChildHitTest.ts";
+import { isFabricObjectLocked } from "./fabricAdapter.ts";
+import { paintLockedBorder, paintLockedXHandles } from "./lockedSelection.ts";
 
 const MULTI_SELECT_BORDER_COLOR = "#0a84ff";
 
@@ -66,7 +68,9 @@ export function installMultiSelectHitTesting(
 /**
  * Keynote-style multi-select visuals: no common outer frame. Each member
  * of the ActiveSelection paints its own thin blue border with white square
- * handles, matching the single-selection look. Called from after:render.
+ * handles, matching the single-selection look. Locked members paint the
+ * Keynote locked style instead: gray border with X handles. Called from
+ * after:render.
  *
  * The painted handles are visual only: the ActiveSelection itself renders
  * no chrome (its hasBorders/hasControls are false) and exists purely so
@@ -81,10 +85,15 @@ export function paintMultiSelectBorders(
   if (!(active instanceof ActiveSelection)) return;
   for (const member of active.getObjects()) {
     if (!member.visible) continue;
-    member._renderControls(ctx, {
-      borderColor: MULTI_SELECT_BORDER_COLOR,
-      hasBorders: true,
-      hasControls: true,
-    });
+    if (isFabricObjectLocked(member)) {
+      paintLockedBorder(ctx, member);
+      paintLockedXHandles(ctx, canvas, member);
+    } else {
+      member._renderControls(ctx, {
+        borderColor: MULTI_SELECT_BORDER_COLOR,
+        hasBorders: true,
+        hasControls: true,
+      });
+    }
   }
 }

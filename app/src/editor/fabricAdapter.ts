@@ -419,11 +419,12 @@ export function setImageCropMode(
 ): void {
   if (!(object instanceof FabricImageLayerObject)) return;
   object.isCropping = cropping;
+  const locked = isFabricObjectLocked(object);
   object.set({
-    lockMovementX: cropping,
-    lockMovementY: cropping,
-    hasControls: !cropping,
-    hoverCursor: cropping ? "move" : "pointer",
+    lockMovementX: cropping || locked,
+    lockMovementY: cropping || locked,
+    hasControls: !cropping && !locked,
+    hoverCursor: cropping ? "move" : locked ? "default" : "pointer",
   });
   object.dirty = true;
 }

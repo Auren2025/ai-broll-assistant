@@ -306,13 +306,19 @@ export function useGroupDrillIn(
         return;
       }
       if (layer.type === "group" && object instanceof FabricGroup) {
-        // Restore the interactive frame once drill-in ends
-        // (applyLayerToFabricObject does not touch these flags).
+        // Restore the frame once drill-in ends. A locked group restores to
+        // its locked presentation (gray + X, no Fabric chrome), not the
+        // interactive one.
+        const locked = layer.locked === true;
         object.set({
-          hasControls: true,
-          lockMovementX: false,
-          lockMovementY: false,
-          hoverCursor: layer.locked ? "default" : "pointer",
+          hasBorders: !locked,
+          hasControls: !locked,
+          lockMovementX: locked,
+          lockMovementY: locked,
+          lockRotation: locked,
+          lockScalingX: locked,
+          lockScalingY: locked,
+          hoverCursor: locked ? "default" : "pointer",
         });
       }
     },

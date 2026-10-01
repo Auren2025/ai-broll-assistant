@@ -406,7 +406,23 @@ export function SceneLayerTree({
               onLayerStateChange(sceneId, layer.id, { locked: !layer.locked })
             }
           >
-            <span aria-hidden="true" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+              {layer.locked ? (
+                <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+              ) : (
+                <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.8" />
+              )}
+            </svg>
           </button>
           )}
         </div>

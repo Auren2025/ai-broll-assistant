@@ -540,18 +540,18 @@ export function FabricSceneCanvas({
     });
 
     // Multi-select hit testing: only actual members grab the pointer, the
-    // gaps between them behave as empty canvas.
-    installMultiSelectHitTesting(canvas);
+    // gaps between them behave as empty canvas. Group members use the same
+    // strict rule as single groups (must hit a visible child).
+    const isDrillActiveGroup = (group: FabricObject) => {
+      const id = objectToLayerIdRef.current.get(group);
+      return id !== undefined && id === drillGroupIdRef.current;
+    };
+    installMultiSelectHitTesting(canvas, { isDrillActiveGroup });
     // Group hit testing: same Keynote rule — the pointer must land on a
     // child inside the group to grab it; the group's empty frame gaps
     // behave as empty canvas. The drilled-in group is excluded so its
     // frame blank keeps drill semantics.
-    installGroupHitTesting(canvas, {
-      isDrillActiveGroup: (group) => {
-        const id = objectToLayerIdRef.current.get(group);
-        return id !== undefined && id === drillGroupIdRef.current;
-      },
-    });
+    installGroupHitTesting(canvas, { isDrillActiveGroup });
 
     const initialViewport = canonicalViewport(
       displayScale,

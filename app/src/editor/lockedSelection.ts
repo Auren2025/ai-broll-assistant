@@ -5,8 +5,8 @@ import { isFabricObjectLocked } from "./fabricAdapter.ts";
 /** Keynote-style locked selection gray. */
 export const LOCKED_BORDER_COLOR = "#8e8e93";
 
-const X_HALF_SIZE = 6; // screen px, half the X mark's extent
-const X_LINE_WIDTH = 2;
+const X_HALF_SIZE = 4; // screen px, half the X mark's extent
+const X_LINE_WIDTH = 1.5;
 
 /**
  * Screen-space corners of the object's bounding box. getCoords() is in the

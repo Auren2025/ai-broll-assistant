@@ -4,9 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type Dispatch,
   type RefObject,
-  type SetStateAction,
 } from "react";
 import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
@@ -35,13 +33,11 @@ const AUTO_SAVE_DELAY_MS = 600;
 const EXTERNAL_REFRESH_INTERVAL_MS = 3000;
 
 export interface UseEditorDocumentOptions {
-  setSelectedLayerIds: Dispatch<SetStateAction<string[]>>;
-  setActiveInsertionGroupId: Dispatch<SetStateAction<string | null>>;
-  setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
-  setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
-  setSlideMenu: Dispatch<
-    SetStateAction<{ sceneId: string; x: number; y: number } | null>
-  >;
+  setSelectedLayerIds: (ids: string[]) => void;
+  setActiveInsertionGroupId: (id: string | null) => void;
+  setSelectedAnimationId: (id: string | null) => void;
+  setInspectorScope: (scope: InspectorScope) => void;
+  setSlideMenu: (menu: { sceneId: string; x: number; y: number } | null) => void;
   getErrorMessage: (error: unknown) => string;
   /** Selection state owned by App, captured into undo snapshots. */
   selectedLayerIds: readonly string[];
@@ -272,11 +268,9 @@ export function useEditorDocument(
     },
     setters: {
       setIsSaving,
-      setIsSavePending: () => {},
       setSaveError,
       setHasSaveConflict,
-      setIsExternalRefreshRunning: () => {},
-       applyExternalSnapshot: applySnapshot,
+      applyExternalSnapshot: applySnapshot,
       onSceneSaved: (savedScene) => {
         setScenesById((current) => ({
           ...current,
@@ -287,7 +281,6 @@ export function useEditorDocument(
       markCurrentStateSaved,
       updateDirtyState,
       clearHistory,
-      resetSelection: () => {},
     },
   });
   const queueCurrentSave = useCallback(

@@ -16,11 +16,13 @@ function hasSameLayerIds(first: readonly string[], second: readonly string[]): b
 interface SelectionOptions {
   scene: Scene | null;
   sceneRef: RefObject<Scene | null>;
+  /** Needs the updater form to skip redundant selection updates. */
   setSelectedLayerIds: Dispatch<SetStateAction<string[]>>;
+  /** Needs the updater form to preserve drill state across renders. */
   setActiveInsertionGroupId: Dispatch<SetStateAction<string | null>>;
-  setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
-  setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
-  setInspectorTab: Dispatch<SetStateAction<"design" | "animate">>;
+  setSelectedAnimationId: (id: string | null) => void;
+  setInspectorScope: (scope: InspectorScope) => void;
+  setInspectorTab: (tab: "design" | "animate") => void;
   selectScene: (sceneId: string, layerIds?: string[], scope?: InspectorScope) => Promise<Scene | null>;
 }
 

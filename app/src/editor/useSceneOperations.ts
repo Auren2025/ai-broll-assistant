@@ -21,18 +21,19 @@ interface SceneOperationsOptions {
     sceneOperationActiveRef: RefObject<boolean>;
   };
   state: {
-    setProject: Dispatch<SetStateAction<Project | null>>;
-    setScene: Dispatch<SetStateAction<Scene | null>>;
+    setProject: (project: Project | null) => void;
+    setScene: (scene: Scene | null) => void;
+    /** Needs the updater form to merge concurrently loaded scenes. */
     setScenesById: Dispatch<SetStateAction<Record<string, Scene>>>;
-    setSelectedLayerIds: Dispatch<SetStateAction<string[]>>;
-    setActiveInsertionGroupId: Dispatch<SetStateAction<string | null>>;
-    setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
-    setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
-    setIsSceneLoading: Dispatch<SetStateAction<boolean>>;
-    setIsCreatingScene: Dispatch<SetStateAction<boolean>>;
-    setSceneError: Dispatch<SetStateAction<string | null>>;
-    setCreateSceneError: Dispatch<SetStateAction<string | null>>;
-    setSlideMenu: Dispatch<SetStateAction<{ sceneId: string; x: number; y: number } | null>>;
+    setSelectedLayerIds: (ids: string[]) => void;
+    setActiveInsertionGroupId: (id: string | null) => void;
+    setSelectedAnimationId: (id: string | null) => void;
+    setInspectorScope: (scope: InspectorScope) => void;
+    setIsSceneLoading: (value: boolean) => void;
+    setIsCreatingScene: (value: boolean) => void;
+    setSceneError: (message: string | null) => void;
+    setCreateSceneError: (message: string | null) => void;
+    setSlideMenu: (menu: { sceneId: string; x: number; y: number } | null) => void;
   };
   actions: {
     queueCurrentSave: (force?: boolean) => Promise<void>;

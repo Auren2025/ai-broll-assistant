@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, type RefObject } from "react";
 import { fetchProject, fetchScene } from "../api/projectApi";
 import type { Project } from "../domain/projectSchema";
 import type { Scene } from "../domain/sceneSchema";
@@ -10,16 +10,16 @@ interface ProjectLoadingOptions {
   projectRef: RefObject<Project | null>;
   sceneRef: RefObject<Scene | null>;
   versions: DocumentVersionTracker;
-  setProject: Dispatch<SetStateAction<Project | null>>;
-  setScene: Dispatch<SetStateAction<Scene | null>>;
-  setScenesById: Dispatch<SetStateAction<Record<string, Scene>>>;
-  setSelectedLayerIds: Dispatch<SetStateAction<string[]>>;
-  setActiveInsertionGroupId: Dispatch<SetStateAction<string | null>>;
-  setSelectedAnimationId: Dispatch<SetStateAction<string | null>>;
-  setInspectorScope: Dispatch<SetStateAction<InspectorScope>>;
-  setIsDirty: Dispatch<SetStateAction<boolean>>;
-  setHasSaveConflict: Dispatch<SetStateAction<boolean>>;
-  setLoadError: Dispatch<SetStateAction<string | null>>;
+  setProject: (project: Project | null) => void;
+  setScene: (scene: Scene | null) => void;
+  setScenesById: (scenes: Record<string, Scene>) => void;
+  setSelectedLayerIds: (ids: string[]) => void;
+  setActiveInsertionGroupId: (id: string | null) => void;
+  setSelectedAnimationId: (id: string | null) => void;
+  setInspectorScope: (scope: InspectorScope) => void;
+  setIsDirty: (value: boolean) => void;
+  setHasSaveConflict: (value: boolean) => void;
+  setLoadError: (message: string | null) => void;
   markCurrentStateSaved: () => void;
   clearHistory: () => void;
 }

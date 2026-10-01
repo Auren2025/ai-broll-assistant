@@ -26,10 +26,12 @@ export interface SaveControllerHooks {
 
 export interface SaveControllerSetters {
   setIsSaving: (value: boolean) => void;
-  setIsSavePending: (value: boolean) => void;
+  /** Optional: notified when a save enters/leaves the queue. */
+  onSavePendingChange?: (value: boolean) => void;
   setSaveError: (message: string | null) => void;
   setHasSaveConflict: (value: boolean) => void;
-  setIsExternalRefreshRunning: (value: boolean) => void;
+  /** Optional: notified when the external-refresh poll starts/finishes. */
+  onExternalRefreshRunningChange?: (value: boolean) => void;
   /** Apply a disk snapshot that overrides the editor state. */
   applyExternalSnapshot: (project: Project, scenes: Scene[]) => void;
   /** Track when a scene save resolves server-side, e.g. to refresh caches. */
@@ -42,8 +44,6 @@ export interface SaveControllerSetters {
   updateDirtyState: () => void;
   /** Clear undo/redo stacks when the disk replaces the in-memory document. */
   clearHistory: () => void;
-  /** Reset selection/animation inspector that depend on the prior scene set. */
-  resetSelection: () => void;
 }
 
 export interface SaveControllerOptions {
@@ -106,7 +106,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
         return saveQueueRef.current;
       }
 
-      settersRef.current.setIsSavePending(true);
+      settersRef.current.onSavePendingChange?.(true);
       const { result, settled } = enqueueSave(saveQueueRef.current, async () => {
         activeSaveCountRef.current += 1;
         settersRef.current.setIsSaving(true);
@@ -137,7 +137,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
           if (activeSaveCountRef.current === 0) settersRef.current.setIsSaving(false);
         }
       });
-      saveQueueRef.current = settled.then(() => settersRef.current.setIsSavePending(false));
+      saveQueueRef.current = settled.then(() => settersRef.current.onSavePendingChange?.(false));
       return result;
     },
     [
@@ -154,7 +154,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
     async (signal?: AbortSignal): Promise<void> => {
       if (externalRefreshRunningRef.current || sceneOperationActiveRef.current) return;
       externalRefreshRunningRef.current = true;
-      settersRef.current.setIsExternalRefreshRunning(true);
+      settersRef.current.onExternalRefreshRunningChange?.(true);
       try {
         const beforeProject = projectRef.current;
         if (!beforeProject) return;
@@ -192,7 +192,7 @@ export function useSaveController({ hooks, setters }: SaveControllerOptions): Sa
         if (!isAbortError(error)) settersRef.current.onExternalError(error instanceof Error ? error.message : "Unknown error");
       } finally {
         externalRefreshRunningRef.current = false;
-        settersRef.current.setIsExternalRefreshRunning(false);
+        settersRef.current.onExternalRefreshRunningChange?.(false);
       }
     },
     [

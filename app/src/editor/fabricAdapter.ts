@@ -524,16 +524,15 @@ export function applySelectionToCanvas(
     return;
   }
 
+  // Keynote-style multi-select: the ActiveSelection keeps the members
+  // moving together but renders no chrome of its own. Each member paints
+  // its own border + handles via paintMultiSelectBorders (after:render),
+  // so there is no common outer frame.
   canvas.setActiveObject(
     new ActiveSelection(selectedObjects, {
       canvas,
-      borderColor: "#0a84ff",
-      borderScaleFactor: 1,
-      cornerColor: "#ffffff",
-      cornerSize: 9,
-      cornerStrokeColor: "#0a84ff",
-      cornerStyle: "rect",
-      transparentCorners: false,
+      hasBorders: false,
+      hasControls: false,
     }),
   );
 }

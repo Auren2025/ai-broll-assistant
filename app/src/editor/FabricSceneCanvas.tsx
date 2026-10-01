@@ -13,6 +13,7 @@ import {
 import type { Layer, Scene } from "../domain/sceneSchema";
 import { resolveDragTarget } from "./fabricTargetResolution";
 import { computeDrillEntries } from "./drillEntries";
+import { paintMultiSelectBorders } from "./multiSelectBorders";
 import {
   applyLayerToFabricObject,
   applySelectionToCanvas,
@@ -538,6 +539,12 @@ export function FabricSceneCanvas({
     canvas.on("selection:created", syncSelectedLayers);
     canvas.on("selection:updated", syncSelectedLayers);
     canvas.on("selection:cleared", syncSelectedLayers);
+
+    // Keynote-style multi-select: each member of an ActiveSelection paints
+    // its own border + handles; there is no common outer frame.
+    canvas.on("after:render", ({ ctx }) => {
+      paintMultiSelectBorders(canvas, ctx);
+    });
 
     canvas.on("mouse:move", (event) => {
       if (handleCropMouseMove(canvas, event)) return;
